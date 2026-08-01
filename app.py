@@ -46,10 +46,18 @@ st.set_page_config(
     page_title="Indian FY Expense Tracker & Inflation Analyzer",
     page_icon="💸",
     layout="wide",
-    initial_sidebar_state="expanded"
+    initial_sidebar_state="auto"
 )
 
-# Custom Styling
+# Mobile viewport meta tag (ensures proper scaling on Chrome, Safari, Edge mobile)
+st.markdown("""
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=5.0, user-scalable=yes">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+""", unsafe_allow_html=True)
+
+# Custom Styling (Desktop + Mobile Responsive)
 st.markdown("""
 <style>
     /* Dark Theme Accent Styling */
@@ -104,6 +112,179 @@ st.markdown("""
         border-radius: 6px;
         font-weight: 600;
         font-size: 0.85rem;
+    }
+
+    /* ===== MOBILE RESPONSIVE STYLES ===== */
+
+    /* Tablet breakpoint (768px and below) */
+    @media screen and (max-width: 768px) {
+        /* Stack Streamlit columns vertically */
+        [data-testid="stHorizontalBlock"] {
+            flex-direction: column !important;
+            gap: 0.5rem !important;
+        }
+        [data-testid="stHorizontalBlock"] > [data-testid="stColumn"] {
+            width: 100% !important;
+            flex: 1 1 100% !important;
+            min-width: 100% !important;
+        }
+
+        /* Scale down header text */
+        .main-header {
+            font-size: 1.5rem !important;
+        }
+        .sub-header {
+            font-size: 0.9rem !important;
+        }
+
+        /* Metric cards: smaller padding & font */
+        .metric-card {
+            padding: 12px 10px !important;
+            margin-bottom: 8px !important;
+        }
+        .metric-value {
+            font-size: 1.4rem !important;
+        }
+        .metric-label {
+            font-size: 0.78rem !important;
+        }
+
+        /* Tabs: allow horizontal scroll, prevent wrapping */
+        [data-testid="stTabs"] [role="tablist"] {
+            overflow-x: auto !important;
+            -webkit-overflow-scrolling: touch;
+            scrollbar-width: thin;
+            flex-wrap: nowrap !important;
+            gap: 2px !important;
+        }
+        [data-testid="stTabs"] [role="tab"] {
+            font-size: 0.75rem !important;
+            padding: 8px 10px !important;
+            white-space: nowrap !important;
+            min-width: fit-content !important;
+        }
+
+        /* Data editor / dataframe: horizontal scroll */
+        [data-testid="stDataFrame"],
+        [data-testid="stDataEditor"] {
+            overflow-x: auto !important;
+            -webkit-overflow-scrolling: touch;
+        }
+        [data-testid="stDataFrame"] table,
+        [data-testid="stDataEditor"] table {
+            min-width: 600px !important;
+        }
+
+        /* Buttons: touch-friendly size */
+        .stButton > button {
+            min-height: 44px !important;
+            font-size: 0.85rem !important;
+        }
+
+        /* Sidebar: auto-collapse on mobile */
+        [data-testid="stSidebar"] {
+            min-width: 0px !important;
+        }
+        [data-testid="stSidebar"][aria-expanded="true"] {
+            min-width: 260px !important;
+            max-width: 80vw !important;
+        }
+
+        /* Inputs: full width, comfortable tap targets */
+        .stTextInput > div > div > input,
+        .stNumberInput > div > div > input,
+        .stSelectbox > div > div,
+        .stDateInput > div > div > input {
+            min-height: 42px !important;
+            font-size: 0.9rem !important;
+        }
+
+        /* Plotly charts: constrain to viewport */
+        .js-plotly-plot, .plotly {
+            max-width: 100% !important;
+            overflow-x: auto !important;
+        }
+
+        /* Expander: readable on mobile */
+        [data-testid="stExpander"] {
+            font-size: 0.9rem !important;
+        }
+
+        /* Radio buttons horizontal → stack if needed */
+        [data-testid="stRadio"] > div {
+            flex-wrap: wrap !important;
+            gap: 6px !important;
+        }
+    }
+
+    /* Small phone breakpoint (480px and below) */
+    @media screen and (max-width: 480px) {
+        .main-header {
+            font-size: 1.25rem !important;
+        }
+        .sub-header {
+            font-size: 0.8rem !important;
+            margin-bottom: 0.8rem !important;
+        }
+        .metric-card {
+            padding: 10px 8px !important;
+            border-radius: 8px !important;
+        }
+        .metric-value {
+            font-size: 1.2rem !important;
+        }
+        .metric-label {
+            font-size: 0.72rem !important;
+            letter-spacing: 0.02em !important;
+        }
+
+        /* Even smaller tab labels on phones */
+        [data-testid="stTabs"] [role="tab"] {
+            font-size: 0.68rem !important;
+            padding: 6px 8px !important;
+        }
+
+        /* Compact badges */
+        .surge-badge, .normal-badge {
+            font-size: 0.75rem !important;
+            padding: 3px 6px !important;
+        }
+
+        /* Stack radio buttons vertically on small phones */
+        [data-testid="stRadio"] > div {
+            flex-direction: column !important;
+        }
+    }
+
+    /* ===== CROSS-BROWSER FIXES ===== */
+
+    /* Safari: fix text rendering and gradient clip */
+    @supports (-webkit-touch-callout: none) {
+        .main-header {
+            background-clip: text;
+            -webkit-background-clip: text;
+        }
+        /* Safari smooth scrolling for tabs */
+        [data-testid="stTabs"] [role="tablist"] {
+            -webkit-overflow-scrolling: touch;
+        }
+    }
+
+    /* Ensure touch-action for all interactive elements (Edge/Chrome/Safari) */
+    button, input, select, textarea, [role="tab"], [role="button"] {
+        touch-action: manipulation;
+    }
+
+    /* Scrollbar styling for tab overflow (Chrome/Edge) */
+    [data-testid="stTabs"] [role="tablist"]::-webkit-scrollbar {
+        height: 3px;
+    }
+    [data-testid="stTabs"] [role="tablist"]::-webkit-scrollbar-thumb {
+        background: #475569;
+        border-radius: 3px;
+    }
+    [data-testid="stTabs"] [role="tablist"]::-webkit-scrollbar-track {
+        background: transparent;
     }
 </style>
 """, unsafe_allow_html=True)
