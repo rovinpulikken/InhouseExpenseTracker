@@ -368,6 +368,10 @@ st.markdown("<div class='sub-header'>Type expenses into an Excel-like grid, auto
 df_fy = get_expenses_df(fy=selected_fy)
 total_spent = df_fy["amount"].sum() if not df_fy.empty else 0.0
 total_txns = len(df_fy) if not df_fy.empty else 0
+num_months = df_fy["Month_Year"].nunique() if not df_fy.empty and "Month_Year" in df_fy.columns else 1
+num_months = max(1, num_months)
+avg_monthly_spent = total_spent / num_months if not df_fy.empty else 0.0
+
 cat_breakdown = get_category_breakdown(fy=selected_fy)
 top_category = cat_breakdown.iloc[0]["category"] if not cat_breakdown.empty else "N/A"
 top_cat_amount = cat_breakdown.iloc[0]["Total_Amount"] if not cat_breakdown.empty else 0.0
@@ -378,7 +382,8 @@ with col1:
     <div class="metric-card">
         <div class="metric-label">Total Expense ({selected_fy})</div>
         <div class="metric-value">{format_inr_short(total_spent)}</div>
-        <div style="color: #64748b; font-size: 0.8rem;">{format_inr(total_spent)}</div>
+        <div style="color: #38bdf8; font-size: 0.82rem; font-weight: 500; margin-top: 2px;">Avg: {format_inr(avg_monthly_spent)} / mo</div>
+        <div style="color: #64748b; font-size: 0.78rem;">Total: {format_inr(total_spent)}</div>
     </div>
     """, unsafe_allow_html=True)
 
