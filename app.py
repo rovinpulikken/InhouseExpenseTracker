@@ -38,7 +38,6 @@ from cpi_data import (
     calculate_cpi_inflation,
     CPI_CATEGORY_INFLATION
 )
-from ocr_engine import scan_handwritten_notebook
 from categorizer import auto_categorize_description, auto_categorize_records
 
 # Page Config
@@ -359,17 +358,11 @@ all_fys = get_all_financial_years()
 selected_fy = st.sidebar.selectbox("📅 Select Financial Year", ["All FYs"] + all_fys, index=1 if len(all_fys) > 1 else 0)
 
 st.sidebar.markdown("---")
-st.sidebar.subheader("🔑 AI OCR Configuration")
-user_gemini_key = st.sidebar.text_input("Gemini API Key (for Notebook OCR)", type="password", help="Enter Google Gemini API Key to enable live handwritten image extraction.")
-if user_gemini_key:
-    os.environ["GEMINI_API_KEY"] = user_gemini_key
-
-st.sidebar.markdown("---")
 st.sidebar.info("💡 **Indian Financial Year**: Apr 1st - Mar 31st.\n\nData is saved locally in SQLite (`data/expenses.db`).")
 
 # Header Section
 st.markdown("<div class='main-header'>Indian FY Expense Tracker & Inflation Analyzer</div>", unsafe_allow_html=True)
-st.markdown("<div class='sub-header'>Scan handwritten notebook entries, type into an Excel-like grid, auto-categorize expenses, analyze Indian Financial Year trends, track CPI inflation, and manage budgets.</div>", unsafe_allow_html=True)
+st.markdown("<div class='sub-header'>Type expenses into an Excel-like grid, auto-categorize expenses, analyze Indian Financial Year trends, track CPI inflation, and manage budgets.</div>", unsafe_allow_html=True)
 
 # Top Metrics Row
 df_fy = get_expenses_df(fy=selected_fy)
@@ -420,8 +413,7 @@ with col4:
 st.markdown("<br>", unsafe_allow_html=True)
 
 # Main Content Tabs
-tab_ocr, tab_manual, tab_itemized, tab_edit_delete, tab_trends, tab_cpi, tab_surge, tab_budget, tab_data = st.tabs([
-    "📸 Notebook OCR Scanner",
+tab_manual, tab_itemized, tab_edit_delete, tab_trends, tab_cpi, tab_surge, tab_budget, tab_data = st.tabs([
     "📊 Manual Entry & Excel Grid",
     "📑 Itemized Period Explorer",
     "✏️ Edit & Delete Expenses",
@@ -433,71 +425,7 @@ tab_ocr, tab_manual, tab_itemized, tab_edit_delete, tab_trends, tab_cpi, tab_sur
 ])
 
 # ----------------------------------------------------
-# TAB 1: NOTEBOOK OCR SCANNER
-# ----------------------------------------------------
-with tab_ocr:
-    st.subheader("📸 Scan Handwritten Expense Notebook / Receipt")
-    st.write("Upload a photo or capture a snapshot of your handwritten notebook entries for the month. AI will scan, classify, and format the entries.")
-    
-    input_mode = st.radio("Choose Input Method", ["Upload Notebook Photo", "Take Live Snapshot with Camera"], horizontal=True)
-    uploaded_img = None
-    
-    col_input, col_preview = st.columns([1, 1])
-    
-    with col_input:
-        if input_mode == "Upload Notebook Photo":
-            file = st.file_uploader("Upload Notebook Page / Receipt (JPG, PNG, JPEG)", type=["jpg", "jpeg", "png"])
-            if file:
-                uploaded_img = Image.open(file)
-        else:
-            camera_file = st.camera_input("Take a photo of handwritten notebook page")
-            if camera_file:
-                uploaded_img = Image.open(camera_file)
-                
-        if uploaded_img:
-            st.image(uploaded_img, caption="Uploaded Notebook Page", use_container_width=True)
-            
-            scan_btn = st.button("✨ Scan & Extract Expenses via AI", type="primary", use_container_width=True)
-            if scan_btn:
-                with st.spinner("AI Vision scanning handwritten notebook text and table columns..."):
-                    extracted_items, msg = scan_handwritten_notebook(uploaded_img, api_key=user_gemini_key)
-                    st.session_state["scanned_items"] = extracted_items
-                    st.toast(msg)
-
-    with col_preview:
-        st.subheader("📋 Scanned Data Review & Verification")
-        st.caption("Review extracted entries, correct any misread numbers or categories, then save to database.")
-        
-        if "scanned_items" in st.session_state and st.session_state["scanned_items"]:
-            scanned_df = pd.DataFrame(st.session_state["scanned_items"])
-            if not scanned_df.empty and "date" in scanned_df.columns:
-                scanned_df["date"] = pd.to_datetime(scanned_df["date"]).dt.date
-            
-            # Interactive Streamlit Data Editor
-            edited_df = st.data_editor(
-                scanned_df,
-                num_rows="dynamic",
-                column_config={
-                    "date": st.column_config.DateColumn("Date", required=True),
-                    "category": st.column_config.SelectboxColumn("Category", options=EXPENSE_CATEGORIES, required=True),
-                    "description": st.column_config.TextColumn("Description"),
-                    "amount": st.column_config.NumberColumn("Amount (₹)", min_value=0.0, format="₹ %.2f", required=True)
-                },
-                use_container_width=True,
-                key="ocr_editor"
-            )
-            
-            if st.button("💾 Save Verified Entries to Database", type="primary", use_container_width=True):
-                records = edited_df.to_dict("records")
-                inserted_count = insert_expenses(records, source="Notebook OCR Scanner")
-                st.success(f"🎉 Successfully saved {inserted_count} expense entries to local database!")
-                st.session_state["scanned_items"] = None
-                st.rerun()
-        else:
-            st.info("👈 Upload a notebook photo on the left and click **Scan & Extract** to preview entries here.")
-
-# ----------------------------------------------------
-# TAB 2: MANUAL ENTRY & EXCEL GRID
+# TAB 1: MANUAL ENTRY & EXCEL GRID
 # ----------------------------------------------------
 with tab_manual:
     st.subheader("📝 Manual Data Entry & Excel Spreadsheet Tools")
