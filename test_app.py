@@ -1,11 +1,19 @@
+import os
+import tempfile
 import datetime
 import pandas as pd
 # pyrefly: ignore [missing-import]
 import numpy as np
+import database
 from config import get_indian_fy, get_indian_quarter, get_indian_half_year, format_inr, format_inr_short
 from database import init_db, insert_expenses, get_expenses_df, delete_month_expenses, delete_expense, update_expenses_df
 from cpi_data import calculate_cpi_inflation
 from categorizer import auto_categorize_description, auto_categorize_records
+
+# Isolate test suite DB so live data/expenses.db is NEVER touched or modified by test runs
+temp_db = tempfile.NamedTemporaryFile(suffix="_test.db", delete=False)
+database.DB_PATH = temp_db.name
+temp_db.close()
 
 def test_strict_uploaded_date_enforcement():
     init_db()
@@ -42,6 +50,10 @@ def test_inline_database_update():
     print("✅ Inline database update & FY recalculation passed.")
 
 if __name__ == "__main__":
-    test_strict_uploaded_date_enforcement()
-    test_inline_database_update()
-    print("🎉 All strict date and inline update tests passed successfully!")
+    try:
+        test_strict_uploaded_date_enforcement()
+        test_inline_database_update()
+        print("🎉 All strict date and inline update tests passed successfully!")
+    finally:
+        if os.path.exists(database.DB_PATH):
+            os.unlink(database.DB_PATH)

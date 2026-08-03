@@ -74,7 +74,7 @@ def insert_expenses(expense_rows: List[Dict[str, Any]], source: str = "OCR Scann
             if isinstance(raw_date, (datetime.date, datetime.datetime)):
                 dt = raw_date.date() if isinstance(raw_date, datetime.datetime) else raw_date
             else:
-                dt = pd.to_datetime(str(raw_date)).date()
+                dt = pd.to_datetime(str(raw_date), dayfirst=True, format="mixed").date()
         except Exception:
             # Skip if uploaded date is invalid
             continue
@@ -393,7 +393,7 @@ def update_expenses_df(updated_df: pd.DataFrame) -> int:
             if isinstance(raw_date, (datetime.date, datetime.datetime)):
                 dt = raw_date.date() if isinstance(raw_date, datetime.datetime) else raw_date
             else:
-                dt = pd.to_datetime(str(raw_date)).date()
+                dt = pd.to_datetime(str(raw_date), dayfirst=True, format="mixed").date()
         except Exception:
             continue
             
