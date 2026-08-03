@@ -376,18 +376,26 @@ cat_breakdown = get_category_breakdown(fy=selected_fy)
 top_category = cat_breakdown.iloc[0]["category"] if not cat_breakdown.empty else "N/A"
 top_cat_amount = cat_breakdown.iloc[0]["Total_Amount"] if not cat_breakdown.empty else 0.0
 
-col1, col2, col3, col4 = st.columns(4)
+col1, col2, col3, col4, col5 = st.columns(5)
 with col1:
     st.markdown(f"""
     <div class="metric-card">
         <div class="metric-label">Total Expense ({selected_fy})</div>
         <div class="metric-value">{format_inr_short(total_spent)}</div>
-        <div style="color: #38bdf8; font-size: 0.82rem; font-weight: 500; margin-top: 2px;">Avg: {format_inr(avg_monthly_spent)} / mo</div>
-        <div style="color: #64748b; font-size: 0.78rem;">Total: {format_inr(total_spent)}</div>
+        <div style="color: #64748b; font-size: 0.8rem;">{format_inr(total_spent)}</div>
     </div>
     """, unsafe_allow_html=True)
 
 with col2:
+    st.markdown(f"""
+    <div class="metric-card">
+        <div class="metric-label">Avg Monthly Spend</div>
+        <div class="metric-value" style="color: #38bdf8;">{format_inr_short(avg_monthly_spent)}</div>
+        <div style="color: #64748b; font-size: 0.8rem;">{format_inr(avg_monthly_spent)} / month</div>
+    </div>
+    """, unsafe_allow_html=True)
+
+with col3:
     st.markdown(f"""
     <div class="metric-card">
         <div class="metric-label">Logged Entries</div>
@@ -396,7 +404,7 @@ with col2:
     </div>
     """, unsafe_allow_html=True)
 
-with col3:
+with col4:
     st.markdown(f"""
     <div class="metric-card">
         <div class="metric-label">Top Expense Category</div>
@@ -405,7 +413,7 @@ with col3:
     </div>
     """, unsafe_allow_html=True)
 
-with col4:
+with col5:
     cpi_rate = 5.6 # Avg Indian CPI
     st.markdown(f"""
     <div class="metric-card">
