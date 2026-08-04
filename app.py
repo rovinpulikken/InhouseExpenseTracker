@@ -1,6 +1,13 @@
+import sys
 import os
 import io
 import datetime
+
+# Ensure repository root is on sys.path for Streamlit Cloud deployment
+repo_root = os.path.dirname(os.path.abspath(__file__))
+if repo_root not in sys.path:
+    sys.path.insert(0, repo_root)
+
 from PIL import Image
 import pandas as pd
 import plotly.express as px
