@@ -41,6 +41,7 @@ def test_strict_uploaded_date_enforcement():
 
 def test_user_auth_and_management():
     init_db()
+    delete_user("rahul")
     # Test default admin login
     admin = authenticate_user("admin", "admin1234")
     assert admin is not None

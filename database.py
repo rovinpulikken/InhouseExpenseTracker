@@ -52,6 +52,23 @@ class LibSQLCursorWrapper:
         self._idx += len(rows)
         return rows
 
+    def close(self):
+        pass
+
+    def executemany(self, sql, seq_of_params=()):
+        for params in seq_of_params:
+            self.execute(sql, params)
+        return self
+
+    def __iter__(self):
+        return self
+
+    def __next__(self):
+        row = self.fetchone()
+        if row is None:
+            raise StopIteration
+        return row
+
 class LibSQLConnectionWrapper:
     def __init__(self, client):
         self.client = client
