@@ -968,19 +968,75 @@ else:
             st.subheader("👑 Administrator & User Access Control")
             st.caption("Manage user accounts, assign roles, change credentials, and verify Turso cloud database connection.")
             
-            a_tab1, a_tab2, a_tab3, a_tab4 = st.tabs([
-                "🔑 Change Password",
-                "➕ Register New User",
-                "👥 Users Directory",
-                "🌐 Turso Cloud Status"
-            ])
+            st.markdown("---")
             
-            with a_tab1:
-                st.markdown("#### Change Account Password")
+            # Section 1: Register New User
+            st.markdown("### ➕ Register New Household User / Family Member")
+            with st.form("create_user_form"):
+                c_col1, c_col2, c_col3, c_col4 = st.columns([2, 2, 2, 1.5])
+                with c_col1:
+                    c_user = st.text_input("Username", placeholder="e.g. spouse, rahul, priya").strip().lower()
+                with c_col2:
+                    c_name = st.text_input("Full Name", placeholder="e.g. Rahul Sharma").strip()
+                with c_col3:
+                    c_pwd = st.text_input("Initial Password", type="password", help="Minimum 4 characters")
+                with c_col4:
+                    c_role = st.selectbox("Role", ["Member", "Admin"], help="Admins can manage users; Members can log private & family expenses.")
+                    
+                if st.form_submit_button("🚀 Create User Account", type="primary", use_container_width=True):
+                    ok, msg = create_user(c_user, c_pwd, c_name, c_role)
+                    if ok:
+                        st.success(msg)
+                        st.rerun()
+                    else:
+                        st.error(msg)
+                        
+            st.markdown("---")
+            
+            # Section 2: User Directory & Access Management
+            st.markdown("### 👥 Active Users Directory & Access Management")
+            users_list = get_all_users()
+            u_df = pd.DataFrame(users_list)
+            st.dataframe(u_df, use_container_width=True, hide_index=True)
+            
+            m_col1, m_col2 = st.columns(2)
+            with m_col1:
+                st.markdown("##### 🎭 Update User Role")
+                target_user_role = st.selectbox("Select User for Role Change", [u["username"] for u in users_list], key="admin_role_target")
+                new_r = st.selectbox("Assign Role", ["Member", "Admin"], key="admin_role_select")
+                if st.button("Update User Role", type="primary", use_container_width=True):
+                    ok, msg = update_user_role(target_user_role, new_r)
+                    if ok:
+                        st.success(msg)
+                        st.rerun()
+                    else:
+                        st.error(msg)
+                        
+            with m_col2:
+                st.markdown("##### 🗑️ Delete User Account")
+                non_admin_users = [u["username"] for u in users_list if u["username"] != "admin"]
+                if non_admin_users:
+                    target_user_del = st.selectbox("Select User to Delete", non_admin_users, key="admin_del_target")
+                    if st.button(f"🗑️ Delete User '{target_user_del}'", use_container_width=True):
+                        ok, msg = delete_user(target_user_del)
+                        if ok:
+                            st.success(msg)
+                            st.rerun()
+                        else:
+                            st.error(msg)
+                else:
+                    st.caption("No secondary users available to delete.")
+                    
+            st.markdown("---")
+            
+            # Section 3: Password Change & Turso Cloud Status
+            sec_col1, sec_col2 = st.columns(2)
+            with sec_col1:
+                st.markdown("### 🔑 Change My Password")
                 with st.form("pwd_change_form"):
                     new_p1 = st.text_input("New Password", type="password", help="Minimum 4 characters")
                     new_p2 = st.text_input("Confirm New Password", type="password")
-                    if st.form_submit_button("💾 Update My Password", type="primary"):
+                    if st.form_submit_button("💾 Update My Password", type="primary", use_container_width=True):
                         if new_p1 != new_p2:
                             st.error("Passwords do not match.")
                         else:
@@ -990,55 +1046,8 @@ else:
                             else:
                                 st.error(msg)
                                 
-            with a_tab2:
-                st.markdown("#### Register Family Member / Household User")
-                with st.form("create_user_form"):
-                    c_user = st.text_input("Username", placeholder="e.g. spouse, rahul, priya").strip().lower()
-                    c_name = st.text_input("Full Name", placeholder="e.g. Rahul Sharma").strip()
-                    c_pwd = st.text_input("Initial Password", type="password", help="Minimum 4 characters")
-                    c_role = st.selectbox("Role", ["Member", "Admin"], help="Admins can manage users; Members can log private & family expenses.")
-                    if st.form_submit_button("➕ Create User Account", type="primary"):
-                        ok, msg = create_user(c_user, c_pwd, c_name, c_role)
-                        if ok:
-                            st.success(msg)
-                            st.rerun()
-                        else:
-                            st.error(msg)
-                            
-            with a_tab3:
-                st.markdown("#### Active System Users")
-                users_list = get_all_users()
-                u_df = pd.DataFrame(users_list)
-                st.dataframe(u_df, use_container_width=True, hide_index=True)
-                
-                st.markdown("#### User Role & Access Management")
-                m_col1, m_col2 = st.columns(2)
-                with m_col1:
-                    target_user_role = st.selectbox("Select User for Role Change", [u["username"] for u in users_list])
-                    new_r = st.selectbox("Assign Role", ["Member", "Admin"])
-                    if st.button("Update User Role", type="primary", use_container_width=True):
-                        ok, msg = update_user_role(target_user_role, new_r)
-                        if ok:
-                            st.success(msg)
-                            st.rerun()
-                        else:
-                            st.error(msg)
-                with m_col2:
-                    non_admin_users = [u["username"] for u in users_list if u["username"] != "admin"]
-                    if non_admin_users:
-                        target_user_del = st.selectbox("Select User to Delete", non_admin_users)
-                        if st.button(f"🗑️ Delete User '{target_user_del}'", type="primary", use_container_width=True):
-                            ok, msg = delete_user(target_user_del)
-                            if ok:
-                                st.success(msg)
-                                st.rerun()
-                            else:
-                                st.error(msg)
-                    else:
-                        st.caption("No secondary users available to delete.")
-                            
-            with a_tab4:
-                st.markdown("#### 🌐 Database Storage Engine Status")
+            with sec_col2:
+                st.markdown("### 🌐 Database Storage Engine Status")
                 db_type = get_db_type()
                 if "Turso" in db_type:
                     st.success("✅ **Connected to Turso Cloud Database!** Your expense records persist 24/7 in the cloud.")
