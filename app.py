@@ -15,7 +15,8 @@ from categorizer import (
 )
 from investment_planner import (
     calculate_investment_plan,
-    generate_ai_wealth_advice
+    generate_ai_wealth_advice,
+    generate_ai_portfolio_suggestions
 )
 from config import (
     EXPENSE_CATEGORIES,
@@ -996,11 +997,12 @@ else:
     # TAB 7: BUDGETING & TARGETS
     # ----------------------------------------------------
     with tab_budget:
-        st.subheader(f"🎯 Budgeting, Targets & Wealth Portfolio ({selected_fy})")
+        st.subheader(f"🎯 Budgeting, Targets & Active Portfolio ({selected_fy})")
         
-        subtab_budget, subtab_invest = st.tabs([
+        subtab_budget, subtab_invest, subtab_holdings = st.tabs([
             "🎯 Category Budget Planner & Performance",
-            "📈 Investment & Wealth Portfolio Planner"
+            "📈 Investment & Wealth Portfolio Planner",
+            "💼 Active Investment Portfolio & Holdings Tracker"
         ])
 
         target_fy_clean = selected_fy if selected_fy != "All FYs" else (all_fys[0] if all_fys else "FY 2024-25")
@@ -1315,6 +1317,199 @@ else:
 
                 for bullet in wealth_advice.get("key_takeaways", []):
                     st.markdown(f"- {bullet}")
+
+        # ------------------------------------------------
+        # SUB-TAB 3: ACTIVE INVESTMENT PORTFOLIO & HOLDINGS TRACKER
+        # ------------------------------------------------
+        with subtab_holdings:
+            st.markdown("### 💼 Active Investment Portfolio & Holdings Tracker")
+            st.caption("Track, aggregate, and analyze active investments across platforms (Zerodha, Groww, SBI, Post Office, etc.) and asset categories (Equity, Mutual Funds, Structured Funds, EPF, PPF, KVP, NSC, Deposits, Startup Investments, etc.).")
+
+            # Form to Add New Investment Entry
+            st.markdown("#### ➕ Add New Investment Holding")
+            
+            PRESET_TYPES = [
+                "Equity (Stocks)",
+                "Mutual funds",
+                "Structured funds",
+                "EPF",
+                "PPF",
+                "KVP (Kisan Vikas Patra)",
+                "NSC (National Savings Certificate)",
+                "Fixed Deposits / Recurring Deposits",
+                "Startup investments",
+                "Gold / Sovereign Gold Bonds (SGB)",
+                "Real Estate",
+                "Other (Add Custom Type)"
+            ]
+            
+            PRESET_PLATFORMS = [
+                "Zerodha",
+                "Groww",
+                "SBI / SBI Mutual Fund",
+                "Post Office",
+                "Coin (Zerodha)",
+                "Angel One",
+                "Upstox",
+                "ICICI Direct",
+                "HDFC Securities",
+                "IndMoney",
+                "Direct / Primary Institution",
+                "Other (Add Custom Platform)"
+            ]
+
+            add_col1, add_col2, add_col3, add_col4, add_col5 = st.columns([1.5, 1.5, 1.2, 1.0, 1.2])
+
+            with add_col1:
+                selected_plat = st.selectbox("Platform / Broker", PRESET_PLATFORMS, key="inv_plat_sel")
+                if selected_plat == "Other (Add Custom Platform)":
+                    final_plat = st.text_input("Specify Platform Name", value="Custom Broker", key="inv_plat_custom")
+                else:
+                    final_plat = selected_plat
+
+            with add_col2:
+                selected_type = st.selectbox("Investment Type", PRESET_TYPES, key="inv_type_sel")
+                if selected_type == "Other (Add Custom Type)":
+                    final_type = st.text_input("Specify Custom Category", value="Alternative Asset", key="inv_type_custom")
+                else:
+                    final_type = selected_type
+
+            with add_col3:
+                inv_amt_val = st.number_input("Invested Amount (₹)", min_value=100.0, value=50000.0, step=5000.0, format="%.2f", key="inv_amt_input")
+
+            with add_col4:
+                curr_year = datetime.datetime.now().year
+                inv_yr_val = st.number_input("Year Invested", min_value=1990, max_value=curr_year + 5, value=curr_year, step=1, key="inv_yr_input")
+
+            with add_col5:
+                curr_val_input = st.number_input("Current Value (₹)", min_value=0.0, value=inv_amt_val * 1.10, step=5000.0, format="%.2f", key="inv_curr_input")
+
+            if st.button("➕ Add Investment Holding to Portfolio", type="primary", use_container_width=True):
+                new_id = insert_investment(
+                    username=current_user["username"],
+                    platform=final_plat,
+                    investment_type=final_type,
+                    investment_amount=inv_amt_val,
+                    year_invested=inv_yr_val,
+                    current_value=curr_val_input
+                )
+                st.success(f"🎉 Successfully added holding under **{final_plat}** ({final_type}) with initial investment of **{format_inr(inv_amt_val)}**!")
+                st.rerun()
+
+            st.markdown("<hr>", unsafe_allow_html=True)
+
+            # Retrieve User Holdings
+            holdings_df = get_user_investments_df(username=current_user["username"] if view_mode != "Family" else None)
+
+            if not holdings_df.empty:
+                tot_invested = float(holdings_df["investment_amount"].sum())
+                tot_current = float(holdings_df["current_value"].sum())
+                tot_gain = tot_current - tot_invested
+                tot_returns_pct = round((tot_gain / tot_invested) * 100.0, 2) if tot_invested > 0 else 0.0
+
+                # Top Metrics
+                hm1, hm2, hm3, hm4 = st.columns(4)
+                with hm1:
+                    st.metric("💰 Total Invested Capital", format_inr(tot_invested))
+                with hm2:
+                    st.metric("🏆 Current Portfolio Valuation", format_inr(tot_current))
+                with hm3:
+                    st.metric(
+                        "📈 Capital Gain / Loss",
+                        format_inr(tot_gain),
+                        delta=f"{tot_returns_pct:.2f}% Total Gain" if tot_gain >= 0 else f"{tot_returns_pct:.2f}% Loss",
+                        delta_color="normal" if tot_gain >= 0 else "inverse"
+                    )
+                with hm4:
+                    st.metric("📊 Total Holdings Count", f"{len(holdings_df)} Active Assets")
+
+                st.markdown("<br>", unsafe_allow_html=True)
+
+                # Distribution Charts
+                chart_c1, chart_c2 = st.columns(2)
+                with chart_c1:
+                    st.markdown("#### 🍩 Asset Breakdown by Investment Type")
+                    fig_type = px.pie(
+                        holdings_df,
+                        names="investment_type",
+                        values="current_value",
+                        title="Portfolio Distribution by Asset Type",
+                        hole=0.4
+                    )
+                    fig_type.update_layout(margin=dict(l=10, r=10, t=30, b=10), height=300)
+                    st.plotly_chart(fig_type, use_container_width=True)
+
+                with chart_c2:
+                    st.markdown("#### 🏛️ Portfolio Breakdown by Platform")
+                    fig_plat = px.bar(
+                        holdings_df.groupby("platform", as_index=False)["current_value"].sum(),
+                        x="platform",
+                        y="current_value",
+                        color="platform",
+                        title="Valuation by Platform / Broker",
+                        labels={"current_value": "Current Value (₹)", "platform": "Platform"}
+                    )
+                    fig_plat.update_layout(paper_bgcolor="#1e293b", plot_bgcolor="#1e293b", margin=dict(l=10, r=10, t=30, b=10), height=300)
+                    st.plotly_chart(fig_plat, use_container_width=True)
+
+                # Interactive Data Editor & Deletion Manager
+                st.markdown("#### ✏️ Edit or Manage Holdings")
+                st.caption("You can update investment amounts, current values, platform, or investment types directly in the table below, then click Save.")
+
+                display_cols = ["id", "platform", "investment_type", "investment_amount", "year_invested", "current_value", "unrealized_gain", "returns_pct"]
+                
+                edited_holdings = st.data_editor(
+                    holdings_df[display_cols],
+                    column_config={
+                        "id": st.column_config.NumberColumn("ID", disabled=True),
+                        "platform": st.column_config.TextColumn("Platform / Broker"),
+                        "investment_type": st.column_config.TextColumn("Investment Type"),
+                        "investment_amount": st.column_config.NumberColumn("Invested (₹)", format="₹ %.2f"),
+                        "year_invested": st.column_config.NumberColumn("Year Invested", format="%d"),
+                        "current_value": st.column_config.NumberColumn("Current Value (₹)", format="₹ %.2f"),
+                        "unrealized_gain": st.column_config.NumberColumn("Gain / Loss (₹)", format="₹ %.2f", disabled=True),
+                        "returns_pct": st.column_config.NumberColumn("Return %", format="%.2f %%", disabled=True)
+                    },
+                    use_container_width=True,
+                    hide_index=True,
+                    num_rows="dynamic",
+                    key="editor_holdings"
+                )
+
+                ed_c1, ed_c2 = st.columns([2, 1])
+                with ed_c1:
+                    if st.button("💾 Save Table Edits to Database", type="primary", use_container_width=True):
+                        cnt_upd = update_investments_df(edited_holdings)
+                        st.success(f"🎉 Updated {cnt_upd} holding entry/entries in database!")
+                        st.rerun()
+
+                with ed_c2:
+                    del_id = st.number_input("Delete Holding ID", min_value=1, step=1, key="del_inv_id")
+                    if st.button("🗑️ Delete Holding", type="secondary", use_container_width=True):
+                        delete_investment(del_id)
+                        st.success(f"Deleted holding ID {del_id}!")
+                        st.rerun()
+
+                # Gemini AI Portfolio Review & Suggestions Section
+                st.markdown("<hr>", unsafe_allow_html=True)
+                st.markdown("### 🤖 Gemini AI Portfolio Review & Suggestions")
+                st.caption("Get automated AI portfolio analysis on asset concentration risk, platform diversification, tax efficiency, and rebalancing recommendations.")
+
+                if st.button("🤖 Generate AI Portfolio Review & Suggestions", type="primary", use_container_width=True):
+                    with st.spinner("🤖 Analyzing active investment portfolio with Gemini AI..."):
+                        portfolio_ai = generate_ai_portfolio_suggestions(holdings_df)
+
+                    st.success("🎉 Portfolio AI Review Complete!")
+                    st.info(portfolio_ai.get("summary", ""))
+
+                    for rec in portfolio_ai.get("recommendations", []):
+                        st.markdown(f"#### {rec.get('title', 'Recommendation')}")
+                        st.markdown(f"**Observation**: {rec.get('observation', '')}")
+                        st.markdown(f"**Suggestion**: {rec.get('suggestion', '')}")
+                        st.markdown("<hr style='margin: 8px 0; border-color: #334155;'>", unsafe_allow_html=True)
+
+            else:
+                st.info("💡 No active holdings recorded yet. Use the form above to add your first investment asset!")
 
     # ----------------------------------------------------
     # TAB 8: DATABASE LOG, EDIT & EXPORT

@@ -202,6 +202,32 @@ def test_investment_planner():
     assert "key_takeaways" in advice
     print("✅ Investment & Wealth Portfolio Planner tests passed.")
 
+def test_active_holdings_tracker():
+    init_db()
+    from database import insert_investment, get_user_investments_df, update_investments_df, delete_investment
+    from investment_planner import generate_ai_portfolio_suggestions
+    
+    inv_id1 = insert_investment("admin", "Zerodha", "Equity (Stocks)", 100000.0, 2022, 140000.0)
+    inv_id2 = insert_investment("admin", "SBI", "EPF", 200000.0, 2021, 230000.0)
+    
+    df = get_user_investments_df("admin")
+    assert not df.empty
+    assert len(df) >= 2
+    assert "unrealized_gain" in df.columns
+    assert "returns_pct" in df.columns
+    
+    df.loc[df["id"] == inv_id1, "current_value"] = 150000.0
+    upd_cnt = update_investments_df(df)
+    assert upd_cnt >= 1
+    
+    ai_suggestions = generate_ai_portfolio_suggestions(df)
+    assert "summary" in ai_suggestions
+    assert "recommendations" in ai_suggestions
+    
+    del_ok = delete_investment(inv_id1)
+    assert del_ok is True
+    print("✅ Active Investment Portfolio & Holdings Tracker tests passed.")
+
 if __name__ == "__main__":
     try:
         test_strict_uploaded_date_enforcement()
@@ -212,6 +238,7 @@ if __name__ == "__main__":
         test_period_surge_analytics()
         test_smart_suggested_budgets()
         test_investment_planner()
+        test_active_holdings_tracker()
         print("🎉 All test suite assertions passed successfully!")
     finally:
         if os.path.exists(database.DB_PATH):

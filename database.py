@@ -223,6 +223,20 @@ def init_db():
         )
     """)
     
+    # Active Investments Holdings Table
+    cursor.execute("""
+        CREATE TABLE IF NOT EXISTS investments (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            username TEXT NOT NULL,
+            platform TEXT NOT NULL,
+            investment_type TEXT NOT NULL,
+            investment_amount REAL NOT NULL,
+            year_invested INTEGER NOT NULL,
+            current_value REAL NOT NULL,
+            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+        )
+    """)
+    
     # Seed default admin if users table is empty
     cursor.execute("SELECT COUNT(*) FROM users")
     user_cnt = cursor.fetchone()[0]
@@ -877,3 +891,86 @@ def delete_multiple_expenses(id_list: List[int]) -> int:
     conn.commit()
     conn.close()
     return cnt
+
+# ----------------------------------------------------
+# ACTIVE INVESTMENT HOLDINGS CRUD
+# ----------------------------------------------------
+def insert_investment(
+    username: str,
+    platform: str,
+    investment_type: str,
+    investment_amount: float,
+    year_invested: int,
+    current_value: float
+) -> int:
+    conn = get_connection()
+    cursor = conn.cursor()
+    cursor.execute("""
+        INSERT INTO investments (username, platform, investment_type, investment_amount, year_invested, current_value)
+        VALUES (?, ?, ?, ?, ?, ?)
+    """, (username, platform, investment_type, float(investment_amount), int(year_invested), float(current_value)))
+    inv_id = cursor.lastrowid
+    conn.commit()
+    conn.close()
+    return inv_id
+
+def get_user_investments_df(username: Optional[str] = None) -> pd.DataFrame:
+    conn = get_connection()
+    query = "SELECT id, username, platform, investment_type, investment_amount, year_invested, current_value, created_at FROM investments"
+    params = []
+    if username:
+        query += " WHERE username = ?"
+        params.append(username)
+    query += " ORDER BY current_value DESC"
+    df = pd.read_sql_query(query, conn, params=params)
+    conn.close()
+    if not df.empty:
+        df["investment_amount"] = df["investment_amount"].astype(float)
+        df["current_value"] = df["current_value"].astype(float)
+        df["unrealized_gain"] = (df["current_value"] - df["investment_amount"]).astype(float)
+        amt = df["investment_amount"]
+        returns_pct = ((df["current_value"] - amt) / amt) * 100.0
+        df["returns_pct"] = returns_pct.where(amt > 0, 0.0).round(2)
+    return df
+
+def update_investments_df(df: pd.DataFrame) -> int:
+    if df.empty:
+        return 0
+    conn = get_connection()
+    cursor = conn.cursor()
+    updated_count = 0
+    for idx, row in df.iterrows():
+        inv_id = row.get("id")
+        if not inv_id or pd.isna(inv_id):
+            continue
+        platform = str(row.get("platform", "Other"))
+        inv_type = str(row.get("investment_type", "Other"))
+        try:
+            inv_amt = float(row.get("investment_amount", 0.0))
+            yr = int(row.get("year_invested", 2024))
+            curr_val = float(row.get("current_value", inv_amt))
+        except (ValueError, TypeError):
+            continue
+
+        cursor.execute("""
+            UPDATE investments
+            SET platform = ?,
+                investment_type = ?,
+                investment_amount = ?,
+                year_invested = ?,
+                current_value = ?
+            WHERE id = ?
+        """, (platform, inv_type, inv_amt, yr, curr_val, int(inv_id)))
+        updated_count += 1
+
+    conn.commit()
+    conn.close()
+    return updated_count
+
+def delete_investment(investment_id: int) -> bool:
+    conn = get_connection()
+    cursor = conn.cursor()
+    cursor.execute("DELETE FROM investments WHERE id = ?", (int(investment_id),))
+    conn.commit()
+    conn.close()
+    return True

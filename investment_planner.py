@@ -185,3 +185,117 @@ def generate_ai_wealth_advice(plan: Dict[str, Any]) -> Dict[str, Any]:
         "summary": f"Based on your age ({plan['age']}) and monthly investment budget of ₹ {int(plan['investable_sip_monthly']):,}, your wealth plan is optimized for an expected ~{plan['blended_cagr_pct']}% blended CAGR.",
         "key_takeaways": takeaways
     }
+
+def generate_ai_portfolio_suggestions(holdings_df: Any) -> Dict[str, Any]:
+    """
+    Generates AI suggestions for active portfolio holdings across platforms and investment types.
+    Uses Google Gemini AI (with fallback to an intelligent rule engine).
+    """
+    if holdings_df is None or holdings_df.empty:
+        return {
+            "summary": "No active holdings found in your portfolio. Add assets to get AI recommendations.",
+            "recommendations": []
+        }
+
+    total_invested = float(holdings_df["investment_amount"].sum()) if "investment_amount" in holdings_df.columns else 0.0
+    total_current = float(holdings_df["current_value"].sum()) if "current_value" in holdings_df.columns else 0.0
+    total_gain = total_current - total_invested
+    overall_return_pct = round((total_gain / total_invested) * 100.0, 2) if total_invested > 0 else 0.0
+
+    by_type = holdings_df.groupby("investment_type")["current_value"].sum().to_dict() if "investment_type" in holdings_df.columns else {}
+    by_platform = holdings_df.groupby("platform")["current_value"].sum().to_dict() if "platform" in holdings_df.columns else {}
+
+    holdings_summary = holdings_df[["platform", "investment_type", "investment_amount", "current_value", "year_invested"]].to_dict("records")
+
+    # 1. Try Gemini AI generation
+    try:
+        from google import genai
+        api_key = os.environ.get("GEMINI_API_KEY")
+        if not api_key:
+            try:
+                import streamlit as st
+                api_key = st.secrets.get("GEMINI_API_KEY")
+            except Exception:
+                pass
+
+        if api_key:
+            client = genai.Client(api_key=api_key)
+            prompt = f"""
+            Act as an expert Indian Wealth Manager and Portfolio Analyst.
+            Analyze the user's active holdings:
+            - Total Invested Capital: ₹ {total_invested:,}
+            - Current Portfolio Value: ₹ {total_current:,} (Unrealized Gain: ₹ {total_gain:,}, Overall Return: {overall_return_pct}%)
+            - Asset Breakdown by Type: {by_type}
+            - Platform Distribution: {by_platform}
+            - Individual Holdings: {holdings_summary}
+
+            Provide actionable, smart suggestions for:
+            1. Platform & Broker Risk Concentration
+            2. Asset Class Balance (Equity, Mutual Funds, EPF, PPF, Startup, etc.)
+            3. Tax Efficiency (Section 80C, LTCG ₹1.25L exemption, Debt taxation)
+            4. Rebalancing & Profit Booking Advice
+
+            Format response as JSON with keys:
+            - 'summary': string summary paragraph
+            - 'recommendations': list of objects with 'title', 'observation', 'suggestion'
+            """
+            response = client.models.generate_content(
+                model="gemini-2.5-flash",
+                contents=prompt
+            )
+            if response and response.text:
+                import json
+                cleaned = response.text.replace("```json", "").replace("```", "").strip()
+                parsed = json.loads(cleaned)
+                return parsed
+    except Exception:
+        pass
+
+    # 2. Rule-based Fallback Suggestions
+    recs = []
+
+    if by_type:
+        max_type = max(by_type, key=by_type.get)
+        max_type_val = by_type[max_type]
+        type_pct = (max_type_val / total_current) * 100.0 if total_current > 0 else 0
+        if type_pct > 60:
+            recs.append({
+                "title": f"⚠️ Asset Type Concentration in {max_type}",
+                "observation": f"{max_type} comprises {type_pct:.1f}% (₹ {int(max_type_val):,}) of your total portfolio.",
+                "suggestion": f"Consider diversifying incremental monthly SIPs into complementary asset classes (e.g. PPF/EPF for fixed income or Index Funds for broad equity exposure)."
+            })
+
+    if len(by_platform) == 1:
+        plat_name = list(by_platform.keys())[0]
+        recs.append({
+            "title": f"📌 Platform Concentration ({plat_name})",
+            "observation": f"All holdings are centralized on a single platform ({plat_name}).",
+            "suggestion": "While convenient, consider holding long-term debt or government instruments (SGB, PPF, Post Office NSC) directly with primary institutions or secondary demat brokers."
+        })
+
+    tax_types = [t for t in by_type.keys() if t in ["EPF", "PPF", "NSC", "KVP"]]
+    if not tax_types:
+        recs.append({
+            "title": "🛡️ Tax-Deferred Fixed Income Gap (Section 80C)",
+            "observation": "No active EPF, PPF, NSC, or KVP holdings detected in your portfolio.",
+            "suggestion": "Evaluate opening a PPF or increasing Voluntary EPF (VPF) to lock in tax-free 7.1%+ returns under Section 80C."
+        })
+    else:
+        recs.append({
+            "title": "🎉 Healthy Tax-Saving Fixed Income Allocation",
+            "observation": f"Actively holding tax-advantaged instruments: {', '.join(tax_types)}.",
+            "suggestion": "Maintain disciplined annual contributions to maximize compounding."
+        })
+
+    if overall_return_pct > 15:
+        recs.append({
+            "title": f"🚀 Strong Portfolio Returns ({overall_return_pct}%)",
+            "observation": f"Your overall portfolio has generated +₹ {int(total_gain):,} in unrealized gains.",
+            "suggestion": "Review long-term vs short-term holdings to optimize LTCG tax harvesting (₹ 1.25 Lakh tax-free threshold annually)."
+        })
+
+    return {
+        "summary": f"Your portfolio of **{len(holdings_df)}** holding(s) is valued at **₹ {int(total_current):,}** with an overall return of **{overall_return_pct}%**.",
+        "recommendations": recs
+    }
+
