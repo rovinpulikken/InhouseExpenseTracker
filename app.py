@@ -60,7 +60,11 @@ from database import (
     update_user_role,
     get_all_users,
     delete_user,
-    get_db_type
+    get_db_type,
+    insert_investment,
+    get_user_investments_df,
+    update_investments_df,
+    delete_investment
 )
 from cpi_data import (
     get_cpi_df,
