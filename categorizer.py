@@ -232,3 +232,111 @@ def apply_ml_auto_categorization(df: Any, historical_records: List[Dict[str, Any
 
     return df_copy, modified_count, sample_count
 
+def generate_ai_spend_rationalization(surge_df: Any, timeframe_label: str = "Selected Period") -> Dict[str, Any]:
+    """
+    Generates AI spend rationalization, root cause analysis, and savings advice for surging categories.
+    Uses Google Gemini AI (google-genai / google.genai) with fallback to an intelligent rule engine.
+    """
+    if surge_df is None or surge_df.empty:
+        return {
+            "summary": "No surge data available for analysis.",
+            "recommendations": [],
+            "total_potential_savings": "₹ 0"
+        }
+
+    # Filter surging / anomaly categories
+    surging_df = surge_df[surge_df["Period_Spend"] > surge_df["Baseline_Avg"]].copy()
+    if surging_df.empty:
+        return {
+            "summary": f"Great job! Your spending in {timeframe_label} is strictly within or below historical baseline averages across all categories.",
+            "recommendations": [
+                {
+                    "category": "All Categories",
+                    "issue": "Disciplined Spending",
+                    "suggestion": "Keep maintaining your current budget discipline and allocation.",
+                    "est_savings": "₹ 0"
+                }
+            ],
+            "total_potential_savings": "₹ 0"
+        }
+
+    top_surges = surging_df.head(5).to_dict("records")
+    
+    # 1. Try Gemini AI generation first
+    try:
+        import os
+        from google import genai
+
+        api_key = os.environ.get("GEMINI_API_KEY")
+        if not api_key:
+            try:
+                import streamlit as st
+                api_key = st.secrets.get("GEMINI_API_KEY")
+            except Exception:
+                pass
+
+        if api_key:
+            client = genai.Client(api_key=api_key)
+            prompt = f"""
+            Act as an expert Indian Personal Finance & Household Budget Advisor.
+            Analyze the following top surging expense categories for timeframe '{timeframe_label}':
+            {top_surges}
+
+            Provide actionable, specific cost rationalization tips tailored for Indian households (e.g. groceries, Swiggy/Zomato, electricity, maid salary, OTT, fuel/FASTag).
+            Format response as concise JSON with keys:
+            - 'summary': string summary of overall surge situation
+            - 'recommendations': list of objects with 'category', 'issue', 'suggestion', 'est_savings'
+            - 'total_potential_savings': string (e.g. '₹ 3,500 / month')
+            """
+            response = client.models.generate_content(
+                model="gemini-2.5-flash",
+                contents=prompt
+            )
+            if response and response.text:
+                import json
+                cleaned = response.text.replace("```json", "").replace("```", "").strip()
+                parsed = json.loads(cleaned)
+                return parsed
+    except Exception:
+        pass
+
+    # 2. Intelligent Fallback Rule Engine for Spend Rationalization
+    recs = []
+    total_savings = 0.0
+
+    for item in top_surges:
+        cat = str(item.get("category", ""))
+        spend = float(item.get("Period_Spend", 0.0))
+        base = float(item.get("Baseline_Avg", 0.0))
+        diff = float(item.get("Surge_Amount", spend - base))
+        surge_pct = float(item.get("Surge_%", 0.0))
+        est = max(500.0, round(diff * 0.35, -2))
+        total_savings += est
+
+        if "Groceries" in cat or "Vegetables" in cat:
+            sug = "Switch non-perishables to monthly bulk store (DMart/Ration) & use local mandi for weekly produce instead of instant apps (Blinkit/Zepto)."
+        elif "Swiggy" in cat or "Dining" in cat:
+            sug = "Cap weekend eating out to 2x/month & disable app notification prompts to curb impulse online food ordering."
+        elif "Utilities" in cat:
+            sug = "Verify AC/geyser timer settings, replace legacy bulbs with 9W LEDs, and consolidate family mobile recharges under family plans."
+        elif "Transportation" in cat or "Fuel" in cat:
+            sug = "Plan errands to combine trips, utilize FASTag monthly passes for frequent routes, and consider carpooling for commutes."
+        elif "Entertainment" in cat:
+            sug = "Audit active OTT subscriptions (Netflix/Hotstar/Prime) and cancel unused single-screen plans."
+        else:
+            sug = f"Set a strict monthly ceiling of ₹ {int(base):,} for {cat} and review recurring individual receipts."
+
+        recs.append({
+            "category": cat,
+            "issue": f"Spiked by {surge_pct:.1f}% (+₹ {int(diff):,} above baseline)",
+            "suggestion": sug,
+            "est_savings": f"₹ {int(est):,}"
+        })
+
+    return {
+        "summary": f"Identified **{len(top_surges)}** category surge(s) in {timeframe_label}. Implementing rationalization can save up to **₹ {int(total_savings):,}**.",
+        "recommendations": recs,
+        "total_potential_savings": f"₹ {int(total_savings):,}"
+    }
+
+

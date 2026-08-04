@@ -152,6 +152,25 @@ def test_ml_auto_categorization():
     
     print("✅ Machine Learning Auto-Categorization tests passed.")
 
+def test_period_surge_analytics():
+    init_db()
+    from database import get_period_surge_analytics
+    from categorizer import generate_ai_spend_rationalization
+    
+    surge_df, periods = get_period_surge_analytics(timeframe_type="Month-wise", selected_period=None, fy="FY 2024-25")
+    assert not surge_df.empty
+    assert "Period_Spend" in surge_df.columns
+    assert "Baseline_Avg" in surge_df.columns
+    assert "Surge_%" in surge_df.columns
+    assert "Is_Anomaly" in surge_df.columns
+    
+    ai_advice = generate_ai_spend_rationalization(surge_df, timeframe_label="Month 2024-05")
+    assert "summary" in ai_advice
+    assert "recommendations" in ai_advice
+    assert "total_potential_savings" in ai_advice
+    
+    print("✅ Period Surge Analytics & AI Spend Rationalization tests passed.")
+
 if __name__ == "__main__":
     try:
         test_strict_uploaded_date_enforcement()
@@ -159,6 +178,7 @@ if __name__ == "__main__":
         test_private_vs_family_visibility_scoping()
         test_inline_database_update()
         test_ml_auto_categorization()
+        test_period_surge_analytics()
         print("🎉 All test suite assertions passed successfully!")
     finally:
         if os.path.exists(database.DB_PATH):

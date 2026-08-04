@@ -10,7 +10,8 @@ import streamlit as st
 from categorizer import (
     auto_categorize_description,
     apply_ml_auto_categorization,
-    MLCategorizer
+    MLCategorizer,
+    generate_ai_spend_rationalization
 )
 from config import (
     EXPENSE_CATEGORIES,
@@ -29,6 +30,7 @@ from database import (
     get_monthly_trend_df,
     get_quarterly_trend_df,
     get_surge_categories,
+    get_period_surge_analytics,
     set_category_budget,
     get_budget_status,
     delete_expense,
@@ -839,31 +841,122 @@ else:
             st.dataframe(pd.DataFrame(cat_cpi_list), use_container_width=True, hide_index=True)
 
     # ----------------------------------------------------
-    # TAB 6: EXPENSE SURGE DETECTOR
+    # TAB 6: EXPENSE SURGE DETECTOR & AI SAVINGS ADVISOR
     # ----------------------------------------------------
     with tab_surge:
-        st.subheader(f"🚨 Expense Surge & Spike Detector ({selected_fy})")
-        st.write("Identifies categories where your spending is spiking above trailing averages or exceeding the inflation baseline.")
-        
-        surge_df = get_surge_categories(fy=selected_fy, username=current_user["username"], view_mode=view_mode)
-        
-        if surge_df.empty:
-            st.warning("Insufficient transaction data to compute surge detection.")
-        else:
-            st.markdown("#### Expense Surge Radar")
-            st.dataframe(
-                surge_df[["category", "Latest_Month_Spend", "Hist_Monthly_Avg", "Surge_%", "Total", "Count"]],
-                column_config={
-                    "category": st.column_config.TextColumn("Category"),
-                    "Latest_Month_Spend": st.column_config.NumberColumn("Recent Spend (₹)", format="₹ %.2f"),
-                    "Hist_Monthly_Avg": st.column_config.NumberColumn("Hist Monthly Avg (₹)", format="₹ %.2f"),
-                    "Surge_%": st.column_config.NumberColumn("Spike / Surge %", format="%.1f %%"),
-                    "Total": st.column_config.NumberColumn("FY Total (₹)", format="₹ %.2f"),
-                    "Count": st.column_config.NumberColumn("Entries")
-                },
-                use_container_width=True,
-                hide_index=True
+        st.subheader("🚨 Expense Surge & Anomaly Detector")
+        st.caption("Select a Month, Quarter, Half-Year, or Financial Year to pinpoint categories spiking above baseline averages and generate AI cost-savings advice.")
+
+        s_col1, s_col2 = st.columns([1, 1])
+        with s_col1:
+            timeframe_type = st.selectbox(
+                "📅 Select Timeframe Granularity",
+                options=["Month-wise", "Quarter-wise", "Half Year-wise", "Financial Year"],
+                key="surge_tf_type"
             )
+
+        dummy_df, available_periods = get_period_surge_analytics(
+            timeframe_type=timeframe_type,
+            selected_period=None,
+            fy=selected_fy,
+            username=current_user["username"],
+            view_mode=view_mode
+        )
+
+        with s_col2:
+            if available_periods:
+                selected_period = st.selectbox("🎯 Select Target Period", options=available_periods, key="surge_target_period")
+            else:
+                selected_period = None
+                st.info("No records available for the selected timeframe.")
+
+        if selected_period:
+            period_surge_df, _ = get_period_surge_analytics(
+                timeframe_type=timeframe_type,
+                selected_period=selected_period,
+                fy=selected_fy,
+                username=current_user["username"],
+                view_mode=view_mode
+            )
+
+            if not period_surge_df.empty:
+                # Key Metrics Cards
+                active_spends = period_surge_df[period_surge_df["Period_Spend"] > 0]
+                anomalies_df = period_surge_df[period_surge_df["Is_Anomaly"] == True]
+                top_surging_cat = period_surge_df.iloc[0]["category"] if not period_surge_df.empty else "N/A"
+                top_surge_pct = period_surge_df.iloc[0]["Surge_%"] if not period_surge_df.empty else 0.0
+                total_excess = period_surge_df["Surge_Amount"].apply(lambda x: max(0.0, x)).sum()
+
+                m_c1, m_c2, m_c3 = st.columns(3)
+                with m_c1:
+                    st.metric("🔥 Top Surging Category", top_surging_cat, f"+{top_surge_pct:.1f}%")
+                with m_c2:
+                    st.metric("💸 Total Excess Spend Over Baseline", format_inr(total_excess))
+                with m_c3:
+                    st.metric("⚠️ Detected Anomaly Spikes", f"{len(anomalies_df)} Categories")
+
+                st.markdown("<br>", unsafe_allow_html=True)
+
+                # Grouped Bar Chart: Selected Period Spend vs Baseline Average
+                st.markdown(f"#### 📊 Category Spend vs Baseline Average ({selected_period})")
+                chart_df = period_surge_df[period_surge_df["Period_Spend"] > 0].copy()
+                if not chart_df.empty:
+                    fig_surge = px.bar(
+                        chart_df,
+                        x="category",
+                        y=["Period_Spend", "Baseline_Avg"],
+                        barmode="group",
+                        labels={"value": "Amount (₹)", "category": "Category", "variable": "Metric"},
+                        color_discrete_map={"Period_Spend": "#ef4444", "Baseline_Avg": "#3b82f6"},
+                        height=400
+                    )
+                    fig_surge.update_layout(
+                        legend=dict(title=None, orientation="h", yanchor="bottom", y=1.02, xanchor="right", x=1),
+                        margin=dict(l=20, r=20, t=30, b=20)
+                    )
+                    st.plotly_chart(fig_surge, use_container_width=True)
+
+                # Detailed Table
+                st.markdown(f"#### 📝 Surge & Anomaly Analysis Table ({selected_period})")
+                st.dataframe(
+                    period_surge_df[["category", "Period_Spend", "Baseline_Avg", "Surge_Amount", "Surge_%", "Is_Anomaly"]],
+                    column_config={
+                        "category": st.column_config.TextColumn("Category"),
+                        "Period_Spend": st.column_config.NumberColumn(f"Spend in {selected_period} (₹)", format="₹ %.2f"),
+                        "Baseline_Avg": st.column_config.NumberColumn("Historical Baseline Avg (₹)", format="₹ %.2f"),
+                        "Surge_Amount": st.column_config.NumberColumn("Excess / Surge (₹)", format="₹ %.2f"),
+                        "Surge_%": st.column_config.NumberColumn("Spike %", format="%.1f %%"),
+                        "Is_Anomaly": st.column_config.CheckboxColumn("Anomaly Tag")
+                    },
+                    use_container_width=True,
+                    hide_index=True
+                )
+
+                st.markdown("<hr>", unsafe_allow_html=True)
+
+                # AI Spend Rationalization & Savings Advisor Section
+                st.markdown(f"### 🤖 Gemini AI & ML Spend Rationalization Advisor ({selected_period})")
+                st.caption("Generate actionable cost reduction strategies, root cause insights, and target savings tailored for your household.")
+
+                if st.button("💡 Generate AI Cost Savings & Rationalization Strategy", type="primary", use_container_width=True):
+                    with st.spinner("🤖 Analyzing spending patterns with Machine Learning & Gemini AI..."):
+                        ai_advice = generate_ai_spend_rationalization(period_surge_df, timeframe_label=f"{timeframe_type} ({selected_period})")
+
+                    st.success("🎉 AI Spend Rationalization Report Generated!")
+                    st.info(ai_advice.get("summary", ""))
+
+                    st.markdown(f"#### 💰 Potential Target Savings: **{ai_advice.get('total_potential_savings', '₹ 0')}**")
+
+                    recs = ai_advice.get("recommendations", [])
+                    if recs:
+                        for idx, rec in enumerate(recs, 1):
+                            with st.expander(f"💡 #{idx} {rec.get('category', 'Category')} — Estimated Savings: {rec.get('est_savings', '₹ 0')}", expanded=True):
+                                st.markdown(f"**Issue Identified**: {rec.get('issue', '')}")
+                                st.markdown(f"**Actionable Advice**: {rec.get('suggestion', '')}")
+            else:
+                st.info("No transaction data found for this period.")
+        else:
+            st.info("No period available to display surge analytics.")
 
     # ----------------------------------------------------
     # TAB 7: BUDGETING & TARGETS

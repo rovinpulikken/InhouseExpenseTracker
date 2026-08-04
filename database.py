@@ -522,6 +522,83 @@ def get_quarterly_trend_df(fy: Optional[str] = None, username: Optional[str] = N
     conn.close()
     return df
 
+def get_period_surge_analytics(
+    timeframe_type: str = "Month-wise",
+    selected_period: Optional[str] = None,
+    fy: Optional[str] = None,
+    username: Optional[str] = None,
+    view_mode: str = "Family"
+) -> Tuple[pd.DataFrame, List[str]]:
+    """
+    Computes period spend vs historical baseline average per category for any timeframe:
+    - timeframe_type: 'Month-wise', 'Quarter-wise', 'Half Year-wise', 'Financial Year'
+    - selected_period: e.g. '2024-05', 'Q1', 'H1', 'FY 2024-25'
+    Returns (surge_df, available_periods_list).
+    """
+    all_df = get_expenses_df(fy=None, username=username, view_mode=view_mode)
+    if all_df.empty:
+        return pd.DataFrame(), []
+
+    all_df["expense_date"] = pd.to_datetime(all_df["expense_date"])
+    all_df["Month_Year"] = all_df["expense_date"].dt.strftime("%Y-%m")
+
+    # Determine grouping column based on timeframe_type
+    if timeframe_type == "Month-wise":
+        period_col = "Month_Year"
+    elif timeframe_type == "Quarter-wise":
+        period_col = "quarter"
+    elif timeframe_type == "Half Year-wise":
+        period_col = "half_year"
+    else:
+        period_col = "financial_year"
+
+    # Filter by FY if specified and not 'All FYs'
+    filtered_df = all_df.copy()
+    if fy and fy != "All FYs":
+        filtered_df = filtered_df[filtered_df["financial_year"] == fy]
+
+    if filtered_df.empty:
+        return pd.DataFrame(), []
+
+    available_periods = sorted(filtered_df[period_col].dropna().unique().tolist(), reverse=True)
+    if not available_periods:
+        return pd.DataFrame(), []
+
+    target_period = selected_period if (selected_period and selected_period in available_periods) else available_periods[0]
+
+    # Selected period dataframe
+    period_df = filtered_df[filtered_df[period_col] == target_period]
+    period_cat_spend = period_df.groupby("category")["amount"].sum().reset_index()
+    period_cat_spend.rename(columns={"amount": "Period_Spend"}, inplace=True)
+
+    # Historical baseline average per category
+    period_summary = filtered_df.groupby([period_col, "category"])["amount"].sum().reset_index()
+    hist_baseline = period_summary[period_summary[period_col] != target_period].groupby("category")["amount"].mean().reset_index()
+    if hist_baseline.empty:
+        hist_baseline = period_summary.groupby("category")["amount"].mean().reset_index()
+    hist_baseline.rename(columns={"amount": "Baseline_Avg"}, inplace=True)
+
+    # Master Category DataFrame
+    cat_df = pd.DataFrame({"category": EXPENSE_CATEGORIES})
+    merged = pd.merge(cat_df, period_cat_spend, on="category", how="left").fillna(0.0)
+    merged = pd.merge(merged, hist_baseline, on="category", how="left").fillna(0.0)
+
+    merged["Period_Spend"] = merged["Period_Spend"].astype(float)
+    merged["Baseline_Avg"] = merged["Baseline_Avg"].astype(float)
+    merged["Surge_Amount"] = (merged["Period_Spend"] - merged["Baseline_Avg"]).astype(float)
+
+    baseline_s = merged["Baseline_Avg"]
+    surge_pct = ((merged["Period_Spend"] - baseline_s) / baseline_s) * 100.0
+    merged["Surge_%"] = surge_pct.where(baseline_s > 0, 0.0).astype(float)
+
+    # Anomaly Flag: Surge >= 15% AND Surge Amount > 500
+    merged["Is_Anomaly"] = (merged["Surge_%"] >= 15.0) & (merged["Surge_Amount"] > 500.0)
+
+    # Sort by Surge_% descending
+    merged = merged.sort_values(by="Surge_%", ascending=False).reset_index(drop=True)
+
+    return merged, available_periods
+
 def get_surge_categories(fy: str, username: Optional[str] = None, view_mode: str = "Family") -> pd.DataFrame:
     df = get_expenses_df(fy=fy, username=username, view_mode=view_mode)
     if df.empty:
