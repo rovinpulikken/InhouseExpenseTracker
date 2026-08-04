@@ -10,9 +10,22 @@ from config import get_indian_fy, get_indian_quarter, EXPENSE_CATEGORIES
 DB_DIR = os.path.join(os.path.dirname(__file__), "data")
 DB_PATH = os.path.join(DB_DIR, "expenses.db")
 
+def get_turso_credentials() -> Tuple[Optional[str], Optional[str]]:
+    url = os.environ.get("TURSO_DATABASE_URL")
+    token = os.environ.get("TURSO_AUTH_TOKEN")
+    if not url or not token:
+        try:
+            import streamlit as st
+            if not url:
+                url = st.secrets.get("TURSO_DATABASE_URL")
+            if not token:
+                token = st.secrets.get("TURSO_AUTH_TOKEN")
+        except Exception:
+            pass
+    return url, token
+
 def get_db_type() -> str:
-    turso_url = os.environ.get("TURSO_DATABASE_URL")
-    turso_token = os.environ.get("TURSO_AUTH_TOKEN")
+    turso_url, turso_token = get_turso_credentials()
     if turso_url and turso_token:
         try:
             import libsql_experimental
@@ -22,8 +35,7 @@ def get_db_type() -> str:
     return "Local SQLite Database"
 
 def get_connection():
-    turso_url = os.environ.get("TURSO_DATABASE_URL")
-    turso_token = os.environ.get("TURSO_AUTH_TOKEN")
+    turso_url, turso_token = get_turso_credentials()
     
     if turso_url and turso_token:
         try:
