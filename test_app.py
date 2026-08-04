@@ -188,6 +188,20 @@ def test_smart_suggested_budgets():
     assert cnt == 2
     print("✅ Smart Suggested Budgets & Batch Update tests passed.")
 
+def test_investment_planner():
+    from investment_planner import calculate_investment_plan, generate_ai_wealth_advice
+    
+    plan = calculate_investment_plan(age=30, current_savings=600000.0, monthly_investment_budget=25000.0, monthly_expenses=40000.0)
+    assert plan["equity_pct"] == 80.0
+    assert plan["investable_sip_monthly"] > 0
+    assert 20 in plan["projections"]
+    assert plan["projections"][20]["total_future_value"] > plan["projections"][20]["total_invested"]
+    
+    advice = generate_ai_wealth_advice(plan)
+    assert "summary" in advice
+    assert "key_takeaways" in advice
+    print("✅ Investment & Wealth Portfolio Planner tests passed.")
+
 if __name__ == "__main__":
     try:
         test_strict_uploaded_date_enforcement()
@@ -197,6 +211,7 @@ if __name__ == "__main__":
         test_ml_auto_categorization()
         test_period_surge_analytics()
         test_smart_suggested_budgets()
+        test_investment_planner()
         print("🎉 All test suite assertions passed successfully!")
     finally:
         if os.path.exists(database.DB_PATH):

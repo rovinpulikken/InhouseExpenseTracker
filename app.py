@@ -13,6 +13,10 @@ from categorizer import (
     MLCategorizer,
     generate_ai_spend_rationalization
 )
+from investment_planner import (
+    calculate_investment_plan,
+    generate_ai_wealth_advice
+)
 from config import (
     EXPENSE_CATEGORIES,
     get_indian_fy,
@@ -992,186 +996,325 @@ else:
     # TAB 7: BUDGETING & TARGETS
     # ----------------------------------------------------
     with tab_budget:
-        st.subheader(f"🎯 Budgeting & Target Allocation ({selected_fy})")
-        st.caption("Set category budget caps, auto-calculate target allocations based on historical monthly spending averages, and fine-tune limits using interactive + / - controls.")
+        st.subheader(f"🎯 Budgeting, Targets & Wealth Portfolio ({selected_fy})")
+        
+        subtab_budget, subtab_invest = st.tabs([
+            "🎯 Category Budget Planner & Performance",
+            "📈 Investment & Wealth Portfolio Planner"
+        ])
 
         target_fy_clean = selected_fy if selected_fy != "All FYs" else (all_fys[0] if all_fys else "FY 2024-25")
 
-        # ------------------------------------------------
-        # SECTION 1: SMART SUGGESTED BUDGET ALLOCATOR
-        # ------------------------------------------------
-        st.markdown("""
-        <div style="background-color: #1e293b; padding: 14px 18px; border-radius: 8px; border-left: 4px solid #10b981; margin-bottom: 15px;">
-            <div style="font-weight: 600; color: #10b981; font-size: 0.95rem;">💡 Smart Suggested Budget Calculator</div>
-            <div style="color: #94a3b8; font-size: 0.85rem;">Specify your overall target household monthly spend, or fill limits with your past monthly spending averages.</div>
-        </div>
-        """, unsafe_allow_html=True)
+        with subtab_budget:
+            st.caption("Set category budget caps, auto-calculate target allocations based on historical monthly spending averages, and fine-tune limits using interactive + / - controls.")
 
-        suggested_base_df = get_suggested_budgets(fy=target_fy_clean, username=current_user["username"], view_mode=view_mode)
-        total_hist_avg_monthly = float(suggested_base_df["hist_monthly_avg"].sum())
+            # ------------------------------------------------
+            # SECTION 1: SMART SUGGESTED BUDGET ALLOCATOR
+            # ------------------------------------------------
+            st.markdown("""
+            <div style="background-color: #1e293b; padding: 14px 18px; border-radius: 8px; border-left: 4px solid #10b981; margin-bottom: 15px;">
+                <div style="font-weight: 600; color: #10b981; font-size: 0.95rem;">💡 Smart Suggested Budget Calculator</div>
+                <div style="color: #94a3b8; font-size: 0.85rem;">Specify your overall target household monthly spend, or fill limits with your past monthly spending averages.</div>
+            </div>
+            """, unsafe_allow_html=True)
 
-        t_col1, t_col2, t_col3 = st.columns([2, 1.2, 1.2])
-        with t_col1:
-            target_monthly_input = st.number_input(
-                "💰 Target Total Household Monthly Spend (₹)",
-                min_value=1000.0,
-                value=max(50000.0, float(round(total_hist_avg_monthly, -3))) if total_hist_avg_monthly > 0 else 75000.0,
-                step=5000.0,
-                help="Set your total desired monthly expenditure ceiling across all categories."
-            )
+            suggested_base_df = get_suggested_budgets(fy=target_fy_clean, username=current_user["username"], view_mode=view_mode)
+            total_hist_avg_monthly = float(suggested_base_df["hist_monthly_avg"].sum())
 
-        with t_col2:
-            st.markdown("<br>", unsafe_allow_html=True)
-            btn_apply_hist = st.button(
-                "⚡ Fill Historical Averages",
-                type="secondary",
-                use_container_width=True,
-                help="Populate suggested budgets matching exact past monthly spending averages."
-            )
-
-        with t_col3:
-            st.markdown("<br>", unsafe_allow_html=True)
-            btn_apply_prop = st.button(
-                "🎯 Auto-Allocate Target Proportionally",
-                type="primary",
-                use_container_width=True,
-                help="Distribute your Target Total Spend across categories proportionally based on past spending ratios."
-            )
-
-        # Handle Preset Actions in session state
-        if "budget_dict" not in st.session_state:
-            st.session_state["budget_dict"] = {}
-            for idx, r in suggested_base_df.iterrows():
-                c = r["category"]
-                m = float(r["monthly_limit"]) if float(r["monthly_limit"]) > 0 else float(r["suggested_monthly"])
-                st.session_state["budget_dict"][c] = m
-
-        if btn_apply_hist:
-            for idx, r in suggested_base_df.iterrows():
-                c = r["category"]
-                st.session_state["budget_dict"][c] = round(float(r["hist_monthly_avg"]), 2)
-            st.success("⚡ Filled all category limits with past monthly averages!")
-            st.rerun()
-
-        if btn_apply_prop:
-            prop_df = get_suggested_budgets(fy=target_fy_clean, username=current_user["username"], view_mode=view_mode, target_total_monthly=target_monthly_input)
-            for idx, r in prop_df.iterrows():
-                c = r["category"]
-                st.session_state["budget_dict"][c] = round(float(r["suggested_monthly"]), 2)
-            st.success(f"🎯 Proportions calculated and allocated matching ₹ {format_inr(target_monthly_input)} target!")
-            st.rerun()
-
-        # ------------------------------------------------
-        # SECTION 2: INTERACTIVE CATEGORY BUDGET ADJUSTER (+/-)
-        # ------------------------------------------------
-        st.markdown("<br>", unsafe_allow_html=True)
-        st.markdown("#### ⚙️ Category Budget Planner & Interactive Adjuster (+ / -)")
-        st.caption("Use the quick `+` and `-` modifier buttons to fine-tune each category limit up or down.")
-
-        hist_avg_map = dict(zip(suggested_base_df["category"], suggested_base_df["hist_monthly_avg"]))
-
-        for cat in EXPENSE_CATEGORIES:
-            current_val = float(st.session_state["budget_dict"].get(cat, 10000.0))
-            h_avg = float(hist_avg_map.get(cat, 0.0))
-
-            cat_col1, cat_col2, cat_col3, cat_col4, cat_col5 = st.columns([2.5, 1.8, 2.5, 1.8, 1.8])
-
-            with cat_col1:
-                st.markdown(f"**{cat}**")
-                st.caption(f"Hist Avg: {format_inr(h_avg)} / mo")
-
-            with cat_col2:
-                b_minus1k = st.button("➖ ₹1k", key=f"sub_1k_{cat}", help=f"Decrease {cat} budget by ₹1,000")
-                b_minus5p = st.button("➖ 5%", key=f"sub_5p_{cat}", help=f"Decrease {cat} budget by 5%")
-                if b_minus1k:
-                    st.session_state["budget_dict"][cat] = max(0.0, round(current_val - 1000.0, 2))
-                    st.rerun()
-                if b_minus5p:
-                    st.session_state["budget_dict"][cat] = max(0.0, round(current_val * 0.95, 2))
-                    st.rerun()
-
-            with cat_col3:
-                new_val = st.number_input(
-                    f"Monthly Limit (₹)",
-                    min_value=0.0,
-                    value=float(st.session_state["budget_dict"].get(cat, 10000.0)),
-                    step=500.0,
-                    key=f"input_m_{cat}",
-                    label_visibility="collapsed"
+            t_col1, t_col2, t_col3 = st.columns([2, 1.2, 1.2])
+            with t_col1:
+                target_monthly_input = st.number_input(
+                    "💰 Target Total Household Monthly Spend (₹)",
+                    min_value=1000.0,
+                    value=max(50000.0, float(round(total_hist_avg_monthly, -3))) if total_hist_avg_monthly > 0 else 75000.0,
+                    step=5000.0,
+                    help="Set your total desired monthly expenditure ceiling across all categories."
                 )
-                st.session_state["budget_dict"][cat] = round(new_val, 2)
 
-            with cat_col4:
-                b_plus1k = st.button("➕ ₹1k", key=f"add_1k_{cat}", help=f"Increase {cat} budget by ₹1,000")
-                b_plus5p = st.button("➕ 5%", key=f"add_5p_{cat}", help=f"Increase {cat} budget by 5%")
-                if b_plus1k:
-                    st.session_state["budget_dict"][cat] = round(current_val + 1000.0, 2)
-                    st.rerun()
-                if b_plus5p:
-                    st.session_state["budget_dict"][cat] = round(current_val * 1.05, 2)
-                    st.rerun()
+            with t_col2:
+                st.markdown("<br>", unsafe_allow_html=True)
+                btn_apply_hist = st.button(
+                    "⚡ Fill Historical Averages",
+                    type="secondary",
+                    use_container_width=True,
+                    help="Populate suggested budgets matching exact past monthly spending averages."
+                )
 
-            with cat_col5:
-                ann_val = st.session_state["budget_dict"][cat] * 12.0
-                st.markdown(f"**{format_inr_short(ann_val)}**")
-                st.caption("Annual Cap")
+            with t_col3:
+                st.markdown("<br>", unsafe_allow_html=True)
+                btn_apply_prop = st.button(
+                    "🎯 Auto-Allocate Target Proportionally",
+                    type="primary",
+                    use_container_width=True,
+                    help="Distribute your Target Total Spend across categories proportionally based on past spending ratios."
+                )
 
-            st.markdown("<hr style='margin: 6px 0; border-color: #334155;'>", unsafe_allow_html=True)
+            # Handle Preset Actions in session state
+            if "budget_dict" not in st.session_state:
+                st.session_state["budget_dict"] = {}
+                for idx, r in suggested_base_df.iterrows():
+                    c = r["category"]
+                    m = float(r["monthly_limit"]) if float(r["monthly_limit"]) > 0 else float(r["suggested_monthly"])
+                    st.session_state["budget_dict"][c] = m
+
+            if btn_apply_hist:
+                for idx, r in suggested_base_df.iterrows():
+                    c = r["category"]
+                    st.session_state["budget_dict"][c] = round(float(r["hist_monthly_avg"]), 2)
+                st.success("⚡ Filled all category limits with past monthly averages!")
+                st.rerun()
+
+            if btn_apply_prop:
+                prop_df = get_suggested_budgets(fy=target_fy_clean, username=current_user["username"], view_mode=view_mode, target_total_monthly=target_monthly_input)
+                for idx, r in prop_df.iterrows():
+                    c = r["category"]
+                    st.session_state["budget_dict"][c] = round(float(r["suggested_monthly"]), 2)
+                st.success(f"🎯 Proportions calculated and allocated matching ₹ {format_inr(target_monthly_input)} target!")
+                st.rerun()
+
+            # ------------------------------------------------
+            # SECTION 2: INTERACTIVE CATEGORY BUDGET ADJUSTER (+/-)
+            # ------------------------------------------------
+            st.markdown("<br>", unsafe_allow_html=True)
+            st.markdown("#### ⚙️ Category Budget Planner & Interactive Adjuster (+ / -)")
+            st.caption("Use the quick `+` and `-` modifier buttons to fine-tune each category limit up or down.")
+
+            hist_avg_map = dict(zip(suggested_base_df["category"], suggested_base_df["hist_monthly_avg"]))
+
+            for cat in EXPENSE_CATEGORIES:
+                current_val = float(st.session_state["budget_dict"].get(cat, 10000.0))
+                h_avg = float(hist_avg_map.get(cat, 0.0))
+
+                cat_col1, cat_col2, cat_col3, cat_col4, cat_col5 = st.columns([2.5, 1.8, 2.5, 1.8, 1.8])
+
+                with cat_col1:
+                    st.markdown(f"**{cat}**")
+                    st.caption(f"Hist Avg: {format_inr(h_avg)} / mo")
+
+                with cat_col2:
+                    b_minus1k = st.button("➖ ₹1k", key=f"sub_1k_{cat}", help=f"Decrease {cat} budget by ₹1,000")
+                    b_minus5p = st.button("➖ 5%", key=f"sub_5p_{cat}", help=f"Decrease {cat} budget by 5%")
+                    if b_minus1k:
+                        st.session_state["budget_dict"][cat] = max(0.0, round(current_val - 1000.0, 2))
+                        st.rerun()
+                    if b_minus5p:
+                        st.session_state["budget_dict"][cat] = max(0.0, round(current_val * 0.95, 2))
+                        st.rerun()
+
+                with cat_col3:
+                    new_val = st.number_input(
+                        f"Monthly Limit (₹)",
+                        min_value=0.0,
+                        value=float(st.session_state["budget_dict"].get(cat, 10000.0)),
+                        step=500.0,
+                        key=f"input_m_{cat}",
+                        label_visibility="collapsed"
+                    )
+                    st.session_state["budget_dict"][cat] = round(new_val, 2)
+
+                with cat_col4:
+                    b_plus1k = st.button("➕ ₹1k", key=f"add_1k_{cat}", help=f"Increase {cat} budget by ₹1,000")
+                    b_plus5p = st.button("➕ 5%", key=f"add_5p_{cat}", help=f"Increase {cat} budget by 5%")
+                    if b_plus1k:
+                        st.session_state["budget_dict"][cat] = round(current_val + 1000.0, 2)
+                        st.rerun()
+                    if b_plus5p:
+                        st.session_state["budget_dict"][cat] = round(current_val * 1.05, 2)
+                        st.rerun()
+
+                with cat_col5:
+                    ann_val = st.session_state["budget_dict"][cat] * 12.0
+                    st.markdown(f"**{format_inr_short(ann_val)}**")
+                    st.caption("Annual Cap")
+
+                st.markdown("<hr style='margin: 6px 0; border-color: #334155;'>", unsafe_allow_html=True)
+
+            # ------------------------------------------------
+            # LIVE BUDGET SUMMARY BAR & SAVE BUTTON
+            # ------------------------------------------------
+            total_allocated_monthly = float(sum(st.session_state["budget_dict"].values()))
+            diff_from_target = float(target_monthly_input - total_allocated_monthly)
+
+            sum_c1, sum_c2, sum_c3 = st.columns(3)
+            with sum_c1:
+                st.metric("🎯 User Target Monthly Spend", format_inr(target_monthly_input))
+            with sum_c2:
+                st.metric("💵 Total Allocated Monthly Budget", format_inr(total_allocated_monthly), delta=f"{format_inr(diff_from_target)} Buffer" if diff_from_target >= 0 else f"-{format_inr(abs(diff_from_target))} Deficit", delta_color="normal" if diff_from_target >= 0 else "inverse")
+            with sum_c3:
+                st.metric("📅 Total Annual Budget Cap", format_inr(total_allocated_monthly * 12.0))
+
+            st.markdown("<br>", unsafe_allow_html=True)
+
+            if st.button("💾 Save All Configured Category Budgets to Database", type="primary", use_container_width=True):
+                records_to_save = [
+                    {"category": c, "monthly_limit": val, "annual_limit": val * 12.0}
+                    for c, val in st.session_state["budget_dict"].items()
+                ]
+                saved_n = batch_set_category_budgets(target_fy_clean, records_to_save)
+                st.success(f"🎉 Successfully saved **{saved_n}** category budget target(s) for **{target_fy_clean}**!")
+                st.rerun()
+
+            # ------------------------------------------------
+            # SECTION 3: BUDGET PERFORMANCE & UTILIZATION DASHBOARD
+            # ------------------------------------------------
+            st.markdown("<hr>", unsafe_allow_html=True)
+            st.markdown("#### 📊 Budget Performance & Utilization Dashboard")
+            budget_status = get_budget_status(target_fy_clean, username=current_user["username"], view_mode=view_mode)
+
+            if not budget_status.empty:
+                for idx, row in budget_status.iterrows():
+                    cat = row["category"]
+                    spent = float(row["Actual_Spent"])
+                    budget = float(row["Annual_Budget"])
+                    util = float(row["Utilization_%"])
+
+                    if budget > 0:
+                        c1, c2, c3 = st.columns([2, 3, 1])
+                        with c1:
+                            st.markdown(f"**{cat}**")
+                            st.caption(f"Spent: {format_inr(spent)} / Budget: {format_inr(budget)}")
+                        with c2:
+                            progress_val = min(util / 100.0, 1.0)
+                            st.progress(progress_val)
+                        with c3:
+                            if util > 100:
+                                st.markdown("<span class='surge-badge'>OVER BUDGET</span>", unsafe_allow_html=True)
+                            elif util > 80:
+                                st.markdown("<span style='background:#78350f; color:#fde047; padding:4px 8px; border-radius:6px; font-weight:600; font-size:0.85rem;'>DANGER ZONE</span>", unsafe_allow_html=True)
+                            else:
+                                st.markdown("<span class='normal-badge'>ON TRACK</span>", unsafe_allow_html=True)
 
         # ------------------------------------------------
-        # LIVE BUDGET SUMMARY BAR & SAVE BUTTON
+        # SUB-TAB 2: INVESTMENT & WEALTH PORTFOLIO PLANNER
         # ------------------------------------------------
-        total_allocated_monthly = float(sum(st.session_state["budget_dict"].values()))
-        diff_from_target = float(target_monthly_input - total_allocated_monthly)
+        with subtab_invest:
+            st.markdown("### 📈 Investment & Wealth Portfolio Planner")
+            st.caption("Takes your allocated Insurance & Investment budget, age, and current savings to construct a personalized asset allocation, monthly SIP breakdown, and 20-year compound wealth trajectory.")
 
-        sum_c1, sum_c2, sum_c3 = st.columns(3)
-        with sum_c1:
-            st.metric("🎯 User Target Monthly Spend", format_inr(target_monthly_input))
-        with sum_c2:
-            st.metric("💵 Total Allocated Monthly Budget", format_inr(total_allocated_monthly), delta=f"{format_inr(diff_from_target)} Buffer" if diff_from_target >= 0 else f"-{format_inr(abs(diff_from_target))} Deficit", delta_color="normal" if diff_from_target >= 0 else "inverse")
-        with sum_c3:
-            st.metric("📅 Total Annual Budget Cap", format_inr(total_allocated_monthly * 12.0))
+            curr_insurance_invest_monthly = float(st.session_state.get("budget_dict", {}).get("Insurance & Investments", 20000.0))
 
-        st.markdown("<br>", unsafe_allow_html=True)
+            inv_col1, inv_col2, inv_col3 = st.columns([1, 1.2, 1.5])
+            with inv_col1:
+                u_age = st.number_input("👤 Your Age (Years)", min_value=18, max_value=85, value=35, step=1, key="invest_user_age")
+            with inv_col2:
+                u_savings = st.number_input("🏦 Current Total Savings / Corpus (₹)", min_value=0.0, value=500000.0, step=50000.0, format="%.2f", key="invest_user_savings")
+            with inv_col3:
+                u_sip_budget = st.number_input(
+                    "💵 Monthly Insurance & Investment Budget (₹)",
+                    min_value=1000.0,
+                    value=max(5000.0, curr_insurance_invest_monthly),
+                    step=1000.0,
+                    format="%.2f",
+                    key="invest_user_sip"
+                )
 
-        if st.button("💾 Save All Configured Category Budgets to Database", type="primary", use_container_width=True):
-            records_to_save = [
-                {"category": c, "monthly_limit": val, "annual_limit": val * 12.0}
-                for c, val in st.session_state["budget_dict"].items()
-            ]
-            saved_n = batch_set_category_budgets(target_fy_clean, records_to_save)
-            st.success(f"🎉 Successfully saved **{saved_n}** category budget target(s) for **{target_fy_clean}**!")
-            st.rerun()
+            # Compute Investment Plan
+            inv_plan = calculate_investment_plan(
+                age=u_age,
+                current_savings=u_savings,
+                monthly_investment_budget=u_sip_budget,
+                monthly_expenses=total_spent / max(1, num_months) if not df_fy.empty else 50000.0
+            )
 
-        # ------------------------------------------------
-        # SECTION 3: BUDGET PERFORMANCE & UTILIZATION DASHBOARD
-        # ------------------------------------------------
-        st.markdown("<hr>", unsafe_allow_html=True)
-        st.markdown("#### 📊 Budget Performance & Utilization Dashboard")
-        budget_status = get_budget_status(target_fy_clean, username=current_user["username"], view_mode=view_mode)
+            # Key Investment Metrics
+            im1, im2, im3, im4 = st.columns(4)
+            with im1:
+                st.metric("🚀 Equity Allocation", f"{inv_plan['equity_pct']:.0f}%", f"SIP: {format_inr(inv_plan['equity_sip'])}")
+            with im2:
+                st.metric("🛡️ Debt Allocation", f"{inv_plan['debt_pct']:.0f}%", f"SIP: {format_inr(inv_plan['debt_sip'])}")
+            with im3:
+                st.metric("🪙 Gold Allocation", f"{inv_plan['gold_pct']:.0f}%", f"SIP: {format_inr(inv_plan['gold_sip'])}")
+            with im4:
+                st.metric("📈 Expected Blended CAGR", f"~{inv_plan['blended_cagr_pct']}% / yr", "Indian Market Benchmark")
 
-        if not budget_status.empty:
-            for idx, row in budget_status.iterrows():
-                cat = row["category"]
-                spent = float(row["Actual_Spent"])
-                budget = float(row["Annual_Budget"])
-                util = float(row["Utilization_%"])
+            st.markdown("<br>", unsafe_allow_html=True)
 
-                if budget > 0:
-                    c1, c2, c3 = st.columns([2, 3, 1])
-                    with c1:
-                        st.markdown(f"**{cat}**")
-                        st.caption(f"Spent: {format_inr(spent)} / Budget: {format_inr(budget)}")
-                    with c2:
-                        progress_val = min(util / 100.0, 1.0)
-                        st.progress(progress_val)
-                    with c3:
-                        if util > 100:
-                            st.markdown("<span class='surge-badge'>OVER BUDGET</span>", unsafe_allow_html=True)
-                        elif util > 80:
-                            st.markdown("<span style='background:#78350f; color:#fde047; padding:4px 8px; border-radius:6px; font-weight:600; font-size:0.85rem;'>DANGER ZONE</span>", unsafe_allow_html=True)
-                        else:
-                            st.markdown("<span class='normal-badge'>ON TRACK</span>", unsafe_allow_html=True)
+            # Asset Split Pie Chart & Monthly SIP Allocation Table
+            ch_col1, ch_col2 = st.columns([1, 1])
+
+            with ch_col1:
+                st.markdown("#### 📊 Age-Adjusted Asset Class Split")
+                pie_df = pd.DataFrame([
+                    {"Asset": "Equity", "Allocation_%": inv_plan["equity_pct"]},
+                    {"Asset": "Debt / Fixed Income", "Allocation_%": inv_plan["debt_pct"]},
+                    {"Asset": "Gold / SGB", "Allocation_%": inv_plan["gold_pct"]}
+                ])
+                fig_asset = px.pie(
+                    pie_df,
+                    names="Asset",
+                    values="Allocation_%",
+                    color="Asset",
+                    color_discrete_map={"Equity": "#38bdf8", "Debt / Fixed Income": "#34d399", "Gold / SGB": "#fbbf24"},
+                    hole=0.4
+                )
+                fig_asset.update_layout(margin=dict(l=10, r=10, t=10, b=10), height=280)
+                st.plotly_chart(fig_asset, use_container_width=True)
+
+            with ch_col2:
+                st.markdown("#### 📝 Recommended Monthly SIP Allocation")
+                sip_df = pd.DataFrame(inv_plan["sip_instruments"])
+                st.dataframe(
+                    sip_df[["asset_class", "allocation_pct", "monthly_sip", "recommended_instruments"]],
+                    column_config={
+                        "asset_class": st.column_config.TextColumn("Asset Class"),
+                        "allocation_pct": st.column_config.TextColumn("Weight"),
+                        "monthly_sip": st.column_config.NumberColumn("Monthly SIP (₹)", format="₹ %.2f"),
+                        "recommended_instruments": st.column_config.TextColumn("Suggested Vehicles")
+                    },
+                    use_container_width=True,
+                    hide_index=True
+                )
+
+            # Wealth Compound Growth Trajectory Chart
+            st.markdown("<hr>", unsafe_allow_html=True)
+            st.markdown("#### 🚀 Wealth Compound Growth Trajectory (5 - 20 Years)")
+            
+            proj_data = []
+            for yrs, p_data in inv_plan["projections"].items():
+                proj_data.append({
+                    "Horizon": f"{yrs} Years",
+                    "Total Invested": p_data["total_invested"],
+                    "Projected Future Corpus": p_data["total_future_value"],
+                    "Wealth Compounding Gain": p_data["wealth_gain"]
+                })
+            
+            proj_df = pd.DataFrame(proj_data)
+
+            fig_proj = px.bar(
+                proj_df,
+                x="Horizon",
+                y=["Total Invested", "Wealth Compounding Gain"],
+                title="Compound Capital Growth Projection (12% Eq / 7% Debt / 8% Gold)",
+                labels={"value": "Amount (₹)", "variable": "Component"},
+                color_discrete_map={"Total Invested": "#64748b", "Wealth Compounding Gain": "#10b981"},
+                barmode="stack",
+                height=380
+            )
+            fig_proj.update_layout(paper_bgcolor="#1e293b", plot_bgcolor="#1e293b", margin=dict(l=20, r=20, t=40, b=20))
+            st.plotly_chart(fig_proj, use_container_width=True)
+
+            # Emergency Reserve & Safety Shield Indicator
+            st.markdown("#### 🏦 Emergency Reserve & Protection Status")
+            em_status = inv_plan["emergency_status"]
+            if em_status == "Sufficient":
+                st.success(f"✅ **Emergency Buffer Healthy**: Your current savings of **{format_inr(u_savings)}** exceeds your recommended 6-month buffer of **{format_inr(inv_plan['req_emergency'])}**.")
+            else:
+                st.warning(f"⚠️ **Emergency Buffer Deficit**: Target 6-month buffer is **{format_inr(inv_plan['req_emergency'])}**. You have a deficit of **{format_inr(inv_plan['emergency_gap'])}**. Consider assigning initial savings to Liquid Funds before aggressive stock investments.")
+
+            # Gemini AI Wealth & Milestone Strategy Advisor Card
+            st.markdown("<hr>", unsafe_allow_html=True)
+            st.markdown("### 🤖 Gemini AI Wealth & Milestone Advisory")
+            st.caption("Get personalized financial milestone recommendations and tax-efficient wealth management strategies.")
+
+            if st.button("💡 Generate AI Wealth & Milestone Advisory", type="primary", use_container_width=True):
+                with st.spinner("🤖 Analyzing portfolio allocation with Gemini AI..."):
+                    wealth_advice = generate_ai_wealth_advice(inv_plan)
+
+                st.success("🎉 AI Wealth Strategy Generated!")
+                st.info(wealth_advice.get("summary", ""))
+
+                for bullet in wealth_advice.get("key_takeaways", []):
+                    st.markdown(f"- {bullet}")
 
     # ----------------------------------------------------
     # TAB 8: DATABASE LOG, EDIT & EXPORT
