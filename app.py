@@ -19,7 +19,8 @@ from config import (
     get_indian_quarter,
     get_indian_half_year,
     format_inr,
-    format_inr_short
+    format_inr_short,
+    format_month_label
 )
 from database import (
     init_db,
@@ -225,6 +226,17 @@ else:
     all_fys = get_all_financial_years(username=current_user["username"], view_mode=view_mode)
     selected_fy = st.sidebar.selectbox("📅 Select Financial Year", ["All FYs"] + all_fys, index=1 if len(all_fys) > 1 else 0)
 
+    # Sidebar Monthly Dropdown List Filter
+    df_raw_for_months = get_expenses_df(fy=selected_fy, username=current_user["username"], view_mode=view_mode)
+    avail_months = sorted(df_raw_for_months["Month_Year"].unique().tolist(), reverse=True) if not df_raw_for_months.empty and "Month_Year" in df_raw_for_months.columns else []
+    
+    selected_month_filter = st.sidebar.selectbox(
+        "🗓️ Select Month Filter",
+        options=["All Months"] + avail_months,
+        format_func=format_month_label,
+        help="Filter dashboard metrics, trajectory charts, and itemized lists by a specific month."
+    )
+
     st.sidebar.markdown("---")
     st.sidebar.caption(f"💾 Storage Engine: **{get_db_type()}**")
 
@@ -239,6 +251,8 @@ else:
     st.markdown("<div class='sub-header'>Manage household and private expenses, track CPI inflation, analyze Indian Financial Year trends, and set category budgets.</div>", unsafe_allow_html=True)
 
     df_fy = get_expenses_df(fy=selected_fy, username=current_user["username"], view_mode=view_mode)
+    if selected_month_filter != "All Months" and not df_fy.empty and "Month_Year" in df_fy.columns:
+        df_fy = df_fy[df_fy["Month_Year"] == selected_month_filter]
     total_spent = df_fy["amount"].sum() if not df_fy.empty else 0.0
     total_txns = len(df_fy) if not df_fy.empty else 0
     num_months = df_fy["Month_Year"].nunique() if not df_fy.empty and "Month_Year" in df_fy.columns else 1
@@ -573,10 +587,18 @@ else:
         with ctrl_col2:
             if granularity == "Monthly":
                 if not all_df.empty and "Month_Year" in all_df.columns:
-                    months_available = all_df["Month_Year"].unique().tolist()
-                    selected_month = st.selectbox("Select Month", months_available)
-                    filtered_df = all_df[all_df["Month_Year"] == selected_month]
-                    period_title = f"Itemized Expenses for {selected_month}"
+                    months_available = sorted(all_df["Month_Year"].unique().tolist(), reverse=True)
+                    selected_month = st.selectbox(
+                        "Select Month",
+                        options=["All Months in FY"] + months_available,
+                        format_func=format_month_label
+                    )
+                    if selected_month != "All Months in FY":
+                        filtered_df = all_df[all_df["Month_Year"] == selected_month]
+                        period_title = f"Itemized Expenses for {format_month_label(selected_month)}"
+                    else:
+                        filtered_df = all_df
+                        period_title = f"All Itemized Expenses for {selected_fy}"
                 else:
                     st.info("No monthly transaction data available.")
                     
@@ -740,8 +762,8 @@ else:
             with edit_mode_tab4:
                 st.markdown("#### Bulk Delete Entire Month Data")
                 if "Month_Year" in expenses_df_all.columns:
-                    available_m = expenses_df_all["Month_Year"].unique().tolist()
-                    del_month_target = st.selectbox("Select Month to Wipe", available_m, key="bulk_del_m")
+                    available_m = sorted(expenses_df_all["Month_Year"].unique().tolist(), reverse=True)
+                    del_month_target = st.selectbox("Select Month to Wipe", available_m, format_func=format_month_label, key="bulk_del_m")
                     month_records = expenses_df_all[expenses_df_all["Month_Year"] == del_month_target]
                     m_sum = month_records["amount"].sum()
                     
@@ -865,7 +887,13 @@ else:
 
         with s_col2:
             if available_periods:
-                selected_period = st.selectbox("🎯 Select Target Period", options=available_periods, key="surge_target_period")
+                fmt_fn = format_month_label if timeframe_type == "Month-wise" else (lambda x: str(x))
+                selected_period = st.selectbox(
+                    "🎯 Select Target Period",
+                    options=available_periods,
+                    format_func=fmt_fn,
+                    key="surge_target_period"
+                )
             else:
                 selected_period = None
                 st.info("No records available for the selected timeframe.")

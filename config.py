@@ -104,3 +104,18 @@ def format_inr_short(amount: float) -> str:
         return f"{sign}₹ {abs_amt/1000:.1f} K"
     else:
         return f"{sign}₹ {abs_amt:.0f}"
+
+def format_month_label(month_year_str: str) -> str:
+    """
+    Formats 'YYYY-MM' strings (e.g. '2024-05') into human-readable labels like 'May 2024 (2024-05)'.
+    """
+    if not month_year_str or not isinstance(month_year_str, str):
+        return str(month_year_str)
+    if "All" in month_year_str:
+        return month_year_str
+    try:
+        dt = datetime.datetime.strptime(month_year_str.strip(), "%Y-%m")
+        return f"{dt.strftime('%B %Y')} ({month_year_str.strip()})"
+    except Exception:
+        return month_year_str
+
