@@ -522,12 +522,13 @@ def get_surge_categories(fy: str, username: Optional[str] = None, view_mode: str
     prev_months_df = df[df["Month_Year"] != latest_month].groupby("category")["amount"].mean().reset_index()
     prev_months_df.rename(columns={"amount": "Hist_Monthly_Avg"}, inplace=True)
     
-    merged = pd.merge(category_summary, recent_month_df, on="category", how="left").fillna(0)
-    merged = pd.merge(merged, prev_months_df, on="category", how="left").fillna(0)
+    merged = pd.merge(category_summary, recent_month_df, on="category", how="left").fillna(0.0)
+    merged = pd.merge(merged, prev_months_df, on="category", how="left").fillna(0.0)
     
-    merged["Surge_%"] = 0.0
-    mask = merged["Hist_Monthly_Avg"] > 0
-    merged.loc[mask, "Surge_%"] = ((merged.loc[mask, "Latest_Month_Spend"] - merged.loc[mask, "Hist_Monthly_Avg"]) / merged.loc[mask, "Hist_Monthly_Avg"]) * 100
+    hist_avg = merged["Hist_Monthly_Avg"].astype(float)
+    latest_spend = merged["Latest_Month_Spend"].astype(float)
+    surge_series = ((latest_spend - hist_avg) / hist_avg) * 100.0
+    merged["Surge_%"] = surge_series.where(hist_avg > 0, 0.0).astype(float)
     
     merged = merged.sort_values(by="Surge_%", ascending=False)
     return merged
@@ -554,16 +555,24 @@ def get_budget_status(fy: str, username: Optional[str] = None, view_mode: str = 
     
     cat_df = pd.DataFrame({"category": EXPENSE_CATEGORIES})
     merged = pd.merge(cat_df, b_df, on="category", how="left").fillna(0.0)
-    merged = pd.merge(merged, e_df[["category", "Total_Amount"]], on="category", how="left").fillna(0.0)
-    merged.rename(columns={"Total_Amount": "Actual_Spent"}, inplace=True)
     
-    merged["Annual_Budget"] = merged["annual_limit"]
-    merged.loc[merged["Annual_Budget"] == 0, "Annual_Budget"] = merged["monthly_limit"] * 12
+    if e_df.empty or "Total_Amount" not in e_df.columns:
+        merged["Actual_Spent"] = 0.0
+    else:
+        merged = pd.merge(merged, e_df[["category", "Total_Amount"]], on="category", how="left").fillna(0.0)
+        merged.rename(columns={"Total_Amount": "Actual_Spent"}, inplace=True)
     
-    merged["Remaining"] = merged["Annual_Budget"] - merged["Actual_Spent"]
-    merged["Utilization_%"] = 0.0
-    mask = merged["Annual_Budget"] > 0
-    merged.loc[mask, "Utilization_%"] = (merged.loc[mask, "Actual_Spent"] / merged.loc[mask, "Annual_Budget"]) * 100
+    annual_limit = merged["annual_limit"].astype(float)
+    monthly_limit = merged["monthly_limit"].astype(float)
+    annual_budget = annual_limit.copy()
+    annual_budget = annual_budget.where(annual_budget > 0, monthly_limit * 12.0)
+    
+    merged["Annual_Budget"] = annual_budget.astype(float)
+    merged["Actual_Spent"] = merged["Actual_Spent"].astype(float)
+    merged["Remaining"] = (merged["Annual_Budget"] - merged["Actual_Spent"]).astype(float)
+    
+    utilization_series = (merged["Actual_Spent"] / merged["Annual_Budget"]) * 100.0
+    merged["Utilization_%"] = utilization_series.where(merged["Annual_Budget"] > 0, 0.0).astype(float)
     
     return merged
 
