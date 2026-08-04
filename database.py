@@ -27,7 +27,7 @@ class LibSQLCursorWrapper:
         else:
             self.description = None
         if hasattr(res, 'rows'):
-            self._rows = [r._tuple for r in res.rows]
+            self._rows = [r._tuple if hasattr(r, '_tuple') else (tuple(r) if isinstance(r, (list, tuple)) else r) for r in res.rows]
         else:
             self._rows = []
         self._idx = 0
