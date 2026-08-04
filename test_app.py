@@ -171,6 +171,23 @@ def test_period_surge_analytics():
     
     print("✅ Period Surge Analytics & AI Spend Rationalization tests passed.")
 
+def test_smart_suggested_budgets():
+    init_db()
+    from database import get_suggested_budgets, batch_set_category_budgets
+    
+    s_df = get_suggested_budgets(fy="FY 2024-25", target_total_monthly=90000.0)
+    assert not s_df.empty
+    assert "suggested_monthly" in s_df.columns
+    assert "hist_monthly_avg" in s_df.columns
+    
+    recs = [
+        {"category": "Groceries & Provisions", "monthly_limit": 25000.0, "annual_limit": 300000.0},
+        {"category": "Utilities (Electricity/Water/Gas)", "monthly_limit": 8000.0, "annual_limit": 96000.0}
+    ]
+    cnt = batch_set_category_budgets("FY 2024-25", recs)
+    assert cnt == 2
+    print("✅ Smart Suggested Budgets & Batch Update tests passed.")
+
 if __name__ == "__main__":
     try:
         test_strict_uploaded_date_enforcement()
@@ -179,6 +196,7 @@ if __name__ == "__main__":
         test_inline_database_update()
         test_ml_auto_categorization()
         test_period_surge_analytics()
+        test_smart_suggested_budgets()
         print("🎉 All test suite assertions passed successfully!")
     finally:
         if os.path.exists(database.DB_PATH):

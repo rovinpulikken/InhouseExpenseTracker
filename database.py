@@ -640,6 +640,70 @@ def set_category_budget(fy: str, category: str, monthly_limit: float, annual_lim
     conn.commit()
     conn.close()
 
+def batch_set_category_budgets(fy: str, budget_records: List[Dict[str, Any]]) -> int:
+    """
+    Saves multiple category budget targets for a given financial year in a batch transaction.
+    """
+    if not budget_records:
+        return 0
+    conn = get_connection()
+    cursor = conn.cursor()
+    count = 0
+    for r in budget_records:
+        cat = r.get("category")
+        m_limit = float(r.get("monthly_limit", 0.0))
+        a_limit = float(r.get("annual_limit", m_limit * 12))
+        if cat and cat in EXPENSE_CATEGORIES:
+            cursor.execute("""
+                INSERT INTO budgets (financial_year, category, monthly_limit, annual_limit)
+                VALUES (?, ?, ?, ?)
+                ON CONFLICT(financial_year, category) DO UPDATE SET
+                    monthly_limit = excluded.monthly_limit,
+                    annual_limit = excluded.annual_limit
+            """, (fy, cat, m_limit, a_limit))
+            count += 1
+    conn.commit()
+    conn.close()
+    return count
+
+def get_suggested_budgets(fy: str, username: Optional[str] = None, view_mode: str = "Family", target_total_monthly: Optional[float] = None) -> pd.DataFrame:
+    """
+    Calculates historical average monthly spending per category and optional proportional allocation for target monthly budget.
+    """
+    df = get_expenses_df(fy=None, username=username, view_mode=view_mode)
+    conn = get_connection()
+    b_df = pd.read_sql_query("SELECT category, monthly_limit, annual_limit FROM budgets WHERE financial_year = ?", conn, params=[fy])
+    conn.close()
+
+    cat_df = pd.DataFrame({"category": EXPENSE_CATEGORIES})
+    
+    if df.empty:
+        merged = pd.merge(cat_df, b_df, on="category", how="left").fillna(0.0)
+        merged["hist_monthly_avg"] = 0.0
+        merged["suggested_monthly"] = merged["monthly_limit"].apply(lambda x: float(x) if float(x) > 0 else 10000.0)
+        merged["annual_limit"] = merged["suggested_monthly"] * 12.0
+        return merged
+
+    # Compute average monthly spending per category across all historical months
+    period_summary = df.groupby(["Month_Year", "category"])["amount"].sum().reset_index()
+    hist_avg = period_summary.groupby("category")["amount"].mean().reset_index()
+    hist_avg.rename(columns={"amount": "hist_monthly_avg"}, inplace=True)
+
+    merged = pd.merge(cat_df, hist_avg, on="category", how="left").fillna(0.0)
+    merged = pd.merge(merged, b_df, on="category", how="left").fillna(0.0)
+
+    total_hist_avg = float(merged["hist_monthly_avg"].sum())
+
+    if target_total_monthly and target_total_monthly > 0 and total_hist_avg > 0:
+        merged["suggested_monthly"] = (merged["hist_monthly_avg"] / total_hist_avg) * float(target_total_monthly)
+    else:
+        merged["suggested_monthly"] = merged["hist_monthly_avg"]
+
+    merged["suggested_monthly"] = merged["suggested_monthly"].round(2)
+    merged["annual_limit"] = (merged["suggested_monthly"] * 12.0).round(2)
+
+    return merged
+
 def get_budget_status(fy: str, username: Optional[str] = None, view_mode: str = "Family") -> pd.DataFrame:
     conn = get_connection()
     b_df = pd.read_sql_query("SELECT category, monthly_limit, annual_limit FROM budgets WHERE financial_year = ?", conn, params=[fy])
