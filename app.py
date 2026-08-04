@@ -182,7 +182,7 @@ if "user" not in st.session_state:
                 else:
                     st.error("Invalid username or password.")
                     
-        st.info("💡 **Default Credentials**:\n- **Username**: `admin`\n- **Password**: `admin1234`\n\n*(Change password anytime under 👑 Admin & User Management tab)*")
+        st.caption("🔒 Authorized household access only. Contact your administrator if you need access.")
 
 else:
     # ----------------------------------------------------
