@@ -119,12 +119,46 @@ def test_inline_database_update():
     assert matched.iloc[0]["amount"] == 9999.00
     print("✅ Inline database update & FY recalculation passed.")
 
+def test_ml_auto_categorization():
+    init_db()
+    from categorizer import MLCategorizer, apply_ml_auto_categorization
+    
+    historical_samples = [
+        {"description": "swiggy biryani dinner", "category": "Dining & Swiggy/Zomato"},
+        {"description": "nandini milk 1L", "category": "Milk & Dairy"},
+        {"description": "bescom power electricity bill", "category": "Utilities (Electricity/Water/Gas)"},
+        {"description": "apollo medicine tablets", "category": "Healthcare & Medicines"}
+    ]
+    
+    model = MLCategorizer()
+    trained_count = model.train(historical_samples)
+    assert trained_count == 4
+    
+    cat1, conf1, m1 = model.predict("swiggy food order")
+    assert cat1 == "Dining & Swiggy/Zomato"
+    
+    cat2, conf2, m2 = model.predict("nandini milk packet")
+    assert cat2 == "Milk & Dairy"
+    
+    test_df = pd.DataFrame([
+        {"id": 9991, "description": "swiggy food order", "category": "Miscellaneous"},
+        {"id": 9992, "description": "bescom electricity payment", "category": ""}
+    ])
+    
+    updated_df, mod_cnt, t_cnt = apply_ml_auto_categorization(test_df, historical_samples, overwrite_all=False)
+    assert mod_cnt == 2
+    assert updated_df.iloc[0]["category"] == "Dining & Swiggy/Zomato"
+    assert updated_df.iloc[1]["category"] == "Utilities (Electricity/Water/Gas)"
+    
+    print("✅ Machine Learning Auto-Categorization tests passed.")
+
 if __name__ == "__main__":
     try:
         test_strict_uploaded_date_enforcement()
         test_user_auth_and_management()
         test_private_vs_family_visibility_scoping()
         test_inline_database_update()
+        test_ml_auto_categorization()
         print("🎉 All test suite assertions passed successfully!")
     finally:
         if os.path.exists(database.DB_PATH):

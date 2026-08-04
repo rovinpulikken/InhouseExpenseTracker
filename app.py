@@ -7,6 +7,11 @@ import plotly.express as px
 import plotly.graph_objects as io_plotly
 import streamlit as st
 
+from categorizer import (
+    auto_categorize_description,
+    apply_ml_auto_categorization,
+    MLCategorizer
+)
 from config import (
     EXPENSE_CATEGORIES,
     get_indian_fy,
@@ -917,6 +922,41 @@ else:
         expenses_table = get_expenses_df(fy=selected_fy, username=current_user["username"], view_mode=view_mode)
         
         if not expenses_table.empty:
+            # Fetch all historical labeled records for Machine Learning training
+            all_hist_df = get_expenses_df(fy=None, username=None, view_mode="All")
+            hist_records = all_hist_df.to_dict("records") if not all_hist_df.empty else []
+            
+            # Machine Learning Model Status & Toolbar
+            st.markdown("""
+            <div style="background-color: #1e293b; padding: 12px 16px; border-radius: 8px; border-left: 4px solid #38bdf8; margin-bottom: 15px;">
+                <div style="font-weight: 600; color: #38bdf8; font-size: 0.95rem;">🤖 Machine Learning Auto-Categorization Toolbar</div>
+                <div style="color: #94a3b8; font-size: 0.85rem;">Automatically categorize expenses based on past learned spending patterns & Indian merchant rules.</div>
+            </div>
+            """, unsafe_allow_html=True)
+            
+            ml_col1, ml_col2 = st.columns([1, 1])
+            with ml_col1:
+                if st.button("🤖 Auto-Categorize Uncategorized/Misc (ML)", type="secondary", use_container_width=True, help="Auto-fills Miscellaneous or blank categories using ML learnings from historical records."):
+                    updated_df, mod_cnt, t_cnt = apply_ml_auto_categorization(expenses_table, hist_records, overwrite_all=False)
+                    if mod_cnt > 0:
+                        saved_n = update_expenses_df(updated_df)
+                        st.success(f"🎉 ML Engine auto-categorized **{mod_cnt}** record(s) based on **{t_cnt}** learned historical patterns!")
+                        st.rerun()
+                    else:
+                        st.info("ℹ️ All records in the current view are already categorized.")
+                        
+            with ml_col2:
+                if st.button("⚡ Re-Categorize ALL Items with ML Learnings", type="secondary", use_container_width=True, help="Re-applies ML categorizer across ALL items based on latest database learnings."):
+                    updated_df, mod_cnt, t_cnt = apply_ml_auto_categorization(expenses_table, hist_records, overwrite_all=True)
+                    if mod_cnt > 0:
+                        saved_n = update_expenses_df(updated_df)
+                        st.success(f"⚡ ML Engine re-categorized **{mod_cnt}** item(s) using **{t_cnt}** learned patterns!")
+                        st.rerun()
+                    else:
+                        st.info("ℹ️ All categories are already up-to-date with ML learnings.")
+                        
+            st.markdown("<br>", unsafe_allow_html=True)
+            
             if "expense_date" in expenses_table.columns:
                 expenses_table["expense_date"] = pd.to_datetime(expenses_table["expense_date"]).dt.date
                 
