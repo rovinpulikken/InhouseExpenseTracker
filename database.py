@@ -14,7 +14,11 @@ def get_db_type() -> str:
     turso_url = os.environ.get("TURSO_DATABASE_URL")
     turso_token = os.environ.get("TURSO_AUTH_TOKEN")
     if turso_url and turso_token:
-        return "Turso Cloud Database"
+        try:
+            import libsql_experimental
+            return "Turso Cloud Database"
+        except (ImportError, ModuleNotFoundError):
+            return "Local SQLite Database (Turso driver missing)"
     return "Local SQLite Database"
 
 def get_connection():
@@ -26,7 +30,7 @@ def get_connection():
             import libsql_experimental as libsql
             conn = libsql.connect(database=turso_url, auth_token=turso_token)
             return conn
-        except Exception as e:
+        except (ImportError, ModuleNotFoundError, Exception) as e:
             print(f"Turso connection fallback to SQLite: {e}")
             
     os.makedirs(DB_DIR, exist_ok=True)
