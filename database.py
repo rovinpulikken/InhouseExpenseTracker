@@ -10,6 +10,70 @@ from config import get_indian_fy, get_indian_quarter, EXPENSE_CATEGORIES
 DB_DIR = os.path.join(os.path.dirname(__file__), "data")
 DB_PATH = os.path.join(DB_DIR, "expenses.db")
 
+class LibSQLCursorWrapper:
+    def __init__(self, client):
+        self.client = client
+        self._rows = []
+        self._idx = 0
+        self.description = None
+        self.lastrowid = None
+
+    def execute(self, sql, params=()):
+        if isinstance(params, (tuple, set)):
+            params = list(params)
+        res = self.client.execute(sql, params)
+        if hasattr(res, 'columns') and res.columns:
+            self.description = [(col, None, None, None, None, None, None) for col in res.columns]
+        else:
+            self.description = None
+        if hasattr(res, 'rows'):
+            self._rows = [r._tuple for r in res.rows]
+        else:
+            self._rows = []
+        self._idx = 0
+        if hasattr(res, 'last_insert_rowid'):
+            self.lastrowid = res.last_insert_rowid
+        return self
+
+    def fetchall(self):
+        rows = self._rows[self._idx:]
+        self._idx = len(self._rows)
+        return rows
+
+    def fetchone(self):
+        if self._idx < len(self._rows):
+            r = self._rows[self._idx]
+            self._idx += 1
+            return r
+        return None
+
+    def fetchmany(self, size=1):
+        rows = self._rows[self._idx:self._idx+size]
+        self._idx += len(rows)
+        return rows
+
+class LibSQLConnectionWrapper:
+    def __init__(self, client):
+        self.client = client
+        self.row_factory = None
+
+    def cursor(self):
+        return LibSQLCursorWrapper(self.client)
+
+    def execute(self, sql, params=()):
+        cur = self.cursor()
+        cur.execute(sql, params)
+        return cur
+
+    def commit(self):
+        pass
+
+    def close(self):
+        try:
+            self.client.close()
+        except Exception:
+            pass
+
 def get_turso_credentials() -> Tuple[Optional[str], Optional[str]]:
     url = os.environ.get("TURSO_DATABASE_URL")
     token = os.environ.get("TURSO_AUTH_TOKEN")
@@ -53,7 +117,9 @@ def get_connection():
         except (ImportError, ModuleNotFoundError, Exception) as e:
             try:
                 import libsql_client
-                return libsql_client.create_client_sync(url=turso_url, auth_token=turso_token)
+                http_url = turso_url.replace("libsql://", "https://") if turso_url.startswith("libsql://") else turso_url
+                client = libsql_client.create_client_sync(url=http_url, auth_token=turso_token)
+                return LibSQLConnectionWrapper(client)
             except Exception as e2:
                 print(f"Turso connection fallback to SQLite: {e} / {e2}")
             
