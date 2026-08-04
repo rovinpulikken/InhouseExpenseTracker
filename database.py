@@ -22,6 +22,10 @@ def get_turso_credentials() -> Tuple[Optional[str], Optional[str]]:
                 token = st.secrets.get("TURSO_AUTH_TOKEN")
         except Exception:
             pass
+    if url and ("your-db-name" in url or "your-turso" in url):
+        url = None
+    if token and ("your-turso" in token or "your-auth-token" in token):
+        token = None
     return url, token
 
 def get_db_type() -> str:
