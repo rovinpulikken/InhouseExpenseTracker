@@ -3,6 +3,7 @@ import sqlite3
 import datetime
 import hashlib
 import secrets
+import re
 from typing import List, Dict, Any, Optional, Tuple
 import pandas as pd
 from config import get_indian_fy, get_indian_quarter, EXPENSE_CATEGORIES
@@ -17,6 +18,7 @@ class LibSQLCursorWrapper:
         self._idx = 0
         self.description = None
         self.lastrowid = None
+        self.rowcount = -1
 
     def execute(self, sql, params=()):
         if isinstance(params, (tuple, set)):
@@ -33,6 +35,7 @@ class LibSQLCursorWrapper:
         self._idx = 0
         if hasattr(res, 'last_insert_rowid'):
             self.lastrowid = res.last_insert_rowid
+        self.rowcount = getattr(res, 'rows_changed', len(self._rows) if self._rows else 1)
         return self
 
     def fetchall(self):
@@ -171,7 +174,26 @@ def init_db():
     conn = get_connection()
     cursor = conn.cursor()
     
-    # Users Table
+    # 1. Families Table
+    cursor.execute("""
+        CREATE TABLE IF NOT EXISTS families (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            family_code TEXT UNIQUE NOT NULL,
+            family_name TEXT NOT NULL,
+            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+        )
+    """)
+    
+    # Seed default family if empty
+    cursor.execute("SELECT COUNT(*) FROM families")
+    fam_cnt = cursor.fetchone()[0]
+    if fam_cnt == 0:
+        cursor.execute("""
+            INSERT INTO families (id, family_code, family_name)
+            VALUES (1, 'PRIMARY-1001', 'Primary Household')
+        """)
+
+    # 2. Users Table
     cursor.execute("""
         CREATE TABLE IF NOT EXISTS users (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -179,11 +201,16 @@ def init_db():
             password_hash TEXT NOT NULL,
             full_name TEXT,
             role TEXT NOT NULL DEFAULT 'Member',
+            family_id INTEGER DEFAULT 1,
             created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
         )
     """)
-    
-    # Expenses Table
+    cursor.execute("PRAGMA table_info(users)")
+    u_cols = [row[1] for row in cursor.fetchall()]
+    if "family_id" not in u_cols:
+        cursor.execute("ALTER TABLE users ADD COLUMN family_id INTEGER DEFAULT 1")
+
+    # 3. Expenses Table
     cursor.execute("""
         CREATE TABLE IF NOT EXISTS expenses (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -197,21 +224,22 @@ def init_db():
             source_note TEXT DEFAULT 'Manual',
             username TEXT DEFAULT 'admin',
             visibility TEXT DEFAULT 'Family',
+            family_id INTEGER DEFAULT 1,
             created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
         )
     """)
-    
-    # Check for column migrations on expenses table
     cursor.execute("PRAGMA table_info(expenses)")
-    columns = [row[1] for row in cursor.fetchall()]
-    if "half_year" not in columns:
+    e_cols = [row[1] for row in cursor.fetchall()]
+    if "half_year" not in e_cols:
         cursor.execute("ALTER TABLE expenses ADD COLUMN half_year TEXT DEFAULT 'H1'")
-    if "username" not in columns:
+    if "username" not in e_cols:
         cursor.execute("ALTER TABLE expenses ADD COLUMN username TEXT DEFAULT 'admin'")
-    if "visibility" not in columns:
+    if "visibility" not in e_cols:
         cursor.execute("ALTER TABLE expenses ADD COLUMN visibility TEXT DEFAULT 'Family'")
+    if "family_id" not in e_cols:
+        cursor.execute("ALTER TABLE expenses ADD COLUMN family_id INTEGER DEFAULT 1")
     
-    # Budgets Table
+    # 4. Budgets Table
     cursor.execute("""
         CREATE TABLE IF NOT EXISTS budgets (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -219,11 +247,15 @@ def init_db():
             category TEXT NOT NULL,
             monthly_limit REAL DEFAULT 0.0,
             annual_limit REAL DEFAULT 0.0,
-            UNIQUE(financial_year, category)
+            family_id INTEGER DEFAULT 1
         )
     """)
+    cursor.execute("PRAGMA table_info(budgets)")
+    b_cols = [row[1] for row in cursor.fetchall()]
+    if "family_id" not in b_cols:
+        cursor.execute("ALTER TABLE budgets ADD COLUMN family_id INTEGER DEFAULT 1")
     
-    # Active Investments Holdings Table
+    # 5. Active Investments Holdings Table
     cursor.execute("""
         CREATE TABLE IF NOT EXISTS investments (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -233,9 +265,14 @@ def init_db():
             investment_amount REAL NOT NULL,
             year_invested INTEGER NOT NULL,
             current_value REAL NOT NULL,
+            family_id INTEGER DEFAULT 1,
             created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
         )
     """)
+    cursor.execute("PRAGMA table_info(investments)")
+    i_cols = [row[1] for row in cursor.fetchall()]
+    if "family_id" not in i_cols:
+        cursor.execute("ALTER TABLE investments ADD COLUMN family_id INTEGER DEFAULT 1")
     
     # Seed default admin if users table is empty
     cursor.execute("SELECT COUNT(*) FROM users")
@@ -243,12 +280,119 @@ def init_db():
     if user_cnt == 0:
         admin_hash = hash_password("admin1234")
         cursor.execute("""
-            INSERT INTO users (username, password_hash, full_name, role)
-            VALUES (?, ?, ?, ?)
-        """, ("admin", admin_hash, "Administrator", "Admin"))
+            INSERT INTO users (username, password_hash, full_name, role, family_id)
+            VALUES (?, ?, ?, ?, ?)
+        """, ("admin", admin_hash, "Administrator", "Admin", 1))
         
     conn.commit()
     conn.close()
+
+# ----------------------------------------------------
+# MULTI-FAMILY WORKSPACE MANAGEMENT
+# ----------------------------------------------------
+def generate_family_code(family_name: str) -> str:
+    clean_prefix = re.sub(r'[^A-Za-z0-9]', '', family_name).upper()[:8]
+    if not clean_prefix:
+        clean_prefix = "HOUSEHOLD"
+    rand_suffix = secrets.token_hex(2).upper()
+    return f"FAM-{clean_prefix}-{rand_suffix}"
+
+def create_family(family_name: str, admin_username: str, password: str, full_name: str) -> Tuple[bool, str, Optional[Dict[str, Any]]]:
+    family_name_clean = family_name.strip()
+    if not family_name_clean:
+        return False, "Family name cannot be empty.", None
+
+    username_clean = admin_username.strip().lower()
+    if not username_clean:
+        return False, "Admin username cannot be empty.", None
+    if len(password) < 4:
+        return False, "Password must be at least 4 characters long.", None
+
+    conn = get_connection()
+    cursor = conn.cursor()
+
+    cursor.execute("SELECT COUNT(*) FROM users WHERE username = ?", (username_clean,))
+    if cursor.fetchone()[0] > 0:
+        conn.close()
+        return False, f"Username '{username_clean}' is already taken. Please choose another username.", None
+
+    family_code = generate_family_code(family_name_clean)
+    cursor.execute("""
+        INSERT INTO families (family_code, family_name)
+        VALUES (?, ?)
+    """, (family_code, family_name_clean))
+    family_id = cursor.lastrowid
+
+    pwd_hash = hash_password(password)
+    cursor.execute("""
+        INSERT INTO users (username, password_hash, full_name, role, family_id)
+        VALUES (?, ?, ?, ?, ?)
+    """, (username_clean, pwd_hash, full_name.strip(), "Admin", family_id))
+    user_id = cursor.lastrowid
+
+    conn.commit()
+    conn.close()
+
+    user_info = {
+        "id": user_id,
+        "username": username_clean,
+        "full_name": full_name.strip(),
+        "role": "Admin",
+        "family_id": family_id,
+        "family_name": family_name_clean,
+        "family_code": family_code
+    }
+    return True, f"Family '{family_name_clean}' created successfully!", user_info
+
+def get_family_by_code(family_code: str) -> Optional[Dict[str, Any]]:
+    conn = get_connection()
+    cursor = conn.cursor()
+    cursor.execute("SELECT id, family_code, family_name, created_at FROM families WHERE UPPER(family_code) = ?", (family_code.strip().upper(),))
+    row = cursor.fetchone()
+    conn.close()
+    if row:
+        return dict(row) if isinstance(row, sqlite3.Row) else {
+            "id": row[0], "family_code": row[1], "family_name": row[2], "created_at": row[3]
+        }
+    return None
+
+def join_family_by_code(family_code: str, username: str, password: str, full_name: str, role: str = "Member") -> Tuple[bool, str, Optional[Dict[str, Any]]]:
+    fam = get_family_by_code(family_code)
+    if not fam:
+        return False, f"Invalid Family Code '{family_code}'. Please verify code with your Family Admin.", None
+
+    username_clean = username.strip().lower()
+    if not username_clean:
+        return False, "Username cannot be empty.", None
+    if len(password) < 4:
+        return False, "Password must be at least 4 characters long.", None
+
+    conn = get_connection()
+    cursor = conn.cursor()
+    cursor.execute("SELECT COUNT(*) FROM users WHERE username = ?", (username_clean,))
+    if cursor.fetchone()[0] > 0:
+        conn.close()
+        return False, f"Username '{username_clean}' is already taken.", None
+
+    pwd_hash = hash_password(password)
+    cursor.execute("""
+        INSERT INTO users (username, password_hash, full_name, role, family_id)
+        VALUES (?, ?, ?, ?, ?)
+    """, (username_clean, pwd_hash, full_name.strip(), role, fam["id"]))
+    user_id = cursor.lastrowid
+    conn.commit()
+    conn.close()
+
+    user_info = {
+        "id": user_id,
+        "username": username_clean,
+        "full_name": full_name.strip(),
+        "role": role,
+        "family_id": fam["id"],
+        "family_name": fam["family_name"],
+        "family_code": fam["family_code"]
+    }
+    return True, f"Successfully joined '{fam['family_name']}'!", user_info
 
 # ----------------------------------------------------
 # USER AUTHENTICATION & MANAGEMENT
@@ -256,7 +400,12 @@ def init_db():
 def authenticate_user(username: str, password_attempt: str) -> Optional[Dict[str, Any]]:
     conn = get_connection()
     cursor = conn.cursor()
-    cursor.execute("SELECT id, username, password_hash, full_name, role FROM users WHERE username = ?", (username.strip().lower(),))
+    cursor.execute("""
+        SELECT u.id, u.username, u.password_hash, u.full_name, u.role, u.family_id, f.family_name, f.family_code
+        FROM users u
+        LEFT JOIN families f ON u.family_id = f.id
+        WHERE u.username = ?
+    """, (username.strip().lower(),))
     row = cursor.fetchone()
     conn.close()
     
@@ -264,7 +413,8 @@ def authenticate_user(username: str, password_attempt: str) -> Optional[Dict[str
         return None
         
     user_dict = dict(row) if isinstance(row, sqlite3.Row) else {
-        "id": row[0], "username": row[1], "password_hash": row[2], "full_name": row[3], "role": row[4]
+        "id": row[0], "username": row[1], "password_hash": row[2], "full_name": row[3], "role": row[4],
+        "family_id": row[5] or 1, "family_name": row[6] or "Primary Household", "family_code": row[7] or "PRIMARY-1001"
     }
     
     if verify_password(user_dict["password_hash"], password_attempt):
@@ -272,11 +422,14 @@ def authenticate_user(username: str, password_attempt: str) -> Optional[Dict[str
             "id": user_dict["id"],
             "username": user_dict["username"],
             "full_name": user_dict["full_name"],
-            "role": user_dict["role"]
+            "role": user_dict["role"],
+            "family_id": user_dict["family_id"],
+            "family_name": user_dict["family_name"],
+            "family_code": user_dict["family_code"]
         }
     return None
 
-def create_user(username: str, password: str, full_name: str, role: str = "Member") -> Tuple[bool, str]:
+def create_user(username: str, password: str, full_name: str, role: str = "Member", family_id: int = 1) -> Tuple[bool, str]:
     username_clean = username.strip().lower()
     if not username_clean:
         return False, "Username cannot be empty."
@@ -292,9 +445,9 @@ def create_user(username: str, password: str, full_name: str, role: str = "Membe
         
     pwd_hash = hash_password(password)
     cursor.execute("""
-        INSERT INTO users (username, password_hash, full_name, role)
-        VALUES (?, ?, ?, ?)
-    """, (username_clean, pwd_hash, full_name.strip(), role))
+        INSERT INTO users (username, password_hash, full_name, role, family_id)
+        VALUES (?, ?, ?, ?, ?)
+    """, (username_clean, pwd_hash, full_name.strip(), role, int(family_id)))
     conn.commit()
     conn.close()
     return True, f"User '{username_clean}' created successfully!"
@@ -325,10 +478,10 @@ def update_user_role(username: str, new_role: str) -> Tuple[bool, str]:
         return True, f"Role for '{username}' updated to '{new_role}'."
     return False, "User not found."
 
-def get_all_users() -> List[Dict[str, Any]]:
+def get_all_users(family_id: int = 1) -> List[Dict[str, Any]]:
     conn = get_connection()
     cursor = conn.cursor()
-    cursor.execute("SELECT id, username, full_name, role, created_at FROM users ORDER BY username ASC")
+    cursor.execute("SELECT id, username, full_name, role, created_at FROM users WHERE family_id = ? ORDER BY username ASC", (int(family_id),))
     rows = cursor.fetchall()
     conn.close()
     users = []
@@ -355,33 +508,36 @@ def delete_user(username: str) -> Tuple[bool, str]:
 # ----------------------------------------------------
 # EXPENSE MANAGEMENT & DATA ACCESS
 # ----------------------------------------------------
-def _build_visibility_clause(username: Optional[str] = None, view_mode: str = "Family") -> Tuple[str, List[Any]]:
+def _build_visibility_clause(username: Optional[str] = None, view_mode: str = "Family", family_id: int = 1) -> Tuple[str, List[Any]]:
     """
-    Constructs SQL clause based on view mode:
-    - 'Family': (visibility = 'Family' OR username = current_user)
-    - 'Private': (username = current_user AND visibility = 'Private')
-    - 'All': (visibility = 'Family' OR username = current_user)
+    Constructs SQL clause based on view mode and family_id:
+    - 'Private': family_id = ? AND (username = current_user AND visibility = 'Private')
+    - 'Family': family_id = ? AND (visibility = 'Family' OR username = current_user)
+    - 'All': family_id = ? AND (visibility = 'Family' OR username = current_user)
     """
     user_clean = (username or "admin").strip().lower()
+    fam_id = int(family_id) if family_id else 1
     
     if view_mode == "Private":
-        return " AND (username = ? AND visibility = 'Private')", [user_clean]
+        return " AND family_id = ? AND (username = ? AND visibility = 'Private')", [fam_id, user_clean]
     elif view_mode == "Family":
-        return " AND (visibility = 'Family' OR username = ? OR username IS NULL)", [user_clean]
+        return " AND family_id = ? AND (visibility = 'Family' OR username = ? OR username IS NULL)", [fam_id, user_clean]
     else: # All Accessible
-        return " AND (visibility = 'Family' OR username = ? OR username IS NULL)", [user_clean]
+        return " AND family_id = ? AND (visibility = 'Family' OR username = ? OR username IS NULL)", [fam_id, user_clean]
 
 def insert_expenses(
     expense_rows: List[Dict[str, Any]], 
     source: str = "Manual",
     username: str = "admin",
-    visibility: str = "Family"
+    visibility: str = "Family",
+    family_id: int = 1
 ) -> int:
     from config import get_indian_half_year
     conn = get_connection()
     cursor = conn.cursor()
     count = 0
     user_clean = username.strip().lower()
+    fam_id = int(family_id) if family_id else 1
     
     for row in expense_rows:
         raw_date = row.get("date")
@@ -418,9 +574,9 @@ def insert_expenses(
             continue
             
         cursor.execute("""
-            INSERT INTO expenses (expense_date, financial_year, quarter, half_year, category, description, amount, source_note, username, visibility)
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-        """, (dt.isoformat(), fy, q_code, h_code, cat, str(desc), amt, source, user_clean, row_vis))
+            INSERT INTO expenses (expense_date, financial_year, quarter, half_year, category, description, amount, source_note, username, visibility, family_id)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        """, (dt.isoformat(), fy, q_code, h_code, cat, str(desc), amt, source, user_clean, row_vis, fam_id))
         count += 1
         
     conn.commit()
@@ -431,13 +587,14 @@ def get_expenses_df(
     fy: Optional[str] = None, 
     category: Optional[str] = None,
     username: Optional[str] = None,
-    view_mode: str = "Family"
+    view_mode: str = "Family",
+    family_id: int = 1
 ) -> pd.DataFrame:
     conn = get_connection()
     query = "SELECT * FROM expenses WHERE 1=1"
     params = []
     
-    vis_clause, vis_params = _build_visibility_clause(username, view_mode)
+    vis_clause, vis_params = _build_visibility_clause(username, view_mode, family_id)
     query += vis_clause
     params.extend(vis_params)
     
@@ -458,11 +615,11 @@ def get_expenses_df(
         df["Year"] = df["expense_date"].dt.year
     return df
 
-def get_all_financial_years(username: Optional[str] = None, view_mode: str = "Family") -> List[str]:
+def get_all_financial_years(username: Optional[str] = None, view_mode: str = "Family", family_id: int = 1) -> List[str]:
     conn = get_connection()
     cursor = conn.cursor()
     query = "SELECT DISTINCT financial_year FROM expenses WHERE 1=1"
-    vis_clause, vis_params = _build_visibility_clause(username, view_mode)
+    vis_clause, vis_params = _build_visibility_clause(username, view_mode, family_id)
     query += vis_clause + " ORDER BY financial_year DESC"
     cursor.execute(query, vis_params)
     fys = [row[0] for row in cursor.fetchall()]
@@ -473,7 +630,7 @@ def get_all_financial_years(username: Optional[str] = None, view_mode: str = "Fa
         fys.insert(0, current_fy)
     return fys
 
-def get_category_breakdown(fy: Optional[str] = None, username: Optional[str] = None, view_mode: str = "Family") -> pd.DataFrame:
+def get_category_breakdown(fy: Optional[str] = None, username: Optional[str] = None, view_mode: str = "Family", family_id: int = 1) -> pd.DataFrame:
     conn = get_connection()
     query = """
         SELECT category, SUM(amount) as Total_Amount, COUNT(*) as Transaction_Count, AVG(amount) as Avg_Amount
@@ -481,7 +638,7 @@ def get_category_breakdown(fy: Optional[str] = None, username: Optional[str] = N
         WHERE 1=1
     """
     params = []
-    vis_clause, vis_params = _build_visibility_clause(username, view_mode)
+    vis_clause, vis_params = _build_visibility_clause(username, view_mode, family_id)
     query += vis_clause
     params.extend(vis_params)
     
@@ -494,7 +651,7 @@ def get_category_breakdown(fy: Optional[str] = None, username: Optional[str] = N
     conn.close()
     return df
 
-def get_monthly_trend_df(fy: Optional[str] = None, username: Optional[str] = None, view_mode: str = "Family") -> pd.DataFrame:
+def get_monthly_trend_df(fy: Optional[str] = None, username: Optional[str] = None, view_mode: str = "Family", family_id: int = 1) -> pd.DataFrame:
     conn = get_connection()
     query = """
         SELECT strftime('%Y-%m', expense_date) as YearMonth, financial_year, category, SUM(amount) as Monthly_Total
@@ -502,7 +659,7 @@ def get_monthly_trend_df(fy: Optional[str] = None, username: Optional[str] = Non
         WHERE 1=1
     """
     params = []
-    vis_clause, vis_params = _build_visibility_clause(username, view_mode)
+    vis_clause, vis_params = _build_visibility_clause(username, view_mode, family_id)
     query += vis_clause
     params.extend(vis_params)
     
@@ -515,7 +672,7 @@ def get_monthly_trend_df(fy: Optional[str] = None, username: Optional[str] = Non
     conn.close()
     return df
 
-def get_quarterly_trend_df(fy: Optional[str] = None, username: Optional[str] = None, view_mode: str = "Family") -> pd.DataFrame:
+def get_quarterly_trend_df(fy: Optional[str] = None, username: Optional[str] = None, view_mode: str = "Family", family_id: int = 1) -> pd.DataFrame:
     conn = get_connection()
     query = """
         SELECT financial_year, quarter, category, SUM(amount) as Quarterly_Total
@@ -523,7 +680,7 @@ def get_quarterly_trend_df(fy: Optional[str] = None, username: Optional[str] = N
         WHERE 1=1
     """
     params = []
-    vis_clause, vis_params = _build_visibility_clause(username, view_mode)
+    vis_clause, vis_params = _build_visibility_clause(username, view_mode, family_id)
     query += vis_clause
     params.extend(vis_params)
     
@@ -541,7 +698,8 @@ def get_period_surge_analytics(
     selected_period: Optional[str] = None,
     fy: Optional[str] = None,
     username: Optional[str] = None,
-    view_mode: str = "Family"
+    view_mode: str = "Family",
+    family_id: int = 1
 ) -> Tuple[pd.DataFrame, List[str]]:
     """
     Computes period spend vs historical baseline average per category for any timeframe:
@@ -549,7 +707,7 @@ def get_period_surge_analytics(
     - selected_period: e.g. '2024-05', 'Q1', 'H1', 'FY 2024-25'
     Returns (surge_df, available_periods_list).
     """
-    all_df = get_expenses_df(fy=None, username=username, view_mode=view_mode)
+    all_df = get_expenses_df(fy=None, username=username, view_mode=view_mode, family_id=family_id)
     if all_df.empty:
         return pd.DataFrame(), []
 
@@ -613,8 +771,8 @@ def get_period_surge_analytics(
 
     return merged, available_periods
 
-def get_surge_categories(fy: str, username: Optional[str] = None, view_mode: str = "Family") -> pd.DataFrame:
-    df = get_expenses_df(fy=fy, username=username, view_mode=view_mode)
+def get_surge_categories(fy: str, username: Optional[str] = None, view_mode: str = "Family", family_id: int = 1) -> pd.DataFrame:
+    df = get_expenses_df(fy=fy, username=username, view_mode=view_mode, family_id=family_id)
     if df.empty:
         return pd.DataFrame()
         
@@ -641,20 +799,17 @@ def get_surge_categories(fy: str, username: Optional[str] = None, view_mode: str
     merged = merged.sort_values(by="Surge_%", ascending=False)
     return merged
 
-def set_category_budget(fy: str, category: str, monthly_limit: float, annual_limit: float):
+def set_category_budget(fy: str, category: str, monthly_limit: float, annual_limit: float, family_id: int = 1):
     conn = get_connection()
     cursor = conn.cursor()
     cursor.execute("""
-        INSERT INTO budgets (financial_year, category, monthly_limit, annual_limit)
-        VALUES (?, ?, ?, ?)
-        ON CONFLICT(financial_year, category) DO UPDATE SET
-            monthly_limit = excluded.monthly_limit,
-            annual_limit = excluded.annual_limit
-    """, (fy, category, monthly_limit, annual_limit))
+        INSERT INTO budgets (financial_year, category, monthly_limit, annual_limit, family_id)
+        VALUES (?, ?, ?, ?, ?)
+    """, (fy, category, monthly_limit, annual_limit, int(family_id)))
     conn.commit()
     conn.close()
 
-def batch_set_category_budgets(fy: str, budget_records: List[Dict[str, Any]]) -> int:
+def batch_set_category_budgets(fy: str, budget_records: List[Dict[str, Any]], family_id: int = 1) -> int:
     """
     Saves multiple category budget targets for a given financial year in a batch transaction.
     """
@@ -663,30 +818,32 @@ def batch_set_category_budgets(fy: str, budget_records: List[Dict[str, Any]]) ->
     conn = get_connection()
     cursor = conn.cursor()
     count = 0
+    fam_id = int(family_id) if family_id else 1
+    
+    # Remove old budgets for this FY & family_id to cleanly save new allocations
+    cursor.execute("DELETE FROM budgets WHERE financial_year = ? AND family_id = ?", (fy, fam_id))
+    
     for r in budget_records:
         cat = r.get("category")
         m_limit = float(r.get("monthly_limit", 0.0))
         a_limit = float(r.get("annual_limit", m_limit * 12))
         if cat and cat in EXPENSE_CATEGORIES:
             cursor.execute("""
-                INSERT INTO budgets (financial_year, category, monthly_limit, annual_limit)
-                VALUES (?, ?, ?, ?)
-                ON CONFLICT(financial_year, category) DO UPDATE SET
-                    monthly_limit = excluded.monthly_limit,
-                    annual_limit = excluded.annual_limit
-            """, (fy, cat, m_limit, a_limit))
+                INSERT INTO budgets (financial_year, category, monthly_limit, annual_limit, family_id)
+                VALUES (?, ?, ?, ?, ?)
+            """, (fy, cat, m_limit, a_limit, fam_id))
             count += 1
     conn.commit()
     conn.close()
     return count
 
-def get_suggested_budgets(fy: str, username: Optional[str] = None, view_mode: str = "Family", target_total_monthly: Optional[float] = None) -> pd.DataFrame:
+def get_suggested_budgets(fy: str, username: Optional[str] = None, view_mode: str = "Family", target_total_monthly: Optional[float] = None, family_id: int = 1) -> pd.DataFrame:
     """
     Calculates historical average monthly spending per category and optional proportional allocation for target monthly budget.
     """
-    df = get_expenses_df(fy=None, username=username, view_mode=view_mode)
+    df = get_expenses_df(fy=None, username=username, view_mode=view_mode, family_id=family_id)
     conn = get_connection()
-    b_df = pd.read_sql_query("SELECT category, monthly_limit, annual_limit FROM budgets WHERE financial_year = ?", conn, params=[fy])
+    b_df = pd.read_sql_query("SELECT category, monthly_limit, annual_limit FROM budgets WHERE financial_year = ? AND family_id = ?", conn, params=[fy, int(family_id)])
     conn.close()
 
     cat_df = pd.DataFrame({"category": EXPENSE_CATEGORIES})
@@ -718,12 +875,12 @@ def get_suggested_budgets(fy: str, username: Optional[str] = None, view_mode: st
 
     return merged
 
-def get_budget_status(fy: str, username: Optional[str] = None, view_mode: str = "Family") -> pd.DataFrame:
+def get_budget_status(fy: str, username: Optional[str] = None, view_mode: str = "Family", family_id: int = 1) -> pd.DataFrame:
     conn = get_connection()
-    b_df = pd.read_sql_query("SELECT category, monthly_limit, annual_limit FROM budgets WHERE financial_year = ?", conn, params=[fy])
+    b_df = pd.read_sql_query("SELECT category, monthly_limit, annual_limit FROM budgets WHERE financial_year = ? AND family_id = ?", conn, params=[fy, int(family_id)])
     conn.close()
     
-    e_df = get_category_breakdown(fy=fy, username=username, view_mode=view_mode)
+    e_df = get_category_breakdown(fy=fy, username=username, view_mode=view_mode, family_id=family_id)
     
     cat_df = pd.DataFrame({"category": EXPENSE_CATEGORIES})
     merged = pd.merge(cat_df, b_df, on="category", how="left").fillna(0.0)
@@ -787,8 +944,8 @@ def seed_sample_data_if_empty():
     
     insert_expenses(sample_records, source="Sample Seeder", username="admin", visibility="Family")
 
-def get_cumulative_metrics(fy: Optional[str] = None, username: Optional[str] = None, view_mode: str = "Family") -> Dict[str, float]:
-    df = get_expenses_df(fy=fy, username=username, view_mode=view_mode)
+def get_cumulative_metrics(fy: Optional[str] = None, username: Optional[str] = None, view_mode: str = "Family", family_id: int = 1) -> Dict[str, float]:
+    df = get_expenses_df(fy=fy, username=username, view_mode=view_mode, family_id=family_id)
     if df.empty:
         return {"YTD": 0.0, "QTD": 0.0, "H1": 0.0, "H2": 0.0}
         
@@ -901,25 +1058,26 @@ def insert_investment(
     investment_type: str,
     investment_amount: float,
     year_invested: int,
-    current_value: float
+    current_value: float,
+    family_id: int = 1
 ) -> int:
     conn = get_connection()
     cursor = conn.cursor()
     cursor.execute("""
-        INSERT INTO investments (username, platform, investment_type, investment_amount, year_invested, current_value)
-        VALUES (?, ?, ?, ?, ?, ?)
-    """, (username, platform, investment_type, float(investment_amount), int(year_invested), float(current_value)))
+        INSERT INTO investments (username, platform, investment_type, investment_amount, year_invested, current_value, family_id)
+        VALUES (?, ?, ?, ?, ?, ?, ?)
+    """, (username, platform, investment_type, float(investment_amount), int(year_invested), float(current_value), int(family_id)))
     inv_id = cursor.lastrowid
     conn.commit()
     conn.close()
     return inv_id
 
-def get_user_investments_df(username: Optional[str] = None) -> pd.DataFrame:
+def get_user_investments_df(username: Optional[str] = None, family_id: int = 1) -> pd.DataFrame:
     conn = get_connection()
-    query = "SELECT id, username, platform, investment_type, investment_amount, year_invested, current_value, created_at FROM investments"
-    params = []
+    query = "SELECT id, username, platform, investment_type, investment_amount, year_invested, current_value, created_at FROM investments WHERE family_id = ?"
+    params = [int(family_id)]
     if username:
-        query += " WHERE username = ?"
+        query += " AND username = ?"
         params.append(username)
     query += " ORDER BY current_value DESC"
     df = pd.read_sql_query(query, conn, params=params)

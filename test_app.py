@@ -228,6 +228,69 @@ def test_active_holdings_tracker():
     assert del_ok is True
     print("✅ Active Investment Portfolio & Holdings Tracker tests passed.")
 
+def test_multi_family_data_isolation():
+    init_db()
+    from database import (
+        create_family,
+        get_family_by_code,
+        join_family_by_code,
+        insert_expenses,
+        get_expenses_df,
+        insert_investment,
+        get_user_investments_df
+    )
+    
+    # 1. Create Family A
+    ok_a, msg_a, user_a = create_family("Sharma Household", "sharma_admin", "pass123", "Sharma Admin")
+    assert ok_a is True
+    fam_a_id = user_a["family_id"]
+    fam_a_code = user_a["family_code"]
+    
+    # 2. Join Family A with Member A
+    ok_m, msg_m, user_mem = join_family_by_code(fam_a_code, "sharma_member", "pass123", "Sharma Member")
+    assert ok_m is True
+    assert user_mem["family_id"] == fam_a_id
+    
+    # 3. Create Family B
+    ok_b, msg_b, user_b = create_family("Verma Household", "verma_admin", "pass123", "Verma Admin")
+    assert ok_b is True
+    fam_b_id = user_b["family_id"]
+    assert fam_b_id != fam_a_id
+    
+    # 4. Add Expenses in Family A and Family B
+    insert_expenses([
+        {"date": "2024-05-10", "category": "Groceries & Provisions", "description": "Sharma Groceries", "amount": 15000.0, "visibility": "Family"}
+    ], username="sharma_admin", family_id=fam_a_id)
+    
+    insert_expenses([
+        {"date": "2024-05-12", "category": "Rent & Housing", "description": "Verma Rent", "amount": 40000.0, "visibility": "Family"}
+    ], username="verma_admin", family_id=fam_b_id)
+    
+    # 5. Verify Expense Data Isolation
+    df_fam_a = get_expenses_df(fy="FY 2024-25", username="sharma_admin", view_mode="Family", family_id=fam_a_id)
+    df_fam_b = get_expenses_df(fy="FY 2024-25", username="verma_admin", view_mode="Family", family_id=fam_b_id)
+    
+    assert len(df_fam_a) == 1
+    assert df_fam_a.iloc[0]["description"] == "Sharma Groceries"
+    
+    assert len(df_fam_b) == 1
+    assert df_fam_b.iloc[0]["description"] == "Verma Rent"
+    
+    # 6. Verify Investments Data Isolation
+    insert_investment("sharma_admin", "Zerodha", "Equity", 50000.0, 2023, 60000.0, family_id=fam_a_id)
+    insert_investment("verma_admin", "Groww", "Mutual funds", 100000.0, 2022, 120000.0, family_id=fam_b_id)
+    
+    inv_a = get_user_investments_df(family_id=fam_a_id)
+    inv_b = get_user_investments_df(family_id=fam_b_id)
+    
+    assert len(inv_a) == 1
+    assert inv_a.iloc[0]["platform"] == "Zerodha"
+    
+    assert len(inv_b) == 1
+    assert inv_b.iloc[0]["platform"] == "Groww"
+    
+    print("✅ Multi-Family Workspace & Data Isolation tests passed.")
+
 if __name__ == "__main__":
     try:
         test_strict_uploaded_date_enforcement()
@@ -239,6 +302,7 @@ if __name__ == "__main__":
         test_smart_suggested_budgets()
         test_investment_planner()
         test_active_holdings_tracker()
+        test_multi_family_data_isolation()
         print("🎉 All test suite assertions passed successfully!")
     finally:
         if os.path.exists(database.DB_PATH):

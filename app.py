@@ -60,11 +60,13 @@ from database import (
     update_user_role,
     get_all_users,
     delete_user,
-    get_db_type,
     insert_investment,
     get_user_investments_df,
     update_investments_df,
-    delete_investment
+    delete_investment,
+    create_family,
+    get_family_by_code,
+    join_family_by_code
 )
 from cpi_data import (
     get_cpi_df,
@@ -185,36 +187,82 @@ seed_sample_data_if_empty()
 if "user" not in st.session_state:
     st.markdown("<br>", unsafe_allow_html=True)
     st.markdown("""
-    <div style="max-width: 480px; margin: 30px auto; padding: 30px; border-radius: 12px; background-color: #1e293b; border: 1px solid #334155; text-align: center; box-shadow: 0 10px 25px -5px rgba(0,0,0,0.3);">
-        <h2 style="color: #38bdf8; margin-bottom: 6px;">🔐 In-House Expense Tracker</h2>
-        <p style="color: #94a3b8; font-size: 0.95rem;">Sign in to access your Private & Household Expenses</p>
+    <div style="max-width: 540px; margin: 20px auto; padding: 24px; border-radius: 12px; background-color: #1e293b; border: 1px solid #334155; text-align: center; box-shadow: 0 10px 25px -5px rgba(0,0,0,0.3);">
+        <h2 style="color: #38bdf8; margin-bottom: 4px;">🔐 In-House Expense Tracker</h2>
+        <p style="color: #94a3b8; font-size: 0.95rem;">Multi-Family Expense Tracking, Wealth Planning & AI Analytics</p>
     </div>
     """, unsafe_allow_html=True)
     
-    col_l1, col_l2, col_l3 = st.columns([1, 2, 1])
+    col_l1, col_l2, col_l3 = st.columns([1, 2.4, 1])
     with col_l2:
-        with st.form("login_form"):
-            login_user = st.text_input("Username", placeholder="e.g. admin", key="login_username").strip()
-            login_pwd = st.text_input("Password", type="password", placeholder="••••••••", key="login_pwd")
-            submit_login = st.form_submit_button("🚀 Sign In to Expense Tracker", type="primary", use_container_width=True)
-            
-            if submit_login:
-                user_record = authenticate_user(login_user, login_pwd)
-                if user_record:
-                    st.session_state["user"] = user_record
-                    st.session_state["view_mode"] = "Family"
-                    st.success(f"Welcome back, {user_record['full_name']}!")
-                    st.rerun()
-                else:
-                    st.error("Invalid username or password.")
-                    
-        st.caption("🔒 Authorized household access only. Contact your administrator if you need access.")
+        auth_tab1, auth_tab2, auth_tab3 = st.tabs([
+            "🔑 Sign In",
+            "🏠 Register New Family",
+            "👨‍👩‍👧 Join Existing Family"
+        ])
+        
+        with auth_tab1:
+            with st.form("login_form"):
+                login_user = st.text_input("Username", placeholder="e.g. admin", key="login_username").strip()
+                login_pwd = st.text_input("Password", type="password", placeholder="••••••••", key="login_pwd")
+                submit_login = st.form_submit_button("🚀 Sign In to Expense Tracker", type="primary", use_container_width=True)
+                
+                if submit_login:
+                    user_record = authenticate_user(login_user, login_pwd)
+                    if user_record:
+                        st.session_state["user"] = user_record
+                        st.session_state["view_mode"] = "Family"
+                        st.success(f"Welcome back, {user_record['full_name']}!")
+                        st.rerun()
+                    else:
+                        st.error("Invalid username or password.")
+
+        with auth_tab2:
+            st.caption("Create a new isolated Family Household & become its Family Admin.")
+            with st.form("create_family_form"):
+                new_fam_name = st.text_input("Family / Household Name", placeholder="e.g. Pulikken Household", key="reg_fam_name")
+                fam_admin_user = st.text_input("Admin Username", placeholder="e.g. rovin_admin", key="reg_fam_user")
+                fam_admin_fullname = st.text_input("Your Full Name", placeholder="e.g. Rovin Pulikken", key="reg_fam_name_full")
+                fam_admin_pwd = st.text_input("Password", type="password", placeholder="••••••••", key="reg_fam_pwd")
+                submit_fam = st.form_submit_button("🏠 Register Family & Become Admin", type="primary", use_container_width=True)
+                
+                if submit_fam:
+                    ok, msg, u_record = create_family(new_fam_name, fam_admin_user, fam_admin_pwd, fam_admin_fullname)
+                    if ok and u_record:
+                        st.session_state["user"] = u_record
+                        st.session_state["view_mode"] = "Family"
+                        st.success(msg)
+                        st.rerun()
+                    else:
+                        st.error(msg)
+
+        with auth_tab3:
+            st.caption("Join an existing Family using your Family Admin's unique Join Code.")
+            with st.form("join_family_form"):
+                join_code_in = st.text_input("Family Join Code", placeholder="e.g. FAM-PULIKKEN-92A1", key="join_fam_code").strip()
+                join_user_in = st.text_input("Desired Username", placeholder="e.g. priya", key="join_user_name").strip()
+                join_fullname_in = st.text_input("Your Full Name", placeholder="e.g. Priya Pulikken", key="join_full_name")
+                join_pwd_in = st.text_input("Password", type="password", placeholder="••••••••", key="join_user_pwd")
+                submit_join = st.form_submit_button("👨‍👩‍👧 Join Family Workspace", type="primary", use_container_width=True)
+                
+                if submit_join:
+                    ok, msg, u_record = join_family_by_code(join_code_in, join_user_in, join_pwd_in, join_fullname_in, role="Member")
+                    if ok and u_record:
+                        st.session_state["user"] = u_record
+                        st.session_state["view_mode"] = "Family"
+                        st.success(msg)
+                        st.rerun()
+                    else:
+                        st.error(msg)
 
 else:
     # ----------------------------------------------------
     # LOGGED IN USER & SIDEBAR SETUP
     # ----------------------------------------------------
     current_user = st.session_state["user"]
+    user_family_id = current_user.get("family_id", 1)
+    user_family_name = current_user.get("family_name", "Primary Household")
+    user_family_code = current_user.get("family_code", "PRIMARY-1001")
 
     st.sidebar.image("https://img.icons8.com/isometric/100/rupee.png", width=64)
     st.sidebar.title("📌 Navigation & Settings")
@@ -222,8 +270,10 @@ else:
     role_color = "#38bdf8" if current_user["role"] == "Admin" else "#34d399"
     st.sidebar.markdown(f"""
     <div style="background: #1e293b; padding: 12px; border-radius: 8px; border-left: 4px solid {role_color}; margin-bottom: 12px;">
-        <div style="font-weight: 600; color: #f8fafc;">👤 {current_user['full_name']}</div>
+        <div style="font-weight: 700; color: #38bdf8; font-size: 0.85rem; text-transform: uppercase;">🏠 {user_family_name}</div>
+        <div style="font-weight: 600; color: #f8fafc; font-size: 0.95rem;">👤 {current_user['full_name']}</div>
         <div style="font-size: 0.8rem; color: #94a3b8;">@{current_user['username']} • <span style="color: {role_color}; font-weight: 600;">{current_user['role']}</span></div>
+        <div style="font-size: 0.75rem; color: #64748b; margin-top: 4px;">Code: <code>{user_family_code}</code></div>
     </div>
     """, unsafe_allow_html=True)
 
@@ -241,11 +291,11 @@ else:
     else:
         view_mode = "All"
 
-    all_fys = get_all_financial_years(username=current_user["username"], view_mode=view_mode)
+    all_fys = get_all_financial_years(username=current_user["username"], view_mode=view_mode, family_id=user_family_id)
     selected_fy = st.sidebar.selectbox("📅 Select Financial Year", ["All FYs"] + all_fys, index=1 if len(all_fys) > 1 else 0)
 
     # Sidebar Monthly Dropdown List Filter
-    df_raw_for_months = get_expenses_df(fy=selected_fy, username=current_user["username"], view_mode=view_mode)
+    df_raw_for_months = get_expenses_df(fy=selected_fy, username=current_user["username"], view_mode=view_mode, family_id=user_family_id)
     avail_months = sorted(df_raw_for_months["Month_Year"].unique().tolist(), reverse=True) if not df_raw_for_months.empty and "Month_Year" in df_raw_for_months.columns else []
     
     selected_month_filter = st.sidebar.selectbox(
@@ -268,7 +318,7 @@ else:
     st.markdown("<div class='main-header'>Indian FY Expense Tracker & Inflation Analyzer</div>", unsafe_allow_html=True)
     st.markdown("<div class='sub-header'>Manage household and private expenses, track CPI inflation, analyze Indian Financial Year trends, and set category budgets.</div>", unsafe_allow_html=True)
 
-    df_fy = get_expenses_df(fy=selected_fy, username=current_user["username"], view_mode=view_mode)
+    df_fy = get_expenses_df(fy=selected_fy, username=current_user["username"], view_mode=view_mode, family_id=user_family_id)
     if selected_month_filter != "All Months" and not df_fy.empty and "Month_Year" in df_fy.columns:
         df_fy = df_fy[df_fy["Month_Year"] == selected_month_filter]
     total_spent = df_fy["amount"].sum() if not df_fy.empty else 0.0
@@ -277,7 +327,7 @@ else:
     num_months = max(1, num_months)
     avg_monthly_spent = total_spent / num_months if not df_fy.empty else 0.0
 
-    cat_breakdown = get_category_breakdown(fy=selected_fy, username=current_user["username"], view_mode=view_mode)
+    cat_breakdown = get_category_breakdown(fy=selected_fy, username=current_user["username"], view_mode=view_mode, family_id=user_family_id)
     top_category = cat_breakdown.iloc[0]["category"] if not cat_breakdown.empty else "N/A"
     top_cat_amount = cat_breakdown.iloc[0]["Total_Amount"] if not cat_breakdown.empty else 0.0
 
@@ -343,7 +393,7 @@ else:
         return output.getvalue()
 
     # Helper for Excel/CSV Import
-    def import_from_excel_or_csv(file, username: str = "admin", visibility: str = "Family") -> tuple:
+    def import_from_excel_or_csv(file, username: str = "admin", visibility: str = "Family", family_id: int = 1) -> tuple:
         try:
             if file.name.endswith(".csv"):
                 df = pd.read_csv(file)
@@ -384,7 +434,7 @@ else:
                 
             records = df[["date", "category", "description", "amount", "visibility"]].to_dict("records")
             records = auto_categorize_records(records)
-            count = insert_expenses(records, source=f"Import ({file.name})", username=username, visibility=visibility)
+            count = insert_expenses(records, source=f"Import ({file.name})", username=username, visibility=visibility, family_id=family_id)
             return count, f"Successfully imported {count} expense rows from {file.name}!"
         except Exception as e:
             return 0, f"Error processing file: {e}"
@@ -465,7 +515,7 @@ else:
                     valid_rows = [r for r in grid_edited.to_dict("records") if float(r.get("amount", 0.0)) > 0]
                     if valid_rows:
                         categorized_rows = auto_categorize_records(valid_rows)
-                        cnt = insert_expenses(categorized_rows, source="Excel Grid (Auto-Categorized)", username=current_user["username"], visibility=entry_vis)
+                        cnt = insert_expenses(categorized_rows, source="Excel Grid (Auto-Categorized)", username=current_user["username"], visibility=entry_vis, family_id=user_family_id)
                         st.success(f"🎉 Successfully auto-categorized and saved {cnt} expense entries!")
                         st.rerun()
                     else:
@@ -475,7 +525,7 @@ else:
                 if st.button("💾 Save As Is (No Auto-Categorize)", use_container_width=True):
                     valid_rows = [r for r in grid_edited.to_dict("records") if float(r.get("amount", 0.0)) > 0]
                     if valid_rows:
-                        cnt = insert_expenses(valid_rows, source="Excel Grid Editor", username=current_user["username"], visibility=entry_vis)
+                        cnt = insert_expenses(valid_rows, source="Excel Grid Editor", username=current_user["username"], visibility=entry_vis, family_id=user_family_id)
                         st.success(f"Saved {cnt} entries!")
                         st.rerun()
                     else:
@@ -505,7 +555,7 @@ else:
                 uploaded_excel = st.file_uploader("Choose Excel or CSV File", type=["xlsx", "xls", "csv"], key="excel_uploader")
                 if uploaded_excel:
                     if st.button("🚀 Import & Auto-Categorize File", type="primary", use_container_width=True):
-                        cnt, msg = import_from_excel_or_csv(uploaded_excel, username=current_user["username"], visibility=upload_vis)
+                        cnt, msg = import_from_excel_or_csv(uploaded_excel, username=current_user["username"], visibility=upload_vis, family_id=user_family_id)
                         if cnt > 0:
                             st.success(msg)
                             st.rerun()
@@ -536,7 +586,7 @@ else:
                         "description": q_desc,
                         "amount": q_amt,
                         "visibility": q_vis
-                    }], source="Quick Manual Entry", username=current_user["username"], visibility=q_vis)
+                    }], source="Quick Manual Entry", username=current_user["username"], visibility=q_vis, family_id=user_family_id)
                     st.success(f"Added {format_inr(q_amt)} under '{q_cat}'!")
                     st.rerun()
                 else:
@@ -900,7 +950,8 @@ else:
             selected_period=None,
             fy=selected_fy,
             username=current_user["username"],
-            view_mode=view_mode
+            view_mode=view_mode,
+            family_id=user_family_id
         )
 
         with s_col2:
@@ -922,7 +973,8 @@ else:
                 selected_period=selected_period,
                 fy=selected_fy,
                 username=current_user["username"],
-                view_mode=view_mode
+                view_mode=view_mode,
+                family_id=user_family_id
             )
 
             if not period_surge_df.empty:
@@ -1031,7 +1083,7 @@ else:
             </div>
             """, unsafe_allow_html=True)
 
-            suggested_base_df = get_suggested_budgets(fy=target_fy_clean, username=current_user["username"], view_mode=view_mode)
+            suggested_base_df = get_suggested_budgets(fy=target_fy_clean, username=current_user["username"], view_mode=view_mode, family_id=user_family_id)
             total_hist_avg_monthly = float(suggested_base_df["hist_monthly_avg"].sum())
 
             t_col1, t_col2, t_col3 = st.columns([2, 1.2, 1.2])
@@ -1078,7 +1130,7 @@ else:
                 st.rerun()
 
             if btn_apply_prop:
-                prop_df = get_suggested_budgets(fy=target_fy_clean, username=current_user["username"], view_mode=view_mode, target_total_monthly=target_monthly_input)
+                prop_df = get_suggested_budgets(fy=target_fy_clean, username=current_user["username"], view_mode=view_mode, target_total_monthly=target_monthly_input, family_id=user_family_id)
                 for idx, r in prop_df.iterrows():
                     c = r["category"]
                     st.session_state["budget_dict"][c] = round(float(r["suggested_monthly"]), 2)
@@ -1163,7 +1215,7 @@ else:
                     {"category": c, "monthly_limit": val, "annual_limit": val * 12.0}
                     for c, val in st.session_state["budget_dict"].items()
                 ]
-                saved_n = batch_set_category_budgets(target_fy_clean, records_to_save)
+                saved_n = batch_set_category_budgets(target_fy_clean, records_to_save, family_id=user_family_id)
                 st.success(f"🎉 Successfully saved **{saved_n}** category budget target(s) for **{target_fy_clean}**!")
                 st.rerun()
 
@@ -1172,7 +1224,7 @@ else:
             # ------------------------------------------------
             st.markdown("<hr>", unsafe_allow_html=True)
             st.markdown("#### 📊 Budget Performance & Utilization Dashboard")
-            budget_status = get_budget_status(target_fy_clean, username=current_user["username"], view_mode=view_mode)
+            budget_status = get_budget_status(target_fy_clean, username=current_user["username"], view_mode=view_mode, family_id=user_family_id)
 
             if not budget_status.empty:
                 for idx, row in budget_status.iterrows():
@@ -1402,7 +1454,8 @@ else:
                     investment_type=final_type,
                     investment_amount=inv_amt_val,
                     year_invested=inv_yr_val,
-                    current_value=curr_val_input
+                    current_value=curr_val_input,
+                    family_id=user_family_id
                 )
                 st.success(f"🎉 Successfully added holding under **{final_plat}** ({final_type}) with initial investment of **{format_inr(inv_amt_val)}**!")
                 st.rerun()
@@ -1410,7 +1463,7 @@ else:
             st.markdown("<hr>", unsafe_allow_html=True)
 
             # Retrieve User Holdings
-            holdings_df = get_user_investments_df(username=current_user["username"] if view_mode != "Family" else None)
+            holdings_df = get_user_investments_df(username=current_user["username"] if view_mode != "Family" else None, family_id=user_family_id)
 
             if not holdings_df.empty:
                 tot_invested = float(holdings_df["investment_amount"].sum())
@@ -1615,13 +1668,21 @@ else:
     # ----------------------------------------------------
     if tab_admin:
         with tab_admin:
-            st.subheader("👑 Administrator & User Access Control")
-            st.caption("Manage user accounts, assign roles, change credentials, and verify Turso cloud database connection.")
+            st.subheader("👑 Administrator & Family Workspace Management")
+            st.caption("Manage household user accounts, share family join codes, assign roles, and verify Turso cloud database connection.")
+            
+            st.markdown(f"""
+            <div style="background-color: #1e293b; padding: 18px; border-radius: 10px; border: 1px solid #334155; margin-bottom: 20px;">
+                <h4 style="color: #38bdf8; margin-top: 0; margin-bottom: 6px;">🏠 Active Family Workspace: {user_family_name}</h4>
+                <p style="color: #94a3b8; font-size: 0.95rem; margin-bottom: 8px;">Family Join Code: <code style="font-size: 1.15rem; color: #fbbf24; background: #0f172a; padding: 4px 10px; border-radius: 4px; font-weight: 700;">{user_family_code}</code></p>
+                <p style="color: #64748b; font-size: 0.82rem; margin-bottom: 0;">💡 Share this Join Code with your family members so they can join this household workspace when signing up.</p>
+            </div>
+            """, unsafe_allow_html=True)
             
             st.markdown("---")
             
             # Section 1: Register New User
-            st.markdown("### ➕ Register New Household User / Family Member")
+            st.markdown("### ➕ Register New Household Member Account")
             with st.form("create_user_form"):
                 c_col1, c_col2, c_col3, c_col4 = st.columns([2, 2, 2, 1.5])
                 with c_col1:
@@ -1634,7 +1695,7 @@ else:
                     c_role = st.selectbox("Role", ["Member", "Admin"], help="Admins can manage users; Members can log private & family expenses.")
                     
                 if st.form_submit_button("🚀 Create User Account", type="primary", use_container_width=True):
-                    ok, msg = create_user(c_user, c_pwd, c_name, c_role)
+                    ok, msg = create_user(c_user, c_pwd, c_name, c_role, family_id=user_family_id)
                     if ok:
                         st.success(msg)
                         st.rerun()
@@ -1644,8 +1705,8 @@ else:
             st.markdown("---")
             
             # Section 2: User Directory & Access Management
-            st.markdown("### 👥 Active Users Directory & Access Management")
-            users_list = get_all_users()
+            st.markdown(f"### 👥 {user_family_name} Members & Directory")
+            users_list = get_all_users(family_id=user_family_id)
             u_df = pd.DataFrame(users_list)
             st.dataframe(u_df, use_container_width=True, hide_index=True)
             
