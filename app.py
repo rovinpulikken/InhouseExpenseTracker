@@ -60,6 +60,7 @@ from database import (
     update_user_role,
     get_all_users,
     delete_user,
+    get_db_type,
     insert_investment,
     get_user_investments_df,
     update_investments_df,
