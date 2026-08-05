@@ -356,6 +356,20 @@ def get_family_by_code(family_code: str) -> Optional[Dict[str, Any]]:
         }
     return None
 
+def get_all_families() -> List[Dict[str, Any]]:
+    conn = get_connection()
+    cursor = conn.cursor()
+    cursor.execute("SELECT id, family_code, family_name, created_at FROM families ORDER BY id ASC")
+    rows = cursor.fetchall()
+    conn.close()
+    fams = []
+    for r in rows:
+        if isinstance(r, sqlite3.Row):
+            fams.append(dict(r))
+        else:
+            fams.append({"id": r[0], "family_code": r[1], "family_name": r[2], "created_at": r[3]})
+    return fams
+
 def join_family_by_code(family_code: str, username: str, password: str, full_name: str, role: str = "Member") -> Tuple[bool, str, Optional[Dict[str, Any]]]:
     fam = get_family_by_code(family_code)
     if not fam:
@@ -478,10 +492,24 @@ def update_user_role(username: str, new_role: str) -> Tuple[bool, str]:
         return True, f"Role for '{username}' updated to '{new_role}'."
     return False, "User not found."
 
-def get_all_users(family_id: int = 1) -> List[Dict[str, Any]]:
+def get_all_users(family_id: Optional[int] = 1) -> List[Dict[str, Any]]:
     conn = get_connection()
     cursor = conn.cursor()
-    cursor.execute("SELECT id, username, full_name, role, created_at FROM users WHERE family_id = ? ORDER BY username ASC", (int(family_id),))
+    if family_id is None or family_id == 0:
+        cursor.execute("""
+            SELECT u.id, u.username, u.full_name, u.role, u.family_id, f.family_name, u.created_at
+            FROM users u
+            LEFT JOIN families f ON u.family_id = f.id
+            ORDER BY u.family_id ASC, u.username ASC
+        """)
+    else:
+        cursor.execute("""
+            SELECT u.id, u.username, u.full_name, u.role, u.family_id, f.family_name, u.created_at
+            FROM users u
+            LEFT JOIN families f ON u.family_id = f.id
+            WHERE u.family_id = ?
+            ORDER BY u.username ASC
+        """, (int(family_id),))
     rows = cursor.fetchall()
     conn.close()
     users = []
@@ -489,7 +517,10 @@ def get_all_users(family_id: int = 1) -> List[Dict[str, Any]]:
         if isinstance(r, sqlite3.Row):
             users.append(dict(r))
         else:
-            users.append({"id": r[0], "username": r[1], "full_name": r[2], "role": r[3], "created_at": r[4]})
+            users.append({
+                "id": r[0], "username": r[1], "full_name": r[2], "role": r[3],
+                "family_id": r[4], "family_name": r[5] or "Primary Household", "created_at": r[6]
+            })
     return users
 
 def delete_user(username: str) -> Tuple[bool, str]:
@@ -508,22 +539,29 @@ def delete_user(username: str) -> Tuple[bool, str]:
 # ----------------------------------------------------
 # EXPENSE MANAGEMENT & DATA ACCESS
 # ----------------------------------------------------
-def _build_visibility_clause(username: Optional[str] = None, view_mode: str = "Family", family_id: int = 1) -> Tuple[str, List[Any]]:
+def _build_visibility_clause(username: Optional[str] = None, view_mode: str = "Family", family_id: Optional[int] = 1) -> Tuple[str, List[Any]]:
     """
     Constructs SQL clause based on view mode and family_id:
-    - 'Private': family_id = ? AND (username = current_user AND visibility = 'Private')
-    - 'Family': family_id = ? AND (visibility = 'Family' OR username = current_user)
-    - 'All': family_id = ? AND (visibility = 'Family' OR username = current_user)
+    - If family_id is None or 0 (Super Admin All-Families Mode): No family_id filter.
+    - Otherwise: Appends AND family_id = ?
     """
     user_clean = (username or "admin").strip().lower()
-    fam_id = int(family_id) if family_id else 1
     
-    if view_mode == "Private":
-        return " AND family_id = ? AND (username = ? AND visibility = 'Private')", [fam_id, user_clean]
-    elif view_mode == "Family":
-        return " AND family_id = ? AND (visibility = 'Family' OR username = ? OR username IS NULL)", [fam_id, user_clean]
-    else: # All Accessible
-        return " AND family_id = ? AND (visibility = 'Family' OR username = ? OR username IS NULL)", [fam_id, user_clean]
+    if family_id is None or family_id == 0:
+        if view_mode == "Private":
+            return " AND (username = ? AND visibility = 'Private')", [user_clean]
+        elif view_mode == "Family":
+            return " AND (visibility = 'Family' OR username = ? OR username IS NULL)", [user_clean]
+        else: # All Accessible or SuperAdmin
+            return "", []
+    else:
+        fam_id = int(family_id)
+        if view_mode == "Private":
+            return " AND family_id = ? AND (username = ? AND visibility = 'Private')", [fam_id, user_clean]
+        elif view_mode == "Family":
+            return " AND family_id = ? AND (visibility = 'Family' OR username = ? OR username IS NULL)", [fam_id, user_clean]
+        else: # All Accessible
+            return " AND family_id = ? AND (visibility = 'Family' OR username = ? OR username IS NULL)", [fam_id, user_clean]
 
 def insert_expenses(
     expense_rows: List[Dict[str, Any]], 
@@ -588,15 +626,19 @@ def get_expenses_df(
     category: Optional[str] = None,
     username: Optional[str] = None,
     view_mode: str = "Family",
-    family_id: int = 1
+    family_id: Optional[int] = 1
 ) -> pd.DataFrame:
     conn = get_connection()
     query = "SELECT * FROM expenses WHERE 1=1"
     params = []
     
-    vis_clause, vis_params = _build_visibility_clause(username, view_mode, family_id)
-    query += vis_clause
-    params.extend(vis_params)
+    if (username == "admin" or view_mode == "SuperAdmin") and (family_id is None or family_id == 0):
+        # Super Admin viewing entire database across all families
+        pass
+    else:
+        vis_clause, vis_params = _build_visibility_clause(username, view_mode, family_id)
+        query += vis_clause
+        params.extend(vis_params)
     
     if fy and fy != "All FYs":
         query += " AND financial_year = ?"
@@ -837,13 +879,16 @@ def batch_set_category_budgets(fy: str, budget_records: List[Dict[str, Any]], fa
     conn.close()
     return count
 
-def get_suggested_budgets(fy: str, username: Optional[str] = None, view_mode: str = "Family", target_total_monthly: Optional[float] = None, family_id: int = 1) -> pd.DataFrame:
+def get_suggested_budgets(fy: str, username: Optional[str] = None, view_mode: str = "Family", target_total_monthly: Optional[float] = None, family_id: Optional[int] = 1) -> pd.DataFrame:
     """
     Calculates historical average monthly spending per category and optional proportional allocation for target monthly budget.
     """
     df = get_expenses_df(fy=None, username=username, view_mode=view_mode, family_id=family_id)
     conn = get_connection()
-    b_df = pd.read_sql_query("SELECT category, monthly_limit, annual_limit FROM budgets WHERE financial_year = ? AND family_id = ?", conn, params=[fy, int(family_id)])
+    if family_id is None or family_id == 0:
+        b_df = pd.read_sql_query("SELECT category, monthly_limit, annual_limit FROM budgets WHERE financial_year = ?", conn, params=[fy])
+    else:
+        b_df = pd.read_sql_query("SELECT category, monthly_limit, annual_limit FROM budgets WHERE financial_year = ? AND family_id = ?", conn, params=[fy, int(family_id)])
     conn.close()
 
     cat_df = pd.DataFrame({"category": EXPENSE_CATEGORIES})
@@ -875,9 +920,12 @@ def get_suggested_budgets(fy: str, username: Optional[str] = None, view_mode: st
 
     return merged
 
-def get_budget_status(fy: str, username: Optional[str] = None, view_mode: str = "Family", family_id: int = 1) -> pd.DataFrame:
+def get_budget_status(fy: str, username: Optional[str] = None, view_mode: str = "Family", family_id: Optional[int] = 1) -> pd.DataFrame:
     conn = get_connection()
-    b_df = pd.read_sql_query("SELECT category, monthly_limit, annual_limit FROM budgets WHERE financial_year = ? AND family_id = ?", conn, params=[fy, int(family_id)])
+    if family_id is None or family_id == 0:
+        b_df = pd.read_sql_query("SELECT category, monthly_limit, annual_limit FROM budgets WHERE financial_year = ?", conn, params=[fy])
+    else:
+        b_df = pd.read_sql_query("SELECT category, monthly_limit, annual_limit FROM budgets WHERE financial_year = ? AND family_id = ?", conn, params=[fy, int(family_id)])
     conn.close()
     
     e_df = get_category_breakdown(fy=fy, username=username, view_mode=view_mode, family_id=family_id)
@@ -944,7 +992,7 @@ def seed_sample_data_if_empty():
     
     insert_expenses(sample_records, source="Sample Seeder", username="admin", visibility="Family")
 
-def get_cumulative_metrics(fy: Optional[str] = None, username: Optional[str] = None, view_mode: str = "Family", family_id: int = 1) -> Dict[str, float]:
+def get_cumulative_metrics(fy: Optional[str] = None, username: Optional[str] = None, view_mode: str = "Family", family_id: Optional[int] = 1) -> Dict[str, float]:
     df = get_expenses_df(fy=fy, username=username, view_mode=view_mode, family_id=family_id)
     if df.empty:
         return {"YTD": 0.0, "QTD": 0.0, "H1": 0.0, "H2": 0.0}
@@ -1072,13 +1120,20 @@ def insert_investment(
     conn.close()
     return inv_id
 
-def get_user_investments_df(username: Optional[str] = None, family_id: int = 1) -> pd.DataFrame:
+def get_user_investments_df(username: Optional[str] = None, family_id: Optional[int] = 1) -> pd.DataFrame:
     conn = get_connection()
-    query = "SELECT id, username, platform, investment_type, investment_amount, year_invested, current_value, created_at FROM investments WHERE family_id = ?"
-    params = [int(family_id)]
-    if username:
-        query += " AND username = ?"
-        params.append(username)
+    query = "SELECT id, username, platform, investment_type, investment_amount, year_invested, current_value, family_id, created_at FROM investments"
+    params = []
+    if family_id is not None and family_id != 0:
+        query += " WHERE family_id = ?"
+        params.append(int(family_id))
+        if username:
+            query += " AND username = ?"
+            params.append(username)
+    else:
+        if username and username != "admin":
+            query += " WHERE username = ?"
+            params.append(username)
     query += " ORDER BY current_value DESC"
     df = pd.read_sql_query(query, conn, params=params)
     conn.close()

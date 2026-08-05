@@ -67,7 +67,8 @@ from database import (
     delete_investment,
     create_family,
     get_family_by_code,
-    join_family_by_code
+    join_family_by_code,
+    get_all_families
 )
 from cpi_data import (
     get_cpi_df,
@@ -268,15 +269,37 @@ else:
     st.sidebar.image("https://img.icons8.com/isometric/100/rupee.png", width=64)
     st.sidebar.title("📌 Navigation & Settings")
 
-    role_color = "#38bdf8" if current_user["role"] == "Admin" else "#34d399"
+    is_super_admin = (current_user["username"] == "admin" or current_user.get("role") == "Super Admin")
+
+    role_color = "#e11d48" if is_super_admin else ("#38bdf8" if current_user["role"] == "Admin" else "#34d399")
+    role_label = "Super Admin 👑" if is_super_admin else current_user["role"]
+
     st.sidebar.markdown(f"""
     <div style="background: #1e293b; padding: 12px; border-radius: 8px; border-left: 4px solid {role_color}; margin-bottom: 12px;">
         <div style="font-weight: 700; color: #38bdf8; font-size: 0.85rem; text-transform: uppercase;">🏠 {user_family_name}</div>
         <div style="font-weight: 600; color: #f8fafc; font-size: 0.95rem;">👤 {current_user['full_name']}</div>
-        <div style="font-size: 0.8rem; color: #94a3b8;">@{current_user['username']} • <span style="color: {role_color}; font-weight: 600;">{current_user['role']}</span></div>
+        <div style="font-size: 0.8rem; color: #94a3b8;">@{current_user['username']} • <span style="color: {role_color}; font-weight: 600;">{role_label}</span></div>
         <div style="font-size: 0.75rem; color: #64748b; margin-top: 4px;">Code: <code>{user_family_code}</code></div>
     </div>
     """, unsafe_allow_html=True)
+
+    if is_super_admin:
+        all_fams = get_all_families()
+        fam_options = ["🌐 Entire Database (All Families)"] + [f"{f['family_name']} ({f['family_code']})" for f in all_fams]
+        selected_fam_scope = st.sidebar.selectbox(
+            "🏛️ Family Scope (Super Admin)",
+            fam_options,
+            index=0,
+            help="Super Admin has access to view/export the entire database across all families, or filter by a specific family."
+        )
+        if "Entire Database" in selected_fam_scope:
+            user_family_id = None
+        else:
+            selected_code = selected_fam_scope.split("(")[-1].replace(")", "").strip()
+            matched_fam = next((f for f in all_fams if f["family_code"] == selected_code), None)
+            user_family_id = matched_fam["id"] if matched_fam else None
+    else:
+        user_family_id = current_user.get("family_id", 1)
 
     view_mode_choice = st.sidebar.radio(
         "👁️ Expense View Mode",
@@ -1576,18 +1599,18 @@ else:
             else:
                 st.info("💡 No active holdings recorded yet. Use the form above to add your first investment asset!")
 
-    # ----------------------------------------------------
-    # TAB 8: DATABASE LOG, EDIT & EXPORT
-    # ----------------------------------------------------
     with tab_data:
         st.subheader("📝 Interactive Database Log, Edit & Delete Manager")
-        st.caption("Double-click any cell to edit dates, categories, descriptions, or amounts directly. Click **Save All Edits** to update database.")
+        if is_super_admin:
+            st.caption("👑 **Super Admin View**: You have access to view, edit, and export records across the entire database or filter by family using the sidebar.")
+        else:
+            st.caption("Double-click any cell to edit dates, categories, descriptions, or amounts directly. Click **Save All Edits** to update database.")
         
-        expenses_table = get_expenses_df(fy=selected_fy, username=current_user["username"], view_mode=view_mode)
+        expenses_table = get_expenses_df(fy=selected_fy, username=current_user["username"], view_mode=view_mode, family_id=user_family_id)
         
         if not expenses_table.empty:
             # Fetch all historical labeled records for Machine Learning training
-            all_hist_df = get_expenses_df(fy=None, username=None, view_mode="All")
+            all_hist_df = get_expenses_df(fy=None, username=None, view_mode="All", family_id=user_family_id)
             hist_records = all_hist_df.to_dict("records") if not all_hist_df.empty else []
             
             # Machine Learning Model Status & Toolbar
@@ -1624,8 +1647,13 @@ else:
             if "expense_date" in expenses_table.columns:
                 expenses_table["expense_date"] = pd.to_datetime(expenses_table["expense_date"]).dt.date
                 
+            cols_to_show = ["id", "expense_date", "category", "description", "amount", "financial_year", "quarter", "half_year", "visibility", "username"]
+            if "family_id" in expenses_table.columns and is_super_admin:
+                cols_to_show.append("family_id")
+            cols_to_show.append("source_note")
+
             edited_db = st.data_editor(
-                expenses_table[["id", "expense_date", "category", "description", "amount", "financial_year", "quarter", "half_year", "visibility", "username", "source_note"]],
+                expenses_table[cols_to_show],
                 num_rows="dynamic",
                 column_config={
                     "id": st.column_config.NumberColumn("ID", disabled=True),
@@ -1638,6 +1666,7 @@ else:
                     "half_year": st.column_config.TextColumn("Half Year", disabled=True),
                     "visibility": st.column_config.SelectboxColumn("Sharing", options=["Family", "Private"], required=True),
                     "username": st.column_config.TextColumn("Logged By", disabled=True),
+                    "family_id": st.column_config.NumberColumn("Family ID", disabled=True),
                     "source_note": st.column_config.TextColumn("Source", disabled=True)
                 },
                 use_container_width=True,
@@ -1654,10 +1683,12 @@ else:
                     
             with col_act2:
                 csv_data = expenses_table.to_csv(index=False).encode('utf-8')
+                export_label = "📥 Export Full Database to CSV" if (is_super_admin and user_family_id is None) else "📥 Export Family Log to CSV"
+                file_name_label = f"Expenses_{'Full_Database' if (is_super_admin and user_family_id is None) else f'Family_{user_family_id}'}_{selected_fy.replace(' ', '_')}.csv"
                 st.download_button(
-                    label="📥 Export Full Records to CSV",
+                    label=export_label,
                     data=csv_data,
-                    file_name=f"expenses_{selected_fy.replace(' ', '_')}.csv",
+                    file_name=file_name_label,
                     mime="text/csv",
                     use_container_width=True
                 )

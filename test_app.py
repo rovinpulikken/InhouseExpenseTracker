@@ -295,7 +295,13 @@ def test_multi_family_data_isolation():
     assert len(inv_b) >= 1
     assert "Groww" in inv_b["platform"].values
     
-    print("✅ Multi-Family Workspace & Data Isolation tests passed.")
+    # 7. Verify Super Admin Access Across All Families
+    df_super_admin = get_expenses_df(fy="FY 2024-25", username="admin", view_mode="SuperAdmin", family_id=None)
+    assert len(df_super_admin) >= 2
+    assert "Sharma Groceries" in df_super_admin["description"].values
+    assert "Verma Rent" in df_super_admin["description"].values
+    
+    print("✅ Multi-Family Workspace & Super Admin Data Isolation tests passed.")
 
 if __name__ == "__main__":
     try:
