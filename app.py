@@ -1423,6 +1423,24 @@ else:
             st.markdown("#### 📤 Auto-Ingest from Broker Statements (GenAI Powered)")
             with st.expander("Upload ICICI Direct / Anand Rathi / Standard CAS / Any Format"):
                 import os
+                import pandas as pd
+                
+                template_df = pd.DataFrame({
+                    "Stock Symbol": ["HDFC Bank", "Nifty 50 Index Fund"],
+                    "Quantity": [30.5, 150.25],
+                    "Average Price": [1639.34, 210.50],
+                    "Current Market Price": [1700.00, 225.00],
+                    "Category": ["Equity", "Mutual Funds"]
+                })
+                csv_template = template_df.to_csv(index=False).encode('utf-8')
+                st.download_button(
+                    label="⬇️ Download Standard Statement Template",
+                    data=csv_template,
+                    file_name="investment_template.csv",
+                    mime="text/csv",
+                    help="Fill out this standard template for guaranteed 100% accurate parsing without needing Gemini AI."
+                )
+                
                 default_api_key = os.environ.get("GEMINI_API_KEY", "")
                 if not default_api_key:
                     try:
