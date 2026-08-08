@@ -53,7 +53,7 @@ def update_portfolio_live_prices(portfolio_df):
         return portfolio_df
 
     # 1. Update Mutual Funds
-    mf_mask = portfolio_df['type'].str.lower().str.contains('mutual fund', na=False)
+    mf_mask = portfolio_df['investment_type'].str.lower().str.contains('mutual fund', na=False)
     if mf_mask.any():
         amfi_data = fetch_amfi_nav_data()
         if amfi_data:
@@ -76,7 +76,7 @@ def update_portfolio_live_prices(portfolio_df):
                     portfolio_df.at[idx, 'last_updated'] = datetime.datetime.now().strftime('%Y-%m-%d %H:%M:%S')
 
     # 2. Update Stocks (Equity)
-    eq_mask = portfolio_df['type'].str.lower() == 'equity'
+    eq_mask = portfolio_df['investment_type'].str.lower() == 'equity'
     if eq_mask.any():
         eq_symbols = portfolio_df.loc[eq_mask, 'description'].tolist()
         
