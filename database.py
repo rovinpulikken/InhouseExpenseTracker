@@ -286,6 +286,8 @@ def init_db():
         cursor.execute("ALTER TABLE investments ADD COLUMN sector_segment TEXT DEFAULT 'Unknown'")
         cursor.execute("ALTER TABLE investments ADD COLUMN last_live_price REAL DEFAULT 0.0")
         cursor.execute("ALTER TABLE investments ADD COLUMN last_updated_at TIMESTAMP")
+    if "description" not in i_cols:
+        cursor.execute("ALTER TABLE investments ADD COLUMN description TEXT DEFAULT ''")
     
     # Seed default admin if users table is empty
     cursor.execute("SELECT COUNT(*) FROM users")
@@ -1125,15 +1127,16 @@ def insert_investment(
     avg_buy_price: float = 0.0,
     market_cap: str = "Unknown",
     sector_segment: str = "Unknown",
-    last_live_price: float = 0.0
+    last_live_price: float = 0.0,
+    description: str = ""
 ) -> int:
     conn = get_connection()
     cursor = conn.cursor()
     fid = int(family_id) if family_id is not None else None
     cursor.execute("""
-        INSERT INTO investments (username, platform, investment_type, investment_amount, year_invested, current_value, family_id, units, avg_buy_price, market_cap, sector_segment, last_live_price, last_updated_at)
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP)
-    """, (username, platform, investment_type, float(investment_amount), int(year_invested), float(current_value), fid, float(units), float(avg_buy_price), market_cap, sector_segment, float(last_live_price)))
+        INSERT INTO investments (username, platform, investment_type, investment_amount, year_invested, current_value, family_id, units, avg_buy_price, market_cap, sector_segment, last_live_price, description, last_updated_at)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP)
+    """, (username, platform, investment_type, float(investment_amount), int(year_invested), float(current_value), fid, float(units), float(avg_buy_price), market_cap, sector_segment, float(last_live_price), description))
     inv_id = cursor.lastrowid
     conn.commit()
     conn.close()
@@ -1148,8 +1151,8 @@ def batch_insert_investments(investments_list: List[Dict[str, Any]], username: s
     fid = int(family_id) if family_id is not None else None
     for inv in investments_list:
         cursor.execute("""
-            INSERT INTO investments (username, platform, investment_type, investment_amount, year_invested, current_value, family_id, units, avg_buy_price, market_cap, sector_segment, last_live_price, last_updated_at)
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP)
+            INSERT INTO investments (username, platform, investment_type, investment_amount, year_invested, current_value, family_id, units, avg_buy_price, market_cap, sector_segment, last_live_price, last_updated_at, description)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP, ?)
         """, (
             username, 
             inv.get("platform", "Unknown"), 
@@ -1162,7 +1165,8 @@ def batch_insert_investments(investments_list: List[Dict[str, Any]], username: s
             float(inv.get("avg_buy_price", 0.0)),
             inv.get("market_cap", "Unknown"),
             inv.get("sector_segment", "Unknown"),
-            float(inv.get("current_value", 0.0)) # use current_value as proxy for last live price initially
+            float(inv.get("current_value", 0.0)), # use current_value as proxy for last live price initially
+            inv.get("name_or_symbol", inv.get("platform", "Unknown"))
         ))
         count += 1
     conn.commit()
@@ -1171,7 +1175,7 @@ def batch_insert_investments(investments_list: List[Dict[str, Any]], username: s
 
 def get_user_investments_df(username: Optional[str] = None, family_id: Optional[int] = 1) -> pd.DataFrame:
     conn = get_connection()
-    query = "SELECT id, username, platform, investment_type, investment_amount, year_invested, current_value, family_id, units, avg_buy_price, market_cap, sector_segment, last_live_price, last_updated_at, created_at FROM investments"
+    query = "SELECT id, username, platform, investment_type, investment_amount, year_invested, current_value, family_id, units, avg_buy_price, market_cap, sector_segment, last_live_price, last_updated_at, created_at, description FROM investments"
     params = []
     if family_id is not None and family_id != 0:
         query += " WHERE family_id = ?"
@@ -1194,9 +1198,12 @@ def get_user_investments_df(username: Optional[str] = None, family_id: Optional[
         returns_pct = ((df["current_value"] - amt) / amt) * 100.0
         df["returns_pct"] = returns_pct.where(amt > 0, 0.0).round(2)
         
-        # Format name for display if platform/description logic is needed later
-        # We can default description to platform for now
-        df["description"] = df["platform"]
+        # If description is missing for legacy entries, fill with platform
+        if "description" not in df.columns:
+            df["description"] = df["platform"]
+        else:
+            df["description"] = df["description"].fillna(df["platform"])
+            
     return df
 
 def update_investments_df(df: pd.DataFrame) -> int:
@@ -1221,6 +1228,7 @@ def update_investments_df(df: pd.DataFrame) -> int:
             market_cap = str(row.get("market_cap", "Unknown"))
             sector_segment = str(row.get("sector_segment", "Unknown"))
             last_live_price = float(row.get("last_live_price", 0.0))
+            description = str(row.get("description", platform))
         except (ValueError, TypeError):
             continue
 
@@ -1235,9 +1243,10 @@ def update_investments_df(df: pd.DataFrame) -> int:
                 avg_buy_price = ?,
                 market_cap = ?,
                 sector_segment = ?,
-                last_live_price = ?
+                last_live_price = ?,
+                description = ?
             WHERE id = ?
-        """, (platform, inv_type, inv_amt, yr, curr_val, units, avg_buy_price, market_cap, sector_segment, last_live_price, int(inv_id)))
+        """, (platform, inv_type, inv_amt, yr, curr_val, units, avg_buy_price, market_cap, sector_segment, last_live_price, description, int(inv_id)))
         updated_count += 1
 
     conn.commit()

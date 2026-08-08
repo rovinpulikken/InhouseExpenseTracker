@@ -1487,13 +1487,14 @@ else:
                     final_type = selected_type
 
             with add_col3:
-                inv_amt_val = st.number_input("Invested Amount (₹)", min_value=100.0, value=50000.0, step=5000.0, format="%.2f", key="inv_amt_input")
+                inv_desc_val = st.text_input("Stock Code / Name", value="HDFCBANK", key="inv_desc_input")
 
             with add_col4:
-                curr_year = datetime.datetime.now().year
-                inv_yr_val = st.number_input("Year Invested", min_value=1990, max_value=curr_year + 5, value=curr_year, step=1, key="inv_yr_input")
+                inv_amt_val = st.number_input("Invested Amount (₹)", min_value=100.0, value=50000.0, step=5000.0, format="%.2f", key="inv_amt_input")
 
             with add_col5:
+                curr_year = datetime.datetime.now().year
+                inv_yr_val = st.number_input("Year Invested", min_value=1990, max_value=curr_year + 5, value=curr_year, step=1, key="inv_yr_input")
                 curr_val_input = st.number_input("Current Value (₹)", min_value=0.0, value=inv_amt_val * 1.10, step=5000.0, format="%.2f", key="inv_curr_input")
 
             if st.button("➕ Add Investment Holding to Portfolio", type="primary", use_container_width=True):
@@ -1504,9 +1505,10 @@ else:
                     investment_amount=inv_amt_val,
                     year_invested=inv_yr_val,
                     current_value=curr_val_input,
-                    family_id=user_family_id
+                    family_id=user_family_id,
+                    description=inv_desc_val
                 )
-                st.success(f"🎉 Successfully added holding under **{final_plat}** ({final_type}) with initial investment of **{format_inr(inv_amt_val)}**!")
+                st.success(f"🎉 Successfully added holding **{inv_desc_val}** under **{final_plat}** with initial investment of **{format_inr(inv_amt_val)}**!")
                 st.rerun()
 
             st.markdown("<hr>", unsafe_allow_html=True)
@@ -1618,12 +1620,13 @@ else:
                 st.markdown("#### ✏️ Edit or Manage Holdings")
                 st.caption("You can update investment amounts, current values, platform, or investment types directly in the table below, then click Save.")
 
-                display_cols = ["id", "platform", "investment_type", "investment_amount", "year_invested", "current_value", "units", "avg_buy_price", "market_cap", "sector_segment", "unrealized_gain", "returns_pct"]
+                display_cols = ["id", "description", "platform", "investment_type", "investment_amount", "year_invested", "current_value", "units", "avg_buy_price", "market_cap", "sector_segment", "unrealized_gain", "returns_pct"]
                 
                 edited_holdings = st.data_editor(
                     holdings_df[display_cols],
                     column_config={
                         "id": st.column_config.NumberColumn("ID", disabled=True),
+                        "description": st.column_config.TextColumn("Stock Code / Name"),
                         "platform": st.column_config.TextColumn("Platform / Broker"),
                         "investment_type": st.column_config.TextColumn("Asset Type"),
                         "investment_amount": st.column_config.NumberColumn("Invested (₹)", format="₹ %.2f"),
