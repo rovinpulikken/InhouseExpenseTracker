@@ -70,6 +70,8 @@ from database import (
     get_user_investments_df,
     update_investments_df,
     delete_investment,
+    delete_all_investments,
+    batch_insert_investments,
     create_family,
     get_family_by_code,
     join_family_by_code,
@@ -1653,6 +1655,17 @@ else:
                         delete_investment(del_id)
                         st.success(f"Deleted holding ID {del_id}!")
                         st.rerun()
+
+                    # Add an expander for deleting all holdings to prevent accidental deletion
+                    with st.expander("🚨 Delete All Holdings"):
+                        st.warning("This action cannot be undone. It will permanently delete all your holdings.")
+                        if st.button("🗑️ Confirm Delete ALL", type="primary", use_container_width=True):
+                            deleted_count = delete_all_investments(
+                                username=current_user["username"] if view_mode != "Family" else None,
+                                family_id=user_family_id
+                            )
+                            st.success(f"Successfully deleted all {deleted_count} holdings!")
+                            st.rerun()
 
                 # Gemini AI Portfolio Review & Suggestions Section
                 st.markdown("<hr>", unsafe_allow_html=True)

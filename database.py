@@ -1251,3 +1251,24 @@ def delete_investment(investment_id: int) -> bool:
     conn.commit()
     conn.close()
     return True
+
+def delete_all_investments(username: Optional[str] = None, family_id: Optional[int] = 1) -> int:
+    conn = get_connection()
+    cursor = conn.cursor()
+    
+    if family_id is not None and family_id != 0:
+        if username:
+            cursor.execute("DELETE FROM investments WHERE family_id = ? AND username = ?", (int(family_id), username))
+        else:
+            cursor.execute("DELETE FROM investments WHERE family_id = ?", (int(family_id),))
+    else:
+        if username and username != "admin":
+            cursor.execute("DELETE FROM investments WHERE username = ?", (username,))
+        else:
+            # admin superuser fallback (unlikely to hit this without a family_id, but for safety)
+            cursor.execute("DELETE FROM investments")
+            
+    deleted_count = cursor.rowcount
+    conn.commit()
+    conn.close()
+    return deleted_count
