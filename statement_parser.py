@@ -118,10 +118,26 @@ def parse_anand_rathi_statement(file_bytes, filename):
     Similar heuristic extraction as ICICI, adjusted for typical Anand Rathi column names.
     """
     try:
-        if filename.endswith('.csv'):
+        if filename.lower().endswith('.csv'):
             df = pd.read_csv(io.BytesIO(file_bytes))
-        else:
+        elif filename.lower().endswith(('.xls', '.xlsx')):
             df = pd.read_excel(io.BytesIO(file_bytes))
+        elif filename.lower().endswith('.pdf'):
+            all_rows = []
+            with pdfplumber.open(io.BytesIO(file_bytes)) as pdf:
+                for page in pdf.pages:
+                    tables = page.extract_tables()
+                    for table in tables:
+                        if not table or len(table) < 2: continue
+                        col_names = [str(c).replace('\n', ' ') for c in table[0]]
+                        for row in table[1:]:
+                            if not row or len(row) != len(col_names): continue
+                            all_rows.append(dict(zip(col_names, row)))
+            if not all_rows:
+                return []
+            df = pd.DataFrame(all_rows)
+        else:
+            raise Exception("Unsupported file format.")
 
         df = df.loc[:, ~df.columns.str.contains('^Unnamed')]
         df = df.dropna(how='all')

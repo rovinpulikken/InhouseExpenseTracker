@@ -583,7 +583,7 @@ else:
                 st.write("Upload your filled Excel (`.xlsx`, `.xls`) or `.csv` spreadsheet. Categories will be auto-classified if missing!")
                 
                 upload_vis = st.radio("Import Expense Visibility", ["Family", "Private"], horizontal=True, key="upload_vis")
-                uploaded_excel = st.file_uploader("Choose Excel or CSV File", type=["xlsx", "xls", "csv"], key="excel_uploader")
+                uploaded_excel = st.file_uploader("Choose Excel, CSV, or PDF File", type=["xlsx", "xls", "csv", "pdf"], key="excel_uploader")
                 if uploaded_excel:
                     if st.button("🚀 Import & Auto-Categorize File", type="primary", use_container_width=True):
                         cnt, msg = import_from_excel_or_csv(uploaded_excel, username=current_user["username"], visibility=upload_vis, family_id=user_family_id)
@@ -1422,7 +1422,7 @@ else:
             # --- CAS / Broker Statement Uploader ---
             st.markdown("#### 📤 Auto-Ingest from Broker Statements")
             with st.expander("Upload ICICI Direct / Anand Rathi / Standard CAS"):
-                uploaded_file = st.file_uploader("Upload CSV or Excel file", type=['csv', 'xlsx', 'xls'], key="stmt_upload")
+                uploaded_file = st.file_uploader("Upload CSV, Excel, or PDF file", type=['csv', 'xlsx', 'xls', 'pdf'], key="stmt_upload")
                 if uploaded_file and st.button("Parse and Import Statement", type="primary"):
                     with st.spinner("Parsing statement..."):
                         try:
