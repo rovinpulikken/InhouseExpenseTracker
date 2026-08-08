@@ -1129,10 +1129,11 @@ def insert_investment(
 ) -> int:
     conn = get_connection()
     cursor = conn.cursor()
+    fid = int(family_id) if family_id is not None else None
     cursor.execute("""
         INSERT INTO investments (username, platform, investment_type, investment_amount, year_invested, current_value, family_id, units, avg_buy_price, market_cap, sector_segment, last_live_price, last_updated_at)
         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP)
-    """, (username, platform, investment_type, float(investment_amount), int(year_invested), float(current_value), int(family_id), float(units), float(avg_buy_price), market_cap, sector_segment, float(last_live_price)))
+    """, (username, platform, investment_type, float(investment_amount), int(year_invested), float(current_value), fid, float(units), float(avg_buy_price), market_cap, sector_segment, float(last_live_price)))
     inv_id = cursor.lastrowid
     conn.commit()
     conn.close()
@@ -1144,18 +1145,19 @@ def batch_insert_investments(investments_list: List[Dict[str, Any]], username: s
     conn = get_connection()
     cursor = conn.cursor()
     count = 0
+    fid = int(family_id) if family_id is not None else None
     for inv in investments_list:
         cursor.execute("""
             INSERT INTO investments (username, platform, investment_type, investment_amount, year_invested, current_value, family_id, units, avg_buy_price, market_cap, sector_segment, last_live_price, last_updated_at)
             VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP)
         """, (
-            username,
-            inv.get("platform", "Other"),
-            inv.get("type", "Other"),
-            float(inv.get("amount", 0.0)),
-            int(inv.get("year_invested", datetime.datetime.now().year)),
-            float(inv.get("current_value", inv.get("amount", 0.0))),
-            int(family_id),
+            username, 
+            inv.get("platform", "Unknown"), 
+            inv.get("type", "Equity"), 
+            float(inv.get("amount", 0.0)), 
+            int(inv.get("year_invested", datetime.datetime.now().year)), 
+            float(inv.get("current_value", inv.get("amount", 0.0))), 
+            fid,
             float(inv.get("units", 0.0)),
             float(inv.get("avg_buy_price", 0.0)),
             inv.get("market_cap", "Unknown"),
