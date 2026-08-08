@@ -6,6 +6,7 @@ SIP breakdown, compound wealth projections (5, 10, 15, 20 yrs), and Gemini AI ad
 
 import os
 from typing import Dict, Any, List, Tuple
+import pandas as pd
 
 def calculate_investment_plan(
     age: int,
@@ -299,3 +300,96 @@ def generate_ai_portfolio_suggestions(holdings_df: Any) -> Dict[str, Any]:
         "recommendations": recs
     }
 
+def analyze_portfolio_segments(holdings_df: pd.DataFrame) -> Dict[str, Any]:
+    """
+    Groups portfolio by asset class, market cap, and sector.
+    """
+    if holdings_df is None or holdings_df.empty:
+        return {"asset_class": {}, "market_cap": {}, "sector": {}}
+
+    # Fill NaNs for new columns
+    if "market_cap" not in holdings_df.columns: holdings_df["market_cap"] = "Unknown"
+    if "sector_segment" not in holdings_df.columns: holdings_df["sector_segment"] = "Unknown"
+
+    holdings_df["market_cap"] = holdings_df["market_cap"].fillna("Unknown")
+    holdings_df["sector_segment"] = holdings_df["sector_segment"].fillna("Unknown")
+
+    total_value = holdings_df["current_value"].sum()
+    if total_value <= 0:
+         return {"asset_class": {}, "market_cap": {}, "sector": {}}
+
+    def _get_percentages(groupby_col):
+        grouped = holdings_df.groupby(groupby_col)["current_value"].sum()
+        pcts = (grouped / total_value) * 100
+        return pcts.round(2).to_dict()
+
+    return {
+        "asset_class": _get_percentages("investment_type"),
+        "market_cap": _get_percentages("market_cap"),
+        "sector": _get_percentages("sector_segment")
+    }
+
+def calculate_asset_allocation_drift(current_segments: Dict[str, Any], target_allocation: Dict[str, float]) -> List[Dict[str, Any]]:
+    """
+    Compares current asset class allocation against target allocation.
+    Returns a list of drift details for rebalancing.
+    """
+    asset_class_actual = current_segments.get("asset_class", {})
+    drifts = []
+
+    # Ensure all target keys are evaluated
+    all_keys = set(asset_class_actual.keys()).union(set(target_allocation.keys()))
+    
+    for key in all_keys:
+        actual = asset_class_actual.get(key, 0.0)
+        target = target_allocation.get(key, 0.0)
+        drift = actual - target
+        action = "Rebalance: Sell" if drift > 5.0 else ("Rebalance: Buy" if drift < -5.0 else "Hold")
+        
+        drifts.append({
+            "asset_class": key,
+            "actual_pct": round(actual, 2),
+            "target_pct": round(target, 2),
+            "drift_pct": round(drift, 2),
+            "action": action
+        })
+    return drifts
+
+def generate_ai_segment_advisory(segments: Dict[str, Any], risk_profile: str) -> str:
+    """
+    Generates AI advisory on the portfolio's segment diversification and risk profile alignment.
+    """
+    try:
+        from google import genai
+        api_key = os.environ.get("GEMINI_API_KEY")
+        if not api_key:
+            try:
+                import streamlit as st
+                api_key = st.secrets.get("GEMINI_API_KEY")
+            except Exception:
+                pass
+
+        if api_key:
+            client = genai.Client(api_key=api_key)
+            prompt = f"""
+            Act as an expert Indian Wealth Manager. Analyze this portfolio segmentation:
+            - Risk Profile: {risk_profile}
+            - Asset Classes: {segments['asset_class']}
+            - Market Cap Spread: {segments['market_cap']}
+            - Sector Exposure: {segments['sector']}
+            
+            Provide a concise 2-3 paragraph analysis of the diversification. Is it aligned with a {risk_profile} risk profile? 
+            What are the potential concentration risks and what sectors/market caps should the user consider adding?
+            Keep the tone professional and actionable.
+            """
+            response = client.models.generate_content(
+                model="gemini-2.5-flash",
+                contents=prompt
+            )
+            if response and response.text:
+                return response.text
+    except Exception as e:
+        print(f"Error in AI segment advisory: {e}")
+        pass
+    
+    return f"Your portfolio is heavily invested in {list(segments['asset_class'].keys())[:2] if segments['asset_class'] else 'various assets'}. Ensure this matches your {risk_profile} risk tolerance and consider diversifying across missing sectors."

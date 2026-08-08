@@ -23,8 +23,13 @@ from categorizer import (
 from investment_planner import (
     calculate_investment_plan,
     generate_ai_wealth_advice,
-    generate_ai_portfolio_suggestions
+    generate_ai_portfolio_suggestions,
+    analyze_portfolio_segments,
+    calculate_asset_allocation_drift,
+    generate_ai_segment_advisory
 )
+import statement_parser
+import live_market_tracker
 from config import (
     EXPENSE_CATEGORIES,
     get_indian_fy,
@@ -1410,10 +1415,28 @@ else:
         # ------------------------------------------------
         with subtab_holdings:
             st.markdown("### 💼 Active Investment Portfolio & Holdings Tracker")
-            st.caption("Track, aggregate, and analyze active investments across platforms (Zerodha, Groww, SBI, Post Office, etc.) and asset categories (Equity, Mutual Funds, Structured Funds, EPF, PPF, KVP, NSC, Deposits, Startup Investments, etc.).")
+            st.caption("Track, aggregate, and analyze active investments across platforms. Upload Consolidated Account Statements (CAS) or track live market NAVs.")
+
+            # --- CAS / Broker Statement Uploader ---
+            st.markdown("#### 📤 Auto-Ingest from Broker Statements")
+            with st.expander("Upload ICICI Direct / Anand Rathi / Standard CAS"):
+                uploaded_file = st.file_uploader("Upload CSV or Excel file", type=['csv', 'xlsx', 'xls'], key="stmt_upload")
+                if uploaded_file and st.button("Parse and Import Statement", type="primary"):
+                    with st.spinner("Parsing statement..."):
+                        try:
+                            parsed_data = statement_parser.identify_and_parse_statement(uploaded_file.getvalue(), uploaded_file.name)
+                            if not parsed_data:
+                                st.warning("Could not extract any valid holdings from this file. Ensure it's a supported format.")
+                            else:
+                                from database import batch_insert_investments
+                                count = batch_insert_investments(parsed_data, username=current_user["username"], family_id=user_family_id)
+                                st.success(f"🎉 Successfully imported {count} holdings from {uploaded_file.name}!")
+                                st.rerun()
+                        except Exception as e:
+                            st.error(f"Error parsing file: {e}")
 
             # Form to Add New Investment Entry
-            st.markdown("#### ➕ Add New Investment Holding")
+            st.markdown("#### ➕ Add New Manual Holding")
             
             PRESET_TYPES = [
                 "Equity (Stocks)",
@@ -1512,50 +1535,103 @@ else:
                     st.metric("📊 Total Holdings Count", f"{len(holdings_df)} Active Assets")
 
                 st.markdown("<br>", unsafe_allow_html=True)
+                
+                # Live Market Refresh
+                head_c1, head_c2 = st.columns([3, 1])
+                with head_c1:
+                    st.markdown("#### 📡 Real-Time Portfolio Tracking")
+                with head_c2:
+                    if st.button("🔄 Sync Live Prices (NAVs)", use_container_width=True):
+                        with st.spinner("Fetching latest NAVs from AMFI & Market APIs..."):
+                            updated_df = live_market_tracker.update_portfolio_live_prices(holdings_df.copy())
+                            update_investments_df(updated_df)
+                        st.success("✅ Portfolio synced with live market data!")
+                        st.rerun()
 
-                # Distribution Charts
-                chart_c1, chart_c2 = st.columns(2)
+                st.markdown("<br>", unsafe_allow_html=True)
+
+                # Multi-Segment Distribution Charts
+                chart_c1, chart_c2, chart_c3 = st.columns(3)
                 with chart_c1:
-                    st.markdown("#### 🍩 Asset Breakdown by Investment Type")
+                    st.markdown("#### 🍩 Asset Type")
                     fig_type = px.pie(
                         holdings_df,
                         names="investment_type",
                         values="current_value",
-                        title="Portfolio Distribution by Asset Type",
                         hole=0.4
                     )
-                    fig_type.update_layout(margin=dict(l=10, r=10, t=30, b=10), height=300)
+                    fig_type.update_layout(margin=dict(l=10, r=10, t=30, b=10), height=280)
                     st.plotly_chart(fig_type, use_container_width=True)
 
                 with chart_c2:
-                    st.markdown("#### 🏛️ Portfolio Breakdown by Platform")
+                    st.markdown("#### 🏗️ Market Cap")
+                    fig_mc = px.pie(
+                        holdings_df,
+                        names="market_cap",
+                        values="current_value",
+                        hole=0.4
+                    )
+                    fig_mc.update_layout(margin=dict(l=10, r=10, t=30, b=10), height=280)
+                    st.plotly_chart(fig_mc, use_container_width=True)
+
+                with chart_c3:
+                    st.markdown("#### 🏛️ Platform / Broker")
                     fig_plat = px.bar(
                         holdings_df.groupby("platform", as_index=False)["current_value"].sum(),
                         x="platform",
                         y="current_value",
                         color="platform",
-                        title="Valuation by Platform / Broker",
                         labels={"current_value": "Current Value (₹)", "platform": "Platform"}
                     )
-                    fig_plat.update_layout(paper_bgcolor="#1e293b", plot_bgcolor="#1e293b", margin=dict(l=10, r=10, t=30, b=10), height=300)
+                    fig_plat.update_layout(paper_bgcolor="#1e293b", plot_bgcolor="#1e293b", margin=dict(l=10, r=10, t=10, b=10), height=280, showlegend=False)
                     st.plotly_chart(fig_plat, use_container_width=True)
+                    
+                st.markdown("<hr>", unsafe_allow_html=True)
+                
+                # Target Allocation & Rebalancing Drift
+                st.markdown("#### ⚖️ Target Allocation & Rebalancing (Segment Drift)")
+                st.caption("Compare your current portfolio segments against ideal target allocations to identify drift.")
+                
+                seg_analytics = analyze_portfolio_segments(holdings_df)
+                
+                target_allocs = {
+                    "Equity": st.sidebar.slider("Target Equity %", 0, 100, 60, key="tgt_eq"),
+                    "Mutual Funds": st.sidebar.slider("Target MF %", 0, 100, 20, key="tgt_mf"),
+                    "Deposits": st.sidebar.slider("Target Debt/Deposits %", 0, 100, 20, key="tgt_debt")
+                }
+                
+                drift_data = calculate_asset_allocation_drift(seg_analytics, target_allocs)
+                if drift_data:
+                    drift_df = pd.DataFrame(drift_data)
+                    st.dataframe(drift_df, use_container_width=True)
+                    
+                    if st.button("🤖 Get AI Segment & Rebalancing Advice", type="primary"):
+                        with st.spinner("Analyzing Segment Diversification & Drift..."):
+                            adv = generate_ai_segment_advisory(seg_analytics, "Moderate (Growth)")
+                        st.info(adv)
+                        
+                st.markdown("<br>", unsafe_allow_html=True)
 
                 # Interactive Data Editor & Deletion Manager
                 st.markdown("#### ✏️ Edit or Manage Holdings")
                 st.caption("You can update investment amounts, current values, platform, or investment types directly in the table below, then click Save.")
 
-                display_cols = ["id", "platform", "investment_type", "investment_amount", "year_invested", "current_value", "unrealized_gain", "returns_pct"]
+                display_cols = ["id", "platform", "investment_type", "investment_amount", "year_invested", "current_value", "units", "avg_buy_price", "market_cap", "sector_segment", "unrealized_gain", "returns_pct"]
                 
                 edited_holdings = st.data_editor(
                     holdings_df[display_cols],
                     column_config={
                         "id": st.column_config.NumberColumn("ID", disabled=True),
                         "platform": st.column_config.TextColumn("Platform / Broker"),
-                        "investment_type": st.column_config.TextColumn("Investment Type"),
+                        "investment_type": st.column_config.TextColumn("Asset Type"),
                         "investment_amount": st.column_config.NumberColumn("Invested (₹)", format="₹ %.2f"),
-                        "year_invested": st.column_config.NumberColumn("Year Invested", format="%d"),
-                        "current_value": st.column_config.NumberColumn("Current Value (₹)", format="₹ %.2f"),
-                        "unrealized_gain": st.column_config.NumberColumn("Gain / Loss (₹)", format="₹ %.2f", disabled=True),
+                        "year_invested": st.column_config.NumberColumn("Year"),
+                        "current_value": st.column_config.NumberColumn("Current Val (₹)", format="₹ %.2f"),
+                        "units": st.column_config.NumberColumn("Units", format="%.4f"),
+                        "avg_buy_price": st.column_config.NumberColumn("Avg Price", format="₹ %.2f"),
+                        "market_cap": st.column_config.SelectboxColumn("Market Cap", options=["Large Cap", "Mid Cap", "Small Cap", "Multi Cap", "Unknown"]),
+                        "sector_segment": st.column_config.TextColumn("Sector / Theme"),
+                        "unrealized_gain": st.column_config.NumberColumn("Gain/Loss (₹)", format="₹ %.2f", disabled=True),
                         "returns_pct": st.column_config.NumberColumn("Return %", format="%.2f %%", disabled=True)
                     },
                     use_container_width=True,

@@ -266,6 +266,12 @@ def init_db():
             year_invested INTEGER NOT NULL,
             current_value REAL NOT NULL,
             family_id INTEGER DEFAULT 1,
+            units REAL DEFAULT 0.0,
+            avg_buy_price REAL DEFAULT 0.0,
+            market_cap TEXT DEFAULT 'Unknown',
+            sector_segment TEXT DEFAULT 'Unknown',
+            last_live_price REAL DEFAULT 0.0,
+            last_updated_at TIMESTAMP,
             created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
         )
     """)
@@ -273,6 +279,13 @@ def init_db():
     i_cols = [row[1] for row in cursor.fetchall()]
     if "family_id" not in i_cols:
         cursor.execute("ALTER TABLE investments ADD COLUMN family_id INTEGER DEFAULT 1")
+    if "units" not in i_cols:
+        cursor.execute("ALTER TABLE investments ADD COLUMN units REAL DEFAULT 0.0")
+        cursor.execute("ALTER TABLE investments ADD COLUMN avg_buy_price REAL DEFAULT 0.0")
+        cursor.execute("ALTER TABLE investments ADD COLUMN market_cap TEXT DEFAULT 'Unknown'")
+        cursor.execute("ALTER TABLE investments ADD COLUMN sector_segment TEXT DEFAULT 'Unknown'")
+        cursor.execute("ALTER TABLE investments ADD COLUMN last_live_price REAL DEFAULT 0.0")
+        cursor.execute("ALTER TABLE investments ADD COLUMN last_updated_at TIMESTAMP")
     
     # Seed default admin if users table is empty
     cursor.execute("SELECT COUNT(*) FROM users")
@@ -1107,22 +1120,56 @@ def insert_investment(
     investment_amount: float,
     year_invested: int,
     current_value: float,
-    family_id: int = 1
+    family_id: int = 1,
+    units: float = 0.0,
+    avg_buy_price: float = 0.0,
+    market_cap: str = "Unknown",
+    sector_segment: str = "Unknown",
+    last_live_price: float = 0.0
 ) -> int:
     conn = get_connection()
     cursor = conn.cursor()
     cursor.execute("""
-        INSERT INTO investments (username, platform, investment_type, investment_amount, year_invested, current_value, family_id)
-        VALUES (?, ?, ?, ?, ?, ?, ?)
-    """, (username, platform, investment_type, float(investment_amount), int(year_invested), float(current_value), int(family_id)))
+        INSERT INTO investments (username, platform, investment_type, investment_amount, year_invested, current_value, family_id, units, avg_buy_price, market_cap, sector_segment, last_live_price, last_updated_at)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP)
+    """, (username, platform, investment_type, float(investment_amount), int(year_invested), float(current_value), int(family_id), float(units), float(avg_buy_price), market_cap, sector_segment, float(last_live_price)))
     inv_id = cursor.lastrowid
     conn.commit()
     conn.close()
     return inv_id
 
+def batch_insert_investments(investments_list: List[Dict[str, Any]], username: str, family_id: int = 1) -> int:
+    if not investments_list:
+        return 0
+    conn = get_connection()
+    cursor = conn.cursor()
+    count = 0
+    for inv in investments_list:
+        cursor.execute("""
+            INSERT INTO investments (username, platform, investment_type, investment_amount, year_invested, current_value, family_id, units, avg_buy_price, market_cap, sector_segment, last_live_price, last_updated_at)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP)
+        """, (
+            username,
+            inv.get("platform", "Other"),
+            inv.get("type", "Other"),
+            float(inv.get("amount", 0.0)),
+            int(inv.get("year_invested", datetime.datetime.now().year)),
+            float(inv.get("current_value", inv.get("amount", 0.0))),
+            int(family_id),
+            float(inv.get("units", 0.0)),
+            float(inv.get("avg_buy_price", 0.0)),
+            inv.get("market_cap", "Unknown"),
+            inv.get("sector_segment", "Unknown"),
+            float(inv.get("current_value", 0.0)) # use current_value as proxy for last live price initially
+        ))
+        count += 1
+    conn.commit()
+    conn.close()
+    return count
+
 def get_user_investments_df(username: Optional[str] = None, family_id: Optional[int] = 1) -> pd.DataFrame:
     conn = get_connection()
-    query = "SELECT id, username, platform, investment_type, investment_amount, year_invested, current_value, family_id, created_at FROM investments"
+    query = "SELECT id, username, platform, investment_type, investment_amount, year_invested, current_value, family_id, units, avg_buy_price, market_cap, sector_segment, last_live_price, last_updated_at, created_at FROM investments"
     params = []
     if family_id is not None and family_id != 0:
         query += " WHERE family_id = ?"
@@ -1144,6 +1191,10 @@ def get_user_investments_df(username: Optional[str] = None, family_id: Optional[
         amt = df["investment_amount"]
         returns_pct = ((df["current_value"] - amt) / amt) * 100.0
         df["returns_pct"] = returns_pct.where(amt > 0, 0.0).round(2)
+        
+        # Format name for display if platform/description logic is needed later
+        # We can default description to platform for now
+        df["description"] = df["platform"]
     return df
 
 def update_investments_df(df: pd.DataFrame) -> int:
@@ -1158,10 +1209,16 @@ def update_investments_df(df: pd.DataFrame) -> int:
             continue
         platform = str(row.get("platform", "Other"))
         inv_type = str(row.get("investment_type", "Other"))
+        
         try:
             inv_amt = float(row.get("investment_amount", 0.0))
             yr = int(row.get("year_invested", 2024))
             curr_val = float(row.get("current_value", inv_amt))
+            units = float(row.get("units", 0.0))
+            avg_buy_price = float(row.get("avg_buy_price", 0.0))
+            market_cap = str(row.get("market_cap", "Unknown"))
+            sector_segment = str(row.get("sector_segment", "Unknown"))
+            last_live_price = float(row.get("last_live_price", 0.0))
         except (ValueError, TypeError):
             continue
 
@@ -1171,9 +1228,14 @@ def update_investments_df(df: pd.DataFrame) -> int:
                 investment_type = ?,
                 investment_amount = ?,
                 year_invested = ?,
-                current_value = ?
+                current_value = ?,
+                units = ?,
+                avg_buy_price = ?,
+                market_cap = ?,
+                sector_segment = ?,
+                last_live_price = ?
             WHERE id = ?
-        """, (platform, inv_type, inv_amt, yr, curr_val, int(inv_id)))
+        """, (platform, inv_type, inv_amt, yr, curr_val, units, avg_buy_price, market_cap, sector_segment, last_live_price, int(inv_id)))
         updated_count += 1
 
     conn.commit()

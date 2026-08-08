@@ -228,6 +228,34 @@ def test_active_holdings_tracker():
     assert del_ok is True
     print("✅ Active Investment Portfolio & Holdings Tracker tests passed.")
 
+def test_statement_ingestion_and_segments():
+    init_db()
+    from statement_parser import identify_and_parse_statement
+    from database import batch_insert_investments, get_user_investments_df
+    from investment_planner import analyze_portfolio_segments, calculate_asset_allocation_drift
+    
+    csv_content = b"Symbol,Quantity,Avg Price,CMP,Category\nINFY,10,1400,1500,Equity\nHDFCMF,100,50,60,Mutual Fund\n"
+    
+    parsed = identify_and_parse_statement(csv_content, "icici_statement.csv")
+    assert len(parsed) == 2
+    assert parsed[0]["type"] == "Equity"
+    assert parsed[1]["type"] == "Mutual Funds"
+    
+    cnt = batch_insert_investments(parsed, "admin", family_id=1)
+    assert cnt == 2
+    
+    df = get_user_investments_df("admin")
+    assert not df.empty
+    
+    segments = analyze_portfolio_segments(df)
+    assert "Equity" in segments["asset_class"]
+    assert "Mutual Funds" in segments["asset_class"]
+    
+    drifts = calculate_asset_allocation_drift(segments, {"Equity": 60.0, "Mutual Funds": 40.0})
+    assert isinstance(drifts, list)
+    
+    print("✅ Statement Ingestion & Segment Analytics tests passed.")
+
 def test_multi_family_data_isolation():
     init_db()
     import uuid
@@ -314,6 +342,7 @@ if __name__ == "__main__":
         test_smart_suggested_budgets()
         test_investment_planner()
         test_active_holdings_tracker()
+        test_statement_ingestion_and_segments()
         test_multi_family_data_isolation()
         print("🎉 All test suite assertions passed successfully!")
     finally:
