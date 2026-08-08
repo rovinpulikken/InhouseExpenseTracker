@@ -1648,10 +1648,24 @@ else:
                 st.markdown("#### ✏️ Edit or Manage Holdings")
                 st.caption("You can update investment amounts, current values, platform, or investment types directly in the table below, then click Save.")
 
+                # Asset Class Filter
+                all_asset_types = sorted(holdings_df["investment_type"].unique().tolist())
+                selected_asset_types = st.multiselect(
+                    "🔍 Filter by Asset Class",
+                    options=all_asset_types,
+                    default=all_asset_types,
+                    help="Select asset classes (e.g., Equity, Mutual Funds) to view and edit."
+                )
+
+                if selected_asset_types:
+                    filtered_df = holdings_df[holdings_df["investment_type"].isin(selected_asset_types)]
+                else:
+                    filtered_df = holdings_df.head(0) # Show empty if nothing selected
+
                 display_cols = ["id", "description", "platform", "investment_type", "investment_amount", "year_invested", "current_value", "units", "avg_buy_price", "market_cap", "sector_segment", "unrealized_gain", "returns_pct"]
                 
                 edited_holdings = st.data_editor(
-                    holdings_df[display_cols],
+                    filtered_df[display_cols],
                     column_config={
                         "id": st.column_config.NumberColumn("ID", disabled=True),
                         "description": st.column_config.TextColumn("Stock Code / Name"),
