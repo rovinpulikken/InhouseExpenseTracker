@@ -1420,13 +1420,23 @@ else:
             st.caption("Track, aggregate, and analyze active investments across platforms. Upload Consolidated Account Statements (CAS) or track live market NAVs.")
 
             # --- CAS / Broker Statement Uploader ---
-            st.markdown("#### 📤 Auto-Ingest from Broker Statements")
-            with st.expander("Upload ICICI Direct / Anand Rathi / Standard CAS"):
-                uploaded_file = st.file_uploader("Upload CSV, Excel, or PDF file", type=['csv', 'xlsx', 'xls', 'pdf'], key="stmt_upload")
+            st.markdown("#### 📤 Auto-Ingest from Broker Statements (GenAI Powered)")
+            with st.expander("Upload ICICI Direct / Anand Rathi / Standard CAS / Any Format"):
+                import os
+                default_api_key = os.environ.get("GEMINI_API_KEY", "")
+                if not default_api_key:
+                    try:
+                        default_api_key = st.secrets.get("GEMINI_API_KEY", "")
+                    except:
+                        pass
+                
+                gemini_api_key = st.text_input("Gemini API Key (Optional for Universal Parsing)", value=default_api_key, type="password", key="stmt_api_key")
+                
+                uploaded_file = st.file_uploader("Upload CSV, Excel, PDF, or Image file", type=['csv', 'xlsx', 'xls', 'pdf', 'png', 'jpg', 'jpeg'], key="stmt_upload")
                 if uploaded_file and st.button("Parse and Import Statement", type="primary"):
-                    with st.spinner("Parsing statement..."):
+                    with st.spinner("Parsing statement with Gemini AI (fallback to heuristics)..." if gemini_api_key else "Parsing statement using heuristics..."):
                         try:
-                            parsed_data = statement_parser.identify_and_parse_statement(uploaded_file.getvalue(), uploaded_file.name)
+                            parsed_data = statement_parser.identify_and_parse_statement(uploaded_file.getvalue(), uploaded_file.name, api_key=gemini_api_key)
                             if not parsed_data:
                                 st.warning("Could not extract any valid holdings from this file. Ensure it's a supported format.")
                             else:

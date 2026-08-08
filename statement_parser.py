@@ -2,6 +2,8 @@ import pandas as pd
 import io
 import re
 import pdfplumber
+import mimetypes
+import json
 
 def parse_icici_statement(file_bytes, filename):
     """
@@ -191,10 +193,92 @@ def parse_anand_rathi_statement(file_bytes, filename):
     except Exception as e:
         raise Exception(f"Failed to parse Anand Rathi statement: {str(e)}")
 
-def identify_and_parse_statement(file_bytes, filename):
+def parse_investment_with_gemini(file_bytes, filename, api_key):
+    """
+    Parses any investment statement using Gemini 2.5 Flash via google-genai SDK.
+    """
+    from google import genai
+    from google.genai import types
+    
+    client = genai.Client(api_key=api_key)
+    
+    # Determine MIME type
+    mime_type, _ = mimetypes.guess_type(filename)
+    if not mime_type:
+        if filename.lower().endswith('.csv'):
+            mime_type = 'text/csv'
+        elif filename.lower().endswith('.pdf'):
+            mime_type = 'application/pdf'
+        elif filename.lower().endswith('.xlsx'):
+            mime_type = 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'
+        elif filename.lower().endswith('.xls'):
+            mime_type = 'application/vnd.ms-excel'
+        else:
+            mime_type = 'application/octet-stream'
+
+    system_prompt = """
+You are an expert financial AI assistant. Your task is to extract investment holdings from the provided broker statement or portfolio document.
+The document may be an image, PDF, CSV, or Excel file. Extract the data into a strict JSON list of dictionaries.
+
+Each dictionary MUST have the following keys and data types:
+- "name_or_symbol": (string) The name of the stock, mutual fund, or asset.
+- "type": (string) The asset type (e.g., "Equity", "Mutual Funds", "Deposits", "Alternative Asset").
+- "platform": (string) The broker or platform name (e.g., "ICICI Direct", "Zerodha", "Anand Rathi", etc.). Try to infer from the document context. If unknown, use "Generic Broker".
+- "amount": (float) The total invested amount or cost.
+- "units": (float) The total quantity or units held.
+- "avg_buy_price": (float) The average purchase price.
+- "current_value": (float) The current market value of the holding.
+
+Rules:
+1. Return ONLY the JSON array. Do not include markdown codeblocks (like ```json), explanations, or text outside the JSON.
+2. If any numeric value is missing, use 0.0.
+3. Clean all numbers (remove commas, currency symbols).
+
+Example Output:
+[
+  {
+    "name_or_symbol": "HDFC Bank Ltd",
+    "type": "Equity",
+    "platform": "Zerodha",
+    "amount": 50000.0,
+    "units": 30.5,
+    "avg_buy_price": 1639.34,
+    "current_value": 52000.0
+  }
+]
+"""
+
+    response = client.models.generate_content(
+        model='gemini-2.5-flash',
+        contents=[
+            types.Part.from_bytes(data=file_bytes, mime_type=mime_type),
+            system_prompt
+        ]
+    )
+    
+    raw_text = response.text.strip()
+    if "```" in raw_text:
+        raw_text = re.sub(r"```json\s*", "", raw_text)
+        raw_text = re.sub(r"```\s*", "", raw_text)
+        
+    parsed_json = json.loads(raw_text.strip())
+    if not isinstance(parsed_json, list):
+        raise ValueError("Gemini did not return a valid JSON list.")
+    
+    return parsed_json
+
+
+def identify_and_parse_statement(file_bytes, filename, api_key=None):
     """
     Attempts to identify the statement type and route to the correct parser.
+    Uses Gemini API if the key is provided, falling back to heuristics.
     """
+    if api_key:
+        try:
+            return parse_investment_with_gemini(file_bytes, filename, api_key)
+        except Exception as e:
+            print(f"Gemini parsing failed: {e}. Falling back to heuristic parsers.")
+
     filename_lower = filename.lower()
     
     if 'icici' in filename_lower or 'idirect' in filename_lower:
