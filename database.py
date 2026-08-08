@@ -209,6 +209,8 @@ def init_db():
     u_cols = [row[1] for row in cursor.fetchall()]
     if "family_id" not in u_cols:
         cursor.execute("ALTER TABLE users ADD COLUMN family_id INTEGER DEFAULT 1")
+    if "gemini_api_key" not in u_cols:
+        cursor.execute("ALTER TABLE users ADD COLUMN gemini_api_key TEXT")
 
     # 3. Expenses Table
     cursor.execute("""
@@ -430,7 +432,7 @@ def authenticate_user(username: str, password_attempt: str) -> Optional[Dict[str
     conn = get_connection()
     cursor = conn.cursor()
     cursor.execute("""
-        SELECT u.id, u.username, u.password_hash, u.full_name, u.role, u.family_id, f.family_name, f.family_code
+        SELECT u.id, u.username, u.password_hash, u.full_name, u.role, u.family_id, f.family_name, f.family_code, u.gemini_api_key
         FROM users u
         LEFT JOIN families f ON u.family_id = f.id
         WHERE u.username = ?
@@ -443,7 +445,7 @@ def authenticate_user(username: str, password_attempt: str) -> Optional[Dict[str
         
     user_dict = dict(row) if isinstance(row, sqlite3.Row) else {
         "id": row[0], "username": row[1], "password_hash": row[2], "full_name": row[3], "role": row[4],
-        "family_id": row[5] or 1, "family_name": row[6] or "Primary Household", "family_code": row[7] or "PRIMARY-1001"
+        "family_id": row[5] or 1, "family_name": row[6] or "Primary Household", "family_code": row[7] or "PRIMARY-1001", "gemini_api_key": row[8]
     }
     
     if verify_password(user_dict["password_hash"], password_attempt):
@@ -454,9 +456,22 @@ def authenticate_user(username: str, password_attempt: str) -> Optional[Dict[str
             "role": user_dict["role"],
             "family_id": user_dict["family_id"],
             "family_name": user_dict["family_name"],
-            "family_code": user_dict["family_code"]
+            "family_code": user_dict["family_code"],
+            "gemini_api_key": user_dict.get("gemini_api_key")
         }
     return None
+
+def update_user_gemini_key(username: str, api_key: str) -> bool:
+    try:
+        conn = get_connection()
+        cursor = conn.cursor()
+        cursor.execute("UPDATE users SET gemini_api_key = ? WHERE username = ?", (api_key.strip(), username.strip().lower()))
+        conn.commit()
+        conn.close()
+        return True
+    except Exception as e:
+        print(f"Error updating Gemini API Key: {e}")
+        return False
 
 def create_user(username: str, password: str, full_name: str, role: str = "Member", family_id: int = 1) -> Tuple[bool, str]:
     username_clean = username.strip().lower()
