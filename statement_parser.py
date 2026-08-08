@@ -4,6 +4,7 @@ import re
 import pdfplumber
 import mimetypes
 import json
+import datetime
 
 def parse_icici_statement(file_bytes, filename):
     """
@@ -47,12 +48,17 @@ def parse_icici_statement(file_bytes, filename):
         parsed_data = []
         # Fallback heuristic if columns are completely unexpected
         col_mapping = {
-            'symbol': next((c for c in df.columns if 'symbol' in str(c).lower() or 'scrip' in str(c).lower() or 'name' in str(c).lower()), None),
-            'quantity': next((c for c in df.columns if 'qty' in str(c).lower() or 'quantity' in str(c).lower()), None),
-            'avg_price': next((c for c in df.columns if 'avg' in str(c).lower() and 'price' in str(c).lower()), None),
-            'total_cost': next((c for c in df.columns if 'cost' in str(c).lower() and 'value' in str(c).lower()), None),
-            'cmp': next((c for c in df.columns if 'cmp' in str(c).lower() or 'current' in str(c).lower()), None),
-            'category': next((c for c in df.columns if 'type' in str(c).lower() or 'category' in str(c).lower() or 'asset' in str(c).lower()), None)
+            'symbol': next((c for c in df.columns if any(x in str(c).lower() for x in ['stock code', 'name', 'symbol', 'scheme', 'instrument', 'particular'])), None),
+            'quantity': next((c for c in df.columns if any(x in str(c).lower() for x in ['quantity', 'qty', 'unit', 'balance'])), None),
+            'avg_price': next((c for c in df.columns if any(x in str(c).lower() for x in ['average', 'avg price', 'cost'])), None),
+            'total_cost': next((c for c in df.columns if 'total' in str(c).lower() and 'cost' in str(c).lower()), None),
+            'cmp': next((c for c in df.columns if any(x in str(c).lower() for x in ['current value', 'cmp', 'market value'])), None),
+            'category': next((c for c in df.columns if any(x in str(c).lower() for x in ['asset class', 'category', 'type'])), None),
+            'platform': next((c for c in df.columns if any(x in str(c).lower() for x in ['platform', 'broker'])), None),
+            'investment_amount': next((c for c in df.columns if any(x in str(c).lower() for x in ['invested amount', 'investment amount', 'amount'])), None),
+            'year_invested': next((c for c in df.columns if any(x in str(c).lower() for x in ['year'])), None),
+            'market_cap': next((c for c in df.columns if any(x in str(c).lower() for x in ['market cap'])), None),
+            'sector_segment': next((c for c in df.columns if any(x in str(c).lower() for x in ['sector', 'theme'])), None)
         }
 
         for _, row in df.iterrows():
@@ -101,11 +107,14 @@ def parse_icici_statement(file_bytes, filename):
 
             parsed_data.append({
                 "type": asset_type,
-                "platform": platform,
-                "amount": round(qty * avg_price, 2), # Total investment
+                "platform": str(row.get(col_mapping['platform'], platform)).strip() if col_mapping.get('platform') and pd.notna(row.get(col_mapping['platform'])) else platform,
+                "amount": float(str(row.get(col_mapping['investment_amount'], 0)).replace(',','')) if col_mapping.get('investment_amount') and pd.notna(row.get(col_mapping['investment_amount'])) else round(qty * avg_price, 2),
+                "year_invested": int(row.get(col_mapping['year_invested'], datetime.datetime.now().year)) if col_mapping.get('year_invested') and pd.notna(row.get(col_mapping['year_invested'])) else datetime.datetime.now().year,
                 "units": round(qty, 4),
                 "avg_buy_price": round(avg_price, 2),
                 "current_value": round(qty * curr_val, 2) if col_mapping['cmp'] and not ('value' in str(col_mapping['cmp']).lower() and 'current' in str(col_mapping['cmp']).lower()) else curr_val,
+                "market_cap": str(row.get(col_mapping['market_cap'], "Unknown")).strip() if col_mapping.get('market_cap') and pd.notna(row.get(col_mapping['market_cap'])) else "Unknown",
+                "sector_segment": str(row.get(col_mapping['sector_segment'], "Unknown")).strip() if col_mapping.get('sector_segment') and pd.notna(row.get(col_mapping['sector_segment'])) else "Unknown",
                 "name_or_symbol": str(symbol_val).strip()
             })
 

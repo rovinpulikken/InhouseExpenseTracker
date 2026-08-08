@@ -1426,11 +1426,16 @@ else:
                 import pandas as pd
                 
                 template_df = pd.DataFrame({
-                    "Stock Symbol": ["HDFC Bank", "Nifty 50 Index Fund"],
-                    "Quantity": [30.5, 150.25],
-                    "Average Price": [1639.34, 210.50],
-                    "Current Market Price": [1700.00, 225.00],
-                    "Category": ["Equity", "Mutual Funds"]
+                    "Stock Code / Name": ["HDFC Bank", "Nifty 50 Index Fund"],
+                    "Platform / Broker": ["Zerodha", "ICICI Direct"],
+                    "Asset Class": ["Equity", "Mutual Funds"],
+                    "Invested Amount": [50000.0, 31575.0],
+                    "Year Invested": [2022, 2023],
+                    "Current Value": [51850.0, 33750.0],
+                    "Units": [30.5, 150.25],
+                    "Average Buy Price": [1639.34, 210.50],
+                    "Market Cap": ["Large Cap", "Unknown"],
+                    "Sector / Theme": ["Banking", "Index"]
                 })
                 csv_template = template_df.to_csv(index=False).encode('utf-8')
                 st.download_button(
