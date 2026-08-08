@@ -1446,7 +1446,7 @@ else:
                     help="Fill out this standard template for guaranteed 100% accurate parsing without needing Gemini AI."
                 )
                 
-                default_api_key = st.session_state["current_user"].get("gemini_api_key")
+                default_api_key = current_user.get("gemini_api_key")
                 if not default_api_key:
                     default_api_key = os.environ.get("GEMINI_API_KEY", "")
                 if not default_api_key:
@@ -1456,11 +1456,11 @@ else:
                         pass
                 
                 gemini_api_key = st.text_input("Gemini API Key (Optional for Universal Parsing)", value=default_api_key, type="password", key="stmt_api_key")
-                if gemini_api_key and gemini_api_key != st.session_state["current_user"].get("gemini_api_key"):
+                if gemini_api_key and gemini_api_key != current_user.get("gemini_api_key"):
                     if st.button("💾 Save Key to Profile", key="save_api_key_btn"):
                         from database import update_user_gemini_key
                         if update_user_gemini_key(current_user["username"], gemini_api_key):
-                            st.session_state["current_user"]["gemini_api_key"] = gemini_api_key
+                            st.session_state["user"]["gemini_api_key"] = gemini_api_key
                             st.success("API Key saved securely to your profile!")
                             st.rerun()
                         else:
