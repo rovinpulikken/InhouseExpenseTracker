@@ -480,7 +480,7 @@ else:
         "📊 Indian FY Trends",
         "📈 Inflation & CPI Analytics",
         "🚨 Expense Surge Detector",
-        "🎯 Budgeting & Targets",
+        "🎯 Budgeting & Investments",
         "📝 Database Log & Export"
     ]
 
@@ -1088,10 +1088,10 @@ else:
             st.info("No period available to display surge analytics.")
 
     # ----------------------------------------------------
-    # TAB 7: BUDGETING & TARGETS
+    # TAB 7: BUDGETING & INVESTMENTS
     # ----------------------------------------------------
     with tab_budget:
-        st.subheader(f"🎯 Budgeting, Targets & Active Portfolio ({selected_fy})")
+        st.subheader(f"🎯 Budgeting, Investments & Active Portfolio ({selected_fy})")
         
         subtab_budget, subtab_invest, subtab_holdings = st.tabs([
             "🎯 Category Budget Planner & Performance",

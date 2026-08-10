@@ -12,3 +12,6 @@
 - **Authentication State**: Fixed a `KeyError` related to the `current_user` dictionary in session state.
 - **Database Insertion**: Fixed parameter alignment `TypeError` in `insert_investment` after adding the description field.
 - **Live Market Tracker**: Fixed `KeyError` when querying missing asset classes.
+
+### Changed
+- **UI Navigation**: Renamed the "Budgeting & Targets" tab to "Budgeting & Investments" for clarity.
