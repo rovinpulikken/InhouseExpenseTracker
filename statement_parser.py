@@ -236,7 +236,7 @@ Each dictionary MUST have the following keys and data types:
 - "amount": (float) The total invested amount or cost.
 - "units": (float) The total quantity or units held.
 - "avg_buy_price": (float) The average purchase price.
-- "current_value": (float) The current market value of the holding.
+- "current_value": (float) The TOTAL current market value of the holding. IMPORTANT: This MUST be the total value (i.e. units multiplied by current market price). If the document only provides a Current Market Price (CMP) per unit, you MUST multiply it by the number of units to get this total value. Do NOT put the unit price here.
 
 Rules:
 1. Return ONLY the JSON array. Do not include markdown codeblocks (like ```json), explanations, or text outside the JSON.
@@ -282,21 +282,37 @@ def identify_and_parse_statement(file_bytes, filename, api_key=None):
     Attempts to identify the statement type and route to the correct parser.
     Uses Gemini API if the key is provided, falling back to heuristics.
     """
+    parsed_data = None
     if api_key:
         try:
-            return parse_investment_with_gemini(file_bytes, filename, api_key)
+            parsed_data = parse_investment_with_gemini(file_bytes, filename, api_key)
         except Exception as e:
             print(f"Gemini parsing failed: {e}. Falling back to heuristic parsers.")
 
-    filename_lower = filename.lower()
-    
-    if 'icici' in filename_lower or 'idirect' in filename_lower:
-        return parse_icici_statement(file_bytes, filename)
-    elif 'rathi' in filename_lower or 'anand' in filename_lower:
-        return parse_anand_rathi_statement(file_bytes, filename)
-    else:
-        # Generic fallback: try ICICI parser heuristics as a best effort
-        try:
-            return parse_icici_statement(file_bytes, filename)
-        except:
-            return parse_anand_rathi_statement(file_bytes, filename)
+    if not parsed_data:
+        filename_lower = filename.lower()
+        if 'icici' in filename_lower or 'idirect' in filename_lower:
+            parsed_data = parse_icici_statement(file_bytes, filename)
+        elif 'rathi' in filename_lower or 'anand' in filename_lower:
+            parsed_data = parse_anand_rathi_statement(file_bytes, filename)
+        else:
+            # Generic fallback: try ICICI parser heuristics as a best effort
+            try:
+                parsed_data = parse_icici_statement(file_bytes, filename)
+            except:
+                parsed_data = parse_anand_rathi_statement(file_bytes, filename)
+
+    # Post-processing: Programmatically verify and fix `current_value` calculation
+    if parsed_data:
+        for item in parsed_data:
+            val = float(item.get("current_value", 0.0))
+            inv_amt = float(item.get("amount", 0.0))
+            units = float(item.get("units", 0.0))
+            
+            # If the current_value is suspiciously low compared to the total invested amount, 
+            # the parser likely extracted the Current Market Price (per unit) instead of the total value.
+            if val > 0 and units > 1 and inv_amt > 0:
+                if val < (inv_amt / 1.5): # e.g. Titan: 5166 vs 114031
+                    item["current_value"] = round(val * units, 2)
+                    
+    return parsed_data
