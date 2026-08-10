@@ -13,5 +13,12 @@
 - **Database Insertion**: Fixed parameter alignment `TypeError` in `insert_investment` after adding the description field.
 - **Live Market Tracker**: Fixed `KeyError` when querying missing asset classes.
 
+
 ### Changed
 - **UI Navigation**: Renamed the "Budgeting & Targets" tab to "Budgeting & Investments" for clarity.
+- **Current Savings Auto-Fill**: The 'Current Total Savings / Corpus' field in the Wealth Planner now automatically fetches and calculates the sum of all your active investments in the portfolio tracker as the default value.
+
+### Added
+- **Retirement Planner Engine**: Added a new "Retirement Planner Simulation" module under the Wealth Planner tab. 
+- **Dynamic Market Index Returns**: Integrated `yfinance` to allow users to fetch live historical data from major global indices (Nifty 50, BSE Sensex, S&P 500, NASDAQ) to compute the actual historical Average Annual Return (CAGR) dynamically for the last 5, 10, 15, or 20 years.
+- **AI Retirement Advisory**: Integrated Gemini AI to cross-reference the user's projected retirement corpus with their *active* holdings portfolio, generating a tailored strategic withdrawal and rebalancing plan.

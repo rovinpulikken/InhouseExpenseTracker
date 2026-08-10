@@ -1289,11 +1289,15 @@ else:
 
             curr_insurance_invest_monthly = float(st.session_state.get("budget_dict", {}).get("Insurance & Investments", 20000.0))
 
+            from database import get_user_investments_df
+            inv_df = get_user_investments_df(username=current_user["username"], family_id=current_user.get("family_id", 1))
+            total_active_investments = float(inv_df["current_value"].sum()) if not inv_df.empty and "current_value" in inv_df.columns else 0.0
+
             inv_col1, inv_col2, inv_col3 = st.columns([1, 1.2, 1.5])
             with inv_col1:
                 u_age = st.number_input("👤 Your Age (Years)", min_value=18, max_value=85, value=35, step=1, key="invest_user_age")
             with inv_col2:
-                u_savings = st.number_input("🏦 Current Total Savings / Corpus (₹)", min_value=0.0, value=500000.0, step=50000.0, format="%.2f", key="invest_user_savings")
+                u_savings = st.number_input("🏦 Current Total Savings / Corpus (₹)", min_value=0.0, value=total_active_investments, step=50000.0, format="%.2f", key="invest_user_savings")
             with inv_col3:
                 u_sip_budget = st.number_input(
                     "💵 Monthly Insurance & Investment Budget (₹)",
@@ -1411,6 +1415,71 @@ else:
 
                 for bullet in wealth_advice.get("key_takeaways", []):
                     st.markdown(f"- {bullet}")
+
+            # ------------------------------------------------
+            # RETIREMENT PLANNER SIMULATION
+            # ------------------------------------------------
+            st.markdown("<hr>", unsafe_allow_html=True)
+            st.markdown("### 🏖️ Retirement Planner Simulation")
+            st.caption("Plan your retirement corpus dynamically. Leave 'Expected Returns' blank to automatically fetch historical average returns from global indices.")
+
+            ret_col1, ret_col2 = st.columns(2)
+            with ret_col1:
+                ret_age = st.number_input("🎯 Desired Retirement Age", min_value=u_age + 1, max_value=100, value=max(60, u_age + 10), step=1)
+                exp_return_str = st.text_input("📈 Expected Returns (CAGR %)", placeholder="e.g. 12.5 (Leave blank to use historical data)")
+            
+            with ret_col2:
+                benchmark_index = st.selectbox(
+                    "📊 Benchmark Index (If Expected Returns is blank)",
+                    options=[
+                        ("Nifty 50 (India)", "^NSEI"),
+                        ("BSE Sensex (India)", "^BSESN"),
+                        ("S&P 500 (US)", "^GSPC"),
+                        ("NASDAQ Composite (US)", "^IXIC")
+                    ],
+                    format_func=lambda x: x[0]
+                )
+                hist_years = st.selectbox(
+                    "📅 Historical Data Period",
+                    options=[5, 10, 15, 20],
+                    index=1,
+                    format_func=lambda x: f"Last {x} Years"
+                )
+
+            if st.button("🔮 Calculate Retirement Corpus", type="primary", use_container_width=True):
+                from investment_planner import fetch_index_historical_cagr, calculate_retirement_corpus, generate_ai_retirement_advisory
+                
+                with st.spinner("Calculating retirement projections..."):
+                    if exp_return_str.strip():
+                        try:
+                            cagr_decimal = float(exp_return_str.strip()) / 100.0
+                        except ValueError:
+                            st.warning("Invalid Expected Returns. Falling back to 12%.")
+                            cagr_decimal = 0.12
+                    else:
+                        st.info(f"Fetching {hist_years}-year historical returns for {benchmark_index[0]}...")
+                        cagr_decimal = fetch_index_historical_cagr(benchmark_index[1], hist_years)
+                        st.success(f"Historical {hist_years}-year CAGR for {benchmark_index[0]} is **{cagr_decimal*100:.2f}%**")
+
+                    ret_plan = calculate_retirement_corpus(
+                        current_age=u_age,
+                        retirement_age=ret_age,
+                        current_savings=u_savings,
+                        monthly_sip=u_sip_budget,
+                        cagr_decimal=cagr_decimal
+                    )
+
+                    r1, r2, r3 = st.columns(3)
+                    r1.metric("💰 Projected Corpus", format_inr(ret_plan["total_future_value"]), f"+ {format_inr(ret_plan['wealth_gain'])} Gain")
+                    r2.metric("💵 Total Invested", format_inr(ret_plan["total_invested"]))
+                    r3.metric("🏝️ Safe Monthly Withdrawal (4%)", format_inr(ret_plan["safe_monthly_withdrawal"]))
+
+                with st.spinner("🤖 Generating AI Retirement Strategy..."):
+                    ret_advice = generate_ai_retirement_advisory(ret_plan, inv_df)
+                    st.markdown("#### 🤖 AI Retirement Advisory")
+                    st.info(ret_advice.get("summary", ""))
+                    for item in ret_advice.get("key_takeaways", []):
+                        st.markdown(f"- {item}")
 
         # ------------------------------------------------
         # SUB-TAB 3: ACTIVE INVESTMENT PORTFOLIO & HOLDINGS TRACKER

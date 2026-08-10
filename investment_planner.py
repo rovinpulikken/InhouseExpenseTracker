@@ -393,3 +393,125 @@ def generate_ai_segment_advisory(segments: Dict[str, Any], risk_profile: str) ->
         pass
     
     return f"Your portfolio is heavily invested in {list(segments['asset_class'].keys())[:2] if segments['asset_class'] else 'various assets'}. Ensure this matches your {risk_profile} risk tolerance and consider diversifying across missing sectors."
+
+def fetch_index_historical_cagr(ticker: str, years: int) -> float:
+    """
+    Fetches historical market data for the given index ticker using yfinance
+    and calculates the CAGR over the specified number of years.
+    Returns the CAGR as a decimal (e.g. 0.12 for 12%).
+    """
+    import yfinance as yf
+    from datetime import datetime, timedelta
+
+    end_date = datetime.now()
+    # Add a buffer to ensure we get trading days
+    start_date = end_date - timedelta(days=(years * 365) + 30)
+    
+    try:
+        data = yf.download(ticker, start=start_date.strftime("%Y-%m-%d"), end=end_date.strftime("%Y-%m-%d"), progress=False)
+        if data.empty:
+            return 0.12 # Fallback
+            
+        # Get the first price around 'years' ago
+        target_start_date = end_date - timedelta(days=years * 365)
+        
+        # Find the closest date in the index
+        closest_start_idx = data.index.get_indexer([target_start_date], method='nearest')[0]
+        start_price = float(data.iloc[closest_start_idx]['Close'])
+        end_price = float(data.iloc[-1]['Close'])
+        
+        if start_price <= 0:
+            return 0.12
+            
+        cagr = ((end_price / start_price) ** (1 / years)) - 1
+        return round(cagr, 4)
+    except Exception as e:
+        print(f"Error fetching yfinance data for {ticker}: {e}")
+        return 0.12 # Fallback to standard 12%
+
+def calculate_retirement_corpus(current_age: int, retirement_age: int, current_savings: float, monthly_sip: float, cagr_decimal: float) -> Dict[str, Any]:
+    """
+    Calculates the projected retirement corpus based on current age and savings.
+    """
+    years = max(1, retirement_age - current_age)
+    n_months = years * 12
+    r_monthly = cagr_decimal / 12.0
+    
+    # Future value of lump sum savings
+    fv_lump = current_savings * ((1 + r_monthly) ** n_months)
+    
+    # Future value of monthly SIP
+    if r_monthly > 0:
+        fv_sip = monthly_sip * (((1 + r_monthly) ** n_months - 1) / r_monthly) * (1 + r_monthly)
+    else:
+        fv_sip = monthly_sip * n_months
+
+    total_fv = round(fv_lump + fv_sip, 2)
+    total_invested = round(current_savings + (monthly_sip * n_months), 2)
+    wealth_gain = round(total_fv - total_invested, 2)
+
+    # 4% Safe Withdrawal Rate (SWR) monthly
+    swr_monthly = round((total_fv * 0.04) / 12.0, 2)
+
+    return {
+        "years_to_retirement": years,
+        "total_future_value": total_fv,
+        "total_invested": total_invested,
+        "wealth_gain": wealth_gain,
+        "safe_monthly_withdrawal": swr_monthly,
+        "cagr_used_pct": round(cagr_decimal * 100.0, 2)
+    }
+
+def generate_ai_retirement_advisory(retirement_plan: Dict[str, Any], holdings_df: pd.DataFrame) -> Dict[str, Any]:
+    """
+    Generates AI suggestions for retirement using the calculated corpus and the user's active holdings.
+    """
+    total_current = float(holdings_df["current_value"].sum()) if holdings_df is not None and not holdings_df.empty and "current_value" in holdings_df.columns else 0.0
+    
+    try:
+        from google import genai
+        api_key = os.environ.get("GEMINI_API_KEY")
+        if not api_key:
+            try:
+                import streamlit as st
+                api_key = st.secrets.get("GEMINI_API_KEY")
+            except Exception:
+                pass
+
+        if api_key:
+            client = genai.Client(api_key=api_key)
+            prompt = f"""
+            Act as an expert Indian Retirement Planner. Analyze this profile:
+            - Years to Retirement: {retirement_plan['years_to_retirement']}
+            - Current Portfolio Value: ₹ {total_current:,}
+            - Expected CAGR: {retirement_plan['cagr_used_pct']}%
+            - Projected Corpus at Retirement: ₹ {retirement_plan['total_future_value']:,}
+            - Safe Monthly Withdrawal (4% rule): ₹ {retirement_plan['safe_monthly_withdrawal']:,}
+
+            Provide a highly actionable retirement strategy. 
+            Format response as JSON with keys:
+            - 'summary': string summary paragraph assessing if the corpus is healthy.
+            - 'key_takeaways': list of 4 bullet points focusing on inflation impact, asset shifting near retirement (equity to debt glide path), tax-free withdrawal strategies, and SWP (Systematic Withdrawal Plan) structure.
+            """
+            response = client.models.generate_content(
+                model="gemini-2.5-flash",
+                contents=prompt
+            )
+            if response and response.text:
+                import json
+                cleaned = response.text.replace("```json", "").replace("```", "").strip()
+                parsed = json.loads(cleaned)
+                return parsed
+    except Exception as e:
+        print(f"AI retirement advisory failed: {e}")
+        pass
+
+    return {
+        "summary": f"Your projected retirement corpus is ₹ {int(retirement_plan['total_future_value']):,}, yielding a safe monthly withdrawal of ₹ {int(retirement_plan['safe_monthly_withdrawal']):,}.",
+        "key_takeaways": [
+            "Consider inflation: ₹1 today will lose purchasing power over the years to your retirement.",
+            "Start shifting your portfolio from Equity to Debt 3-5 years before your retirement date to protect your capital from market volatility.",
+            "Use a Systematic Withdrawal Plan (SWP) for tax-efficient monthly income.",
+            "Maximize your EPF and PPF contributions as they provide tax-free compounding."
+        ]
+    }
