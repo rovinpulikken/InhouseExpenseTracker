@@ -21,20 +21,29 @@ def parse_icici_statement(file_bytes, filename):
             # Parse PDF using pdfplumber
             all_rows = []
             with pdfplumber.open(io.BytesIO(file_bytes)) as pdf:
+                last_col_names = None
                 for page in pdf.pages:
                     tables = page.extract_tables()
                     for table in tables:
                         if not table or len(table) < 2: continue
+                        
                         # Check if this table looks like an investment holdings table
                         header = [str(c).lower().replace('\n', ' ') for c in table[0] if c]
+                        
+                        # If the table starts with recognized headers, grab them
                         if any('quantity' in h for h in header) and any('value' in h for h in header):
-                            # It's a relevant table
-                            # Create a mapping for this table
-                            col_names = [str(c).replace('\n', ' ') for c in table[0]]
-                            for row in table[1:]:
-                                if not row or len(row) != len(col_names): continue
-                                row_dict = dict(zip(col_names, row))
-                                all_rows.append(row_dict)
+                            last_col_names = [str(c).replace('\n', ' ') for c in table[0]]
+                            start_idx = 1
+                        elif last_col_names:
+                            # It's a continuation table on the next page
+                            start_idx = 0
+                        else:
+                            continue
+                            
+                        for row in table[start_idx:]:
+                            if not row or len(row) != len(last_col_names): continue
+                            row_dict = dict(zip(last_col_names, row))
+                            all_rows.append(row_dict)
             if not all_rows:
                 return []
             df = pd.DataFrame(all_rows)
@@ -136,14 +145,27 @@ def parse_anand_rathi_statement(file_bytes, filename):
         elif filename.lower().endswith('.pdf'):
             all_rows = []
             with pdfplumber.open(io.BytesIO(file_bytes)) as pdf:
+                last_col_names = None
                 for page in pdf.pages:
                     tables = page.extract_tables()
                     for table in tables:
                         if not table or len(table) < 2: continue
-                        col_names = [str(c).replace('\n', ' ') for c in table[0]]
-                        for row in table[1:]:
-                            if not row or len(row) != len(col_names): continue
-                            all_rows.append(dict(zip(col_names, row)))
+                        
+                        # Grab headers from the very first table we encounter
+                        if not last_col_names:
+                            last_col_names = [str(c).replace('\n', ' ') for c in table[0]]
+                            start_idx = 1
+                        else:
+                            # Check if this table repeats the headers
+                            current_headers = [str(c).replace('\n', ' ') for c in table[0]]
+                            if current_headers == last_col_names:
+                                start_idx = 1
+                            else:
+                                start_idx = 0
+                                
+                        for row in table[start_idx:]:
+                            if not row or len(row) != len(last_col_names): continue
+                            all_rows.append(dict(zip(last_col_names, row)))
             if not all_rows:
                 return []
             df = pd.DataFrame(all_rows)
@@ -155,10 +177,10 @@ def parse_anand_rathi_statement(file_bytes, filename):
 
         parsed_data = []
         col_mapping = {
-            'symbol': next((c for c in df.columns if 'scheme' in str(c).lower() or 'instrument' in str(c).lower() or 'particular' in str(c).lower()), None),
-            'quantity': next((c for c in df.columns if 'balance' in str(c).lower() or 'units' in str(c).lower() or 'qty' in str(c).lower()), None),
-            'avg_price': next((c for c in df.columns if 'average' in str(c).lower() or 'cost' in str(c).lower()), None),
-            'current_value': next((c for c in df.columns if 'market value' in str(c).lower() or 'current value' in str(c).lower()), None),
+            'symbol': next((c for c in df.columns if any(x in str(c).lower() for x in ['stock code', 'name', 'symbol', 'scheme', 'instrument', 'particular'])), None),
+            'quantity': next((c for c in df.columns if any(x in str(c).lower() for x in ['quantity', 'qty', 'unit', 'balance'])), None),
+            'avg_price': next((c for c in df.columns if any(x in str(c).lower() for x in ['average', 'avg price', 'cost'])), None),
+            'current_value': next((c for c in df.columns if any(x in str(c).lower() for x in ['current value', 'cmp', 'market value'])), None),
         }
         
         # If headers are missing, default to some standard if possible, else return empty
@@ -306,13 +328,15 @@ def identify_and_parse_statement(file_bytes, filename, api_key=None):
     if parsed_data:
         for item in parsed_data:
             val = float(item.get("current_value", 0.0))
-            inv_amt = float(item.get("amount", 0.0))
+            avg_price = float(item.get("avg_buy_price", 0.0))
             units = float(item.get("units", 0.0))
             
-            # If the current_value is suspiciously low compared to the total invested amount, 
+            # If the current_value is suspiciously close to the unit average buy price (and units > 1),
             # the parser likely extracted the Current Market Price (per unit) instead of the total value.
-            if val > 0 and units > 1 and inv_amt > 0:
-                if val < (inv_amt / 1.5): # e.g. Titan: 5166 vs 114031
+            if val > 0 and units > 1 and avg_price > 0:
+                # If val is within 100x of avg_price, but total investment is much larger, it's a unit price.
+                if 0.05 * avg_price < val < 20.0 * avg_price: 
+                    # It's highly likely to be the CMP per unit. Multiply by units to get total value.
                     item["current_value"] = round(val * units, 2)
                     
     return parsed_data
