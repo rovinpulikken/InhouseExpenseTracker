@@ -1368,7 +1368,7 @@ else:
                 use_portfolio_networth = st.toggle("Link Networth from Active Investments", value=True, help="Automatically link your total active investment valuation here.")
                 if use_portfolio_networth:
                     u_savings = total_active_investments
-                    st.metric("💰 Linked Portfolio Networth", f"₹ {u_savings:,.2f}")
+                    st.metric("💰 Linked Portfolio Networth", format_inr_short(u_savings))
                 else:
                     # Need a separate key to preserve manual state
                     u_savings = st.number_input("💰 Your Networth (₹)", min_value=0.0, value=total_active_investments, step=50000.0, format="%.2f", key="invest_user_savings_manual")
