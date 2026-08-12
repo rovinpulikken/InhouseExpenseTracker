@@ -4,11 +4,14 @@
 - **Feature**: Added a "Find & Remove Duplicate Holdings" tool in the Active Investments tab! Users can now scan their portfolio for exact duplicates and safely delete the redundancies in one click.
 - **Feature**: Added automatic AMFI code resolution for Mutual Funds! When importing investments from statements (like Anand Rathi) that only list numeric codes, the system now automatically fetches and saves the official human-readable fund name.
 - **Feature**: Replaced raw numeric codes in the Active Investments tracker with their resolved AMFI names.
+- **Feature**: Mapped AMFI resolved Mutual Fund sectors/categories directly into the 'Sector / Theme' column in the Active Investment portfolio.
 - **Feature**: Implemented user-specific, history-based personal inflation rate logic in the **Personal Expense Predictor**. Users can seamlessly project future expenses weighted by their real category-level spending.
 - **Feature**: Added an interactive override field for the inflation rate to let users model "what-if" projection scenarios.
 
 ## Newly Added Requirements
+- Populated the `sector_segment` database column using Mutual Fund category metadata retrieved from the AMFI lookup tool.
 - Added "Personal Expense Predictor" sub-tab under Inflation & CPI Analytics to project future expenses based on a dynamically calculated personalized inflation rate, weighted by the user's historical category spending.
+- Added a toggle option in the "Investment & Wealth Planner" to explicitly use the "Networth" (Current Portfolio Valuation) from the Active Investments tab or allow the user to manually override it.
 
 ## [Unreleased]
 ### Added

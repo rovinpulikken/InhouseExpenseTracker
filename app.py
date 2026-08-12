@@ -1365,7 +1365,12 @@ else:
             with inv_col1:
                 u_age = st.number_input("👤 Your Age (Years)", min_value=18, max_value=85, value=35, step=1, key="invest_user_age")
             with inv_col2:
-                u_savings = st.number_input("🏦 Current Total Savings / Corpus (₹)", min_value=0.0, value=total_active_investments, step=50000.0, format="%.2f", key="invest_user_savings")
+                use_portfolio_networth = st.checkbox("Use Networth from Active Investments", value=True, help="Automatically link your total active investment valuation here.")
+                if use_portfolio_networth:
+                    u_savings = st.number_input("🏦 Networth / Current Savings (₹)", min_value=0.0, value=total_active_investments, step=50000.0, format="%.2f", key="invest_user_savings_auto", disabled=True)
+                else:
+                    # Need a separate key to preserve manual state
+                    u_savings = st.number_input("🏦 Networth / Current Savings (₹)", min_value=0.0, value=total_active_investments, step=50000.0, format="%.2f", key="invest_user_savings_manual")
             with inv_col3:
                 u_sip_budget = st.number_input(
                     "💵 Monthly Insurance & Investment Budget (₹)",
@@ -1613,12 +1618,12 @@ else:
                             else:
                                 import amfi_lookup
                                 for inv_dict in parsed_data:
-                                    # Fallback check for description
                                     code_candidate = inv_dict.get("name_or_symbol") or inv_dict.get("platform")
                                     if code_candidate and str(code_candidate).strip().isdigit():
                                         resolved = amfi_lookup.resolve_amfi_code(code_candidate)
                                         if resolved:
-                                            inv_dict["resolved_name"] = resolved
+                                            inv_dict["resolved_name"] = resolved["name"]
+                                            inv_dict["sector_segment"] = resolved["category"]
 
                                 from database import batch_insert_investments
                                 count = batch_insert_investments(parsed_data, username=current_user["username"], family_id=user_family_id)

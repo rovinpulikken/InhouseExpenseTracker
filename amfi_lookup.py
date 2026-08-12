@@ -39,23 +39,23 @@ def get_amfi_data() -> Dict[str, str]:
                 scheme_code = parts[0].strip()
                 scheme_name = parts[3].strip()
                 if scheme_code.isdigit():
-                    if current_category:
-                        amfi_dict[scheme_code] = f"{scheme_name} [{current_category}]"
-                    else:
-                        amfi_dict[scheme_code] = scheme_name
+                    amfi_dict[scheme_code] = {
+                        "name": scheme_name,
+                        "category": current_category
+                    }
         return amfi_dict
     except Exception as e:
         print(f"Error fetching AMFI data: {e}")
         return {}
 
-def resolve_amfi_code(code: str) -> str:
+def resolve_amfi_code(code: str) -> Optional[Dict[str, str]]:
     """
-    Attempts to resolve an AMFI scheme code into a scheme name.
-    Returns the resolved name if successful, else returns the original code or empty string.
+    Attempts to resolve an AMFI scheme code into a scheme name and category.
+    Returns a dict with 'name' and 'category' if successful, else returns None.
     """
     code_str = str(code).strip()
     if not code_str.isdigit():
-        return "" # Not a numeric AMFI code
+        return None # Not a numeric AMFI code
         
     amfi_data = get_amfi_data()
-    return amfi_data.get(code_str, "")
+    return amfi_data.get(code_str, None)
