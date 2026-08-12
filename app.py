@@ -1365,12 +1365,12 @@ else:
             with inv_col1:
                 u_age = st.number_input("👤 Your Age (Years)", min_value=18, max_value=85, value=35, step=1, key="invest_user_age")
             with inv_col2:
-                use_portfolio_networth = st.checkbox("Use Networth from Active Investments", value=True, help="Automatically link your total active investment valuation here.")
+                use_portfolio_networth = st.toggle("Link Networth from Active Investments", value=True, help="Automatically link your total active investment valuation here.")
                 if use_portfolio_networth:
-                    u_savings = st.number_input("🏦 Networth / Current Savings (₹)", min_value=0.0, value=total_active_investments, step=50000.0, format="%.2f", key="invest_user_savings_auto", disabled=True)
+                    u_savings = st.number_input("💰 Your Networth (₹)", min_value=0.0, value=total_active_investments, step=50000.0, format="%.2f", key="invest_user_savings_auto", disabled=True)
                 else:
                     # Need a separate key to preserve manual state
-                    u_savings = st.number_input("🏦 Networth / Current Savings (₹)", min_value=0.0, value=total_active_investments, step=50000.0, format="%.2f", key="invest_user_savings_manual")
+                    u_savings = st.number_input("💰 Your Networth (₹)", min_value=0.0, value=total_active_investments, step=50000.0, format="%.2f", key="invest_user_savings_manual")
             with inv_col3:
                 u_sip_budget = st.number_input(
                     "💵 Monthly Insurance & Investment Budget (₹)",
