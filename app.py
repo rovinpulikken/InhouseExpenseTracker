@@ -990,8 +990,8 @@ else:
                     if fys:
                         latest_fy = fys[0]
                         latest_fy_df = get_category_breakdown(fy=latest_fy, username=current_user["username"] if view_mode == "Personal" else None, view_mode=view_mode, family_id=user_family_id)
-                        if not latest_fy_df.empty:
-                            default_expense = float(latest_fy_df['total_amount'].sum())
+                        if not latest_fy_df.empty and 'Total_Amount' in latest_fy_df.columns:
+                            default_expense = float(latest_fy_df['Total_Amount'].sum())
                 
                 baseline_expense = st.number_input("Base Year Annual Expense (₹)", value=default_expense, step=50000.0)
                 
