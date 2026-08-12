@@ -15,15 +15,34 @@ def get_amfi_data() -> Dict[str, str]:
         lines = response.text.splitlines()
         
         amfi_dict = {}
+        current_category = ""
+        
         for line in lines:
-            if not line or ';' not in line:
+            line = line.strip()
+            if not line:
                 continue
+                
+            # If line doesn't contain a semicolon and looks like a category header
+            if ';' not in line:
+                if '(' in line and ')' in line and 'Scheme' in line:
+                    # Clean up the category name (e.g. "Open Ended Schemes(Equity Scheme - Large Cap Fund)" -> "Equity Scheme - Large Cap Fund")
+                    cat_start = line.find('(')
+                    cat_end = line.rfind(')')
+                    if cat_start != -1 and cat_end != -1:
+                        current_category = line[cat_start+1:cat_end].strip()
+                    else:
+                        current_category = line
+                continue
+                
             parts = line.split(';')
             if len(parts) >= 4:
                 scheme_code = parts[0].strip()
                 scheme_name = parts[3].strip()
                 if scheme_code.isdigit():
-                    amfi_dict[scheme_code] = scheme_name
+                    if current_category:
+                        amfi_dict[scheme_code] = f"{scheme_name} [{current_category}]"
+                    else:
+                        amfi_dict[scheme_code] = scheme_name
         return amfi_dict
     except Exception as e:
         print(f"Error fetching AMFI data: {e}")
