@@ -1804,8 +1804,44 @@ else:
                             adv = generate_ai_segment_advisory(seg_analytics, "Moderate (Growth)")
                         st.info(adv)
                         
-                st.markdown("<br>", unsafe_allow_html=True)
+                st.markdown("<hr>", unsafe_allow_html=True)
+                
+                with st.expander("🧹 Find & Remove Duplicate Holdings"):
+                    st.caption("Scan your portfolio for exactly identical entries (same amount, platform, year, type, etc.)")
+                    from database import find_duplicate_investments, delete_duplicate_investments
+                    duplicates = find_duplicate_investments(username=current_user["username"] if view_mode != "Family" else None, family_id=user_family_id)
+                    
+                    if not duplicates:
+                        st.success("No duplicate holdings found!")
+                    else:
+                        st.warning(f"Found {len(duplicates)} group(s) of identical investments.")
+                        
+                        duplicate_ids_to_delete = []
+                        dup_display_list = []
+                        
+                        for group in duplicates:
+                            # Keep the first, mark rest for deletion
+                            original = group[0]
+                            dups = group[1:]
+                            duplicate_ids_to_delete.extend([d['id'] for d in dups])
+                            
+                            for d in dups:
+                                dup_display_list.append({
+                                    "Duplicate ID": d['id'],
+                                    "Original ID": original['id'],
+                                    "Platform": d['platform'],
+                                    "Name/Desc": d['description'],
+                                    "Invested": d['investment_amount']
+                                })
+                        
+                        st.dataframe(pd.DataFrame(dup_display_list), use_container_width=True)
+                        
+                        if st.button(f"🗑️ Delete {len(duplicate_ids_to_delete)} Duplicate Entries", type="primary"):
+                            del_count = delete_duplicate_investments(duplicate_ids_to_delete)
+                            st.success(f"Successfully deleted {del_count} duplicate entries! Refreshing...")
+                            st.rerun()
 
+                st.markdown("<br>", unsafe_allow_html=True)
                 # Interactive Data Editor & Deletion Manager
                 st.markdown("#### ✏️ Edit or Manage Holdings")
                 st.caption("You can update investment amounts, current values, platform, or investment types directly in the table below, then click Save.")

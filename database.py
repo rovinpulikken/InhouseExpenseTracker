@@ -1300,3 +1300,74 @@ def delete_all_investments(username: Optional[str] = None, family_id: Optional[i
     conn.commit()
     conn.close()
     return deleted_count
+
+def find_duplicate_investments(username: Optional[str] = None, family_id: Optional[int] = 1) -> List[List[Dict[str, Any]]]:
+    """
+    Finds groups of exact duplicate investments.
+    Returns a list of groups (lists), where each group contains dictionaries of the identical rows.
+    The first element in each group can be considered the 'original', and the rest as 'duplicates' to delete.
+    """
+    conn = get_connection()
+    conn.row_factory = sqlite3.Row
+    cursor = conn.cursor()
+    
+    query = "SELECT * FROM investments"
+    params = []
+    if family_id is not None and family_id != 0:
+        query += " WHERE family_id = ?"
+        params.append(int(family_id))
+        if username:
+            query += " AND username = ?"
+            params.append(username)
+    else:
+        if username and username != "admin":
+            query += " WHERE username = ?"
+            params.append(username)
+            
+    cursor.execute(query, params)
+    rows = cursor.fetchall()
+    conn.close()
+    
+    # Group by all fields except id, created_at, last_updated_at
+    groups = {}
+    for row in rows:
+        r_dict = dict(row)
+        # Create a tuple of the fields that must match exactly
+        key = (
+            r_dict.get("username"),
+            r_dict.get("family_id"),
+            r_dict.get("platform"),
+            r_dict.get("investment_type"),
+            float(r_dict.get("investment_amount", 0.0)),
+            int(r_dict.get("year_invested", 0)),
+            float(r_dict.get("current_value", 0.0)),
+            float(r_dict.get("units", 0.0)),
+            float(r_dict.get("avg_buy_price", 0.0)),
+            r_dict.get("description", ""),
+            r_dict.get("resolved_name", "")
+        )
+        if key not in groups:
+            groups[key] = []
+        groups[key].append(r_dict)
+        
+    duplicate_groups = [g for g in groups.values() if len(g) > 1]
+    return duplicate_groups
+
+def delete_duplicate_investments(duplicate_ids: List[int]) -> int:
+    """
+    Deletes the specific investment IDs provided in the list.
+    """
+    if not duplicate_ids:
+        return 0
+        
+    conn = get_connection()
+    cursor = conn.cursor()
+    
+    placeholders = ",".join(["?"] * len(duplicate_ids))
+    query = f"DELETE FROM investments WHERE id IN ({placeholders})"
+    
+    cursor.execute(query, duplicate_ids)
+    deleted_count = cursor.rowcount
+    conn.commit()
+    conn.close()
+    return deleted_count

@@ -1,6 +1,7 @@
 # Release Notes
 
 ## v1.4.0 (2026-08-12)
+- **Feature**: Added a "Find & Remove Duplicate Holdings" tool in the Active Investments tab! Users can now scan their portfolio for exact duplicates and safely delete the redundancies in one click.
 - **Feature**: Added automatic AMFI code resolution for Mutual Funds! When importing investments from statements (like Anand Rathi) that only list numeric codes, the system now automatically fetches and saves the official human-readable fund name.
 - **Feature**: Replaced raw numeric codes in the Active Investments tracker with their resolved AMFI names.
 - **Feature**: Implemented user-specific, history-based personal inflation rate logic in the **Personal Expense Predictor**. Users can seamlessly project future expenses weighted by their real category-level spending.
