@@ -1358,7 +1358,7 @@ else:
             curr_insurance_invest_monthly = float(st.session_state.get("budget_dict", {}).get("Insurance & Investments", 20000.0))
 
             from database import get_user_investments_df
-            inv_df = get_user_investments_df(username=current_user["username"], family_id=current_user.get("family_id", 1))
+            inv_df = get_user_investments_df(username=current_user["username"] if view_mode != "Family" else None, family_id=user_family_id)
             total_active_investments = float(inv_df["current_value"].sum()) if not inv_df.empty and "current_value" in inv_df.columns else 0.0
 
             inv_col1, inv_col2, inv_col3 = st.columns([1, 1.2, 1.5])
