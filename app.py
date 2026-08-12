@@ -80,6 +80,7 @@ from database import (
 from cpi_data import (
     get_cpi_df,
     calculate_cpi_inflation,
+    calculate_personal_inflation_rate,
     CPI_CATEGORY_INFLATION
 )
 from categorizer import auto_categorize_description, auto_categorize_records
@@ -919,47 +920,107 @@ else:
     # TAB 5: INFLATION & CPI ANALYTICS
     # ----------------------------------------------------
     with tab_cpi:
-        st.subheader("📈 Indian CPI Inflation & Purchasing Power Analytics")
-        st.write("Compares your category expense changes against official Reserve Bank of India (RBI) & Ministry of Statistics (MOSPI) CPI inflation benchmarks.")
+        st.subheader("📈 Inflation & Purchasing Power Analytics")
         
-        cpi_df = get_cpi_df()
-        col_cpi_calc, col_cpi_chart = st.columns([1, 1])
+        sub_tab_cpi, sub_tab_personal = st.tabs(["General CPI Analytics", "Personal Expense Predictor"])
         
-        with col_cpi_calc:
-            st.markdown("#### Purchasing Power Erosion Calculator")
-            base_yr = st.number_input("Base Year", min_value=2018, max_value=2025, value=2020)
-            curr_yr = st.number_input("Comparison Year", min_value=2019, max_value=2026, value=2025)
-            sample_amt = st.number_input("Expense Amount in Base Year (₹)", value=10000.0, step=1000.0)
+        with sub_tab_cpi:
+            st.write("Compares your category expense changes against official Reserve Bank of India (RBI) & Ministry of Statistics (MOSPI) CPI inflation benchmarks.")
             
-            cum_inf = calculate_cpi_inflation(base_yr, curr_yr)
-            req_amt = sample_amt * (1 + (cum_inf / 100))
+            cpi_df = get_cpi_df()
+            col_cpi_calc, col_cpi_chart = st.columns([1, 1])
             
-            st.info(f"💡 What cost **{format_inr(sample_amt)}** in {base_yr} requires **{format_inr(req_amt)}** in {curr_yr} just to keep pace with Indian CPI inflation (**+{cum_inf}%** total inflation).")
+            with col_cpi_calc:
+                st.markdown("#### Purchasing Power Erosion Calculator")
+                base_yr = st.number_input("Base Year", min_value=2018, max_value=2025, value=2020)
+                curr_yr = st.number_input("Comparison Year", min_value=2019, max_value=2026, value=2025)
+                sample_amt = st.number_input("Expense Amount in Base Year (₹)", value=10000.0, step=1000.0)
+                
+                cum_inf = calculate_cpi_inflation(base_yr, curr_yr)
+                req_amt = sample_amt * (1 + (cum_inf / 100))
+                
+                st.info(f"💡 What cost **{format_inr(sample_amt)}** in {base_yr} requires **{format_inr(req_amt)}** in {curr_yr} just to keep pace with Indian CPI inflation (**+{cum_inf}%** total inflation).")
 
-        with col_cpi_chart:
-            st.markdown("#### Personal Expense Inflation vs. Indian CPI Curve")
-            fig_cpi = px.line(
-                cpi_df,
-                x="Year",
-                y="CPI Inflation (%)",
-                markers=True,
-                title="Indian CPI Annual Inflation Rate (%)",
-                template="plotly_dark",
-                color_discrete_sequence=["#fbbf24"]
-            )
-            fig_cpi.update_layout(paper_bgcolor="#1e293b", plot_bgcolor="#1e293b")
-            st.plotly_chart(fig_cpi, use_container_width=True)
+            with col_cpi_chart:
+                st.markdown("#### Personal Expense Inflation vs. Indian CPI Curve")
+                fig_cpi = px.line(
+                    cpi_df,
+                    x="Year",
+                    y="CPI Inflation (%)",
+                    markers=True,
+                    title="Indian CPI Annual Inflation Rate (%)",
+                    template="plotly_dark",
+                    color_discrete_sequence=["#fbbf24"]
+                )
+                fig_cpi.update_layout(paper_bgcolor="#1e293b", plot_bgcolor="#1e293b")
+                st.plotly_chart(fig_cpi, use_container_width=True)
 
-            st.markdown("#### Category-Specific Benchmark Inflation Rates")
-            cat_cpi_list = []
-            for cat, details in CPI_CATEGORY_INFLATION.items():
-                cat_cpi_list.append({
-                    "Category": cat,
-                    "CPI Group": details["cpi_group"],
-                    "CPI Weight (%)": details["cpi_weight"],
-                    "Avg Category Inflation (%)": details["avg_inflation"]
-                })
-            st.dataframe(pd.DataFrame(cat_cpi_list), use_container_width=True, hide_index=True)
+                st.markdown("#### Category-Specific Benchmark Inflation Rates")
+                cat_cpi_list = []
+                for cat, details in CPI_CATEGORY_INFLATION.items():
+                    cat_cpi_list.append({
+                        "Category": cat,
+                        "CPI Group": details["cpi_group"],
+                        "CPI Weight (%)": details["cpi_weight"],
+                        "Avg Category Inflation (%)": details["avg_inflation"]
+                    })
+                st.dataframe(pd.DataFrame(cat_cpi_list), use_container_width=True, hide_index=True)
+
+        with sub_tab_personal:
+            st.markdown("### Predict Your Future Expenses")
+            st.write("This tool calculates a **Personalized Inflation Rate** based on your exact historical spending habits. Instead of using the generic national CPI, it heavily weights the inflation of the categories you spend the most on.")
+            
+            # Fetch historical category breakdown
+            hist_breakdown_df = get_category_breakdown(fy=None, username=current_user["username"] if view_mode == "Personal" else None, view_mode=view_mode, family_id=user_family_id)
+            personal_rate = calculate_personal_inflation_rate(hist_breakdown_df)
+            
+            st.info(f"🔥 **Your Personalized Inflation Rate:** {personal_rate}% per year (Based on your historical category weightings)")
+            
+            col_pred_inputs, col_pred_chart = st.columns([1, 2])
+            
+            with col_pred_inputs:
+                pred_base_year = st.number_input("Base Year", min_value=2020, max_value=2030, value=2024, key="pred_base")
+                pred_target_year = st.number_input("Target Prediction Year", min_value=2025, max_value=2060, value=2034, key="pred_target")
+                
+                # Default baseline expense to the most recent FY if available, else 0
+                default_expense = 1000000.0 # 10L default
+                if not hist_breakdown_df.empty:
+                    # Let's get the most recent FY data
+                    fys = get_all_financial_years(username=current_user["username"] if view_mode == "Personal" else None, view_mode=view_mode, family_id=user_family_id)
+                    if fys:
+                        latest_fy = fys[0]
+                        latest_fy_df = get_category_breakdown(fy=latest_fy, username=current_user["username"] if view_mode == "Personal" else None, view_mode=view_mode, family_id=user_family_id)
+                        if not latest_fy_df.empty:
+                            default_expense = float(latest_fy_df['total_amount'].sum())
+                
+                baseline_expense = st.number_input("Base Year Annual Expense (₹)", value=default_expense, step=50000.0)
+                
+            with col_pred_chart:
+                if pred_target_year <= pred_base_year:
+                    st.warning("Target year must be greater than base year.")
+                else:
+                    # Generate projection data
+                    proj_years = list(range(pred_base_year, pred_target_year + 1))
+                    proj_expenses = [baseline_expense * ((1 + (personal_rate / 100.0)) ** (y - pred_base_year)) for y in proj_years]
+                    
+                    proj_df = pd.DataFrame({
+                        "Year": proj_years,
+                        "Projected Annual Expense (₹)": proj_expenses
+                    })
+                    
+                    fig_proj = px.bar(
+                        proj_df, 
+                        x="Year", 
+                        y="Projected Annual Expense (₹)",
+                        title=f"Expense Projection at {personal_rate}% Inflation",
+                        template="plotly_dark",
+                        color_discrete_sequence=["#ef4444"]
+                    )
+                    fig_proj.update_layout(paper_bgcolor="#1e293b", plot_bgcolor="#1e293b")
+                    st.plotly_chart(fig_proj, use_container_width=True)
+                    
+                    final_amt = proj_expenses[-1]
+                    st.success(f"By {pred_target_year}, you will need **{format_inr(final_amt)}** annually to maintain your current lifestyle.")
 
     # ----------------------------------------------------
     # TAB 6: EXPENSE SURGE DETECTOR & AI SAVINGS ADVISOR

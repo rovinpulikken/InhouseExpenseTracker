@@ -62,3 +62,31 @@ def calculate_cpi_inflation(start_year: int, end_year: int) -> float:
     if cpi_start == 0:
         return 0.0
     return round(((cpi_end - cpi_start) / cpi_start) * 100, 2)
+
+def calculate_personal_inflation_rate(category_breakdown_df: pd.DataFrame) -> float:
+    """
+    Calculate the personalized inflation rate based on a user's historical category spending weights.
+    Requires a DataFrame with 'category' and 'total_amount' columns.
+    """
+    if category_breakdown_df.empty or 'total_amount' not in category_breakdown_df.columns or 'category' not in category_breakdown_df.columns:
+        # Default to a standard blended inflation rate if no data is available
+        return 6.0
+    
+    total_spend = category_breakdown_df['total_amount'].sum()
+    if total_spend <= 0:
+        return 6.0
+        
+    personal_inflation = 0.0
+    for _, row in category_breakdown_df.iterrows():
+        cat = row['category']
+        amt = row['total_amount']
+        weight = amt / total_spend
+        
+        # Get category average inflation, default to 5.5% if not found
+        cat_inflation = 5.5
+        if cat in CPI_CATEGORY_INFLATION:
+            cat_inflation = CPI_CATEGORY_INFLATION[cat]['avg_inflation']
+            
+        personal_inflation += (weight * cat_inflation)
+        
+    return round(personal_inflation, 2)

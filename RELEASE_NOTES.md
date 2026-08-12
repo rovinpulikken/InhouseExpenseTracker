@@ -1,5 +1,8 @@
 # Release Notes
 
+## Newly Added Requirements
+- Added "Personal Expense Predictor" sub-tab under Inflation & CPI Analytics to project future expenses based on a dynamically calculated personalized inflation rate, weighted by the user's historical category spending.
+
 ## [Unreleased]
 ### Added
 - **Gemini AI Integration**: Universal statement parsing using `google-genai` for PDFs, Images, and CSVs.
