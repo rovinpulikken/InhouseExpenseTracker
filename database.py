@@ -290,6 +290,8 @@ def init_db():
         cursor.execute("ALTER TABLE investments ADD COLUMN last_updated_at TIMESTAMP")
     if "description" not in i_cols:
         cursor.execute("ALTER TABLE investments ADD COLUMN description TEXT DEFAULT ''")
+    if "resolved_name" not in i_cols:
+        cursor.execute("ALTER TABLE investments ADD COLUMN resolved_name TEXT DEFAULT ''")
     
     # Seed default admin if users table is empty
     cursor.execute("SELECT COUNT(*) FROM users")
@@ -1143,15 +1145,16 @@ def insert_investment(
     market_cap: str = "Unknown",
     sector_segment: str = "Unknown",
     last_live_price: float = 0.0,
-    description: str = ""
+    description: str = "",
+    resolved_name: str = ""
 ) -> int:
     conn = get_connection()
     cursor = conn.cursor()
     fid = int(family_id) if family_id is not None else None
     cursor.execute("""
-        INSERT INTO investments (username, platform, investment_type, investment_amount, year_invested, current_value, family_id, units, avg_buy_price, market_cap, sector_segment, last_live_price, description, last_updated_at)
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP)
-    """, (username, platform, investment_type, float(investment_amount), int(year_invested), float(current_value), fid, float(units), float(avg_buy_price), market_cap, sector_segment, float(last_live_price), description))
+        INSERT INTO investments (username, platform, investment_type, investment_amount, year_invested, current_value, family_id, units, avg_buy_price, market_cap, sector_segment, last_live_price, description, resolved_name, last_updated_at)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP)
+    """, (username, platform, investment_type, float(investment_amount), int(year_invested), float(current_value), fid, float(units), float(avg_buy_price), market_cap, sector_segment, float(last_live_price), description, resolved_name))
     inv_id = cursor.lastrowid
     conn.commit()
     conn.close()
@@ -1166,8 +1169,8 @@ def batch_insert_investments(investments_list: List[Dict[str, Any]], username: s
     fid = int(family_id) if family_id is not None else None
     for inv in investments_list:
         cursor.execute("""
-            INSERT INTO investments (username, platform, investment_type, investment_amount, year_invested, current_value, family_id, units, avg_buy_price, market_cap, sector_segment, last_live_price, last_updated_at, description)
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP, ?)
+            INSERT INTO investments (username, platform, investment_type, investment_amount, year_invested, current_value, family_id, units, avg_buy_price, market_cap, sector_segment, last_live_price, last_updated_at, description, resolved_name)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP, ?, ?)
         """, (
             username, 
             inv.get("platform", "Unknown"), 
@@ -1181,7 +1184,8 @@ def batch_insert_investments(investments_list: List[Dict[str, Any]], username: s
             inv.get("market_cap", "Unknown"),
             inv.get("sector_segment", "Unknown"),
             float(inv.get("current_value", 0.0)), # use current_value as proxy for last live price initially
-            inv.get("name_or_symbol", inv.get("platform", "Unknown"))
+            inv.get("name_or_symbol", inv.get("platform", "Unknown")),
+            inv.get("resolved_name", "")
         ))
         count += 1
     conn.commit()
@@ -1190,7 +1194,7 @@ def batch_insert_investments(investments_list: List[Dict[str, Any]], username: s
 
 def get_user_investments_df(username: Optional[str] = None, family_id: Optional[int] = 1) -> pd.DataFrame:
     conn = get_connection()
-    query = "SELECT id, username, platform, investment_type, investment_amount, year_invested, current_value, family_id, units, avg_buy_price, market_cap, sector_segment, last_live_price, last_updated_at, created_at, description FROM investments"
+    query = "SELECT id, username, platform, investment_type, investment_amount, year_invested, current_value, family_id, units, avg_buy_price, market_cap, sector_segment, last_live_price, last_updated_at, created_at, description, resolved_name FROM investments"
     params = []
     if family_id is not None and family_id != 0:
         query += " WHERE family_id = ?"

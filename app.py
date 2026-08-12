@@ -1611,6 +1611,15 @@ else:
                             if not parsed_data:
                                 st.warning("Could not extract any valid holdings from this file. Ensure it's a supported format.")
                             else:
+                                import amfi_lookup
+                                for inv_dict in parsed_data:
+                                    # Fallback check for description
+                                    code_candidate = inv_dict.get("name_or_symbol") or inv_dict.get("platform")
+                                    if code_candidate and str(code_candidate).strip().isdigit():
+                                        resolved = amfi_lookup.resolve_amfi_code(code_candidate)
+                                        if resolved:
+                                            inv_dict["resolved_name"] = resolved
+
                                 from database import batch_insert_investments
                                 count = batch_insert_investments(parsed_data, username=current_user["username"], family_id=user_family_id)
                                 st.success(f"🎉 Successfully imported {count} holdings from {uploaded_file.name}!")
@@ -1815,13 +1824,18 @@ else:
                 else:
                     filtered_df = holdings_df.head(0) # Show empty if nothing selected
 
-                display_cols = ["id", "description", "platform", "investment_type", "investment_amount", "year_invested", "current_value", "units", "avg_buy_price", "market_cap", "sector_segment", "unrealized_gain", "returns_pct"]
+                # Make sure resolved_name exists in columns if loading legacy data
+                if "resolved_name" not in holdings_df.columns:
+                    holdings_df["resolved_name"] = ""
+
+                display_cols = ["id", "description", "resolved_name", "platform", "investment_type", "investment_amount", "year_invested", "current_value", "units", "avg_buy_price", "market_cap", "sector_segment", "unrealized_gain", "returns_pct"]
                 
                 edited_holdings = st.data_editor(
-                    filtered_df[display_cols],
+                    filtered_df[display_cols] if not filtered_df.empty else filtered_df,
                     column_config={
                         "id": st.column_config.NumberColumn("ID", disabled=True),
                         "description": st.column_config.TextColumn("Stock Code / Name"),
+                        "resolved_name": st.column_config.TextColumn("Resolved AMFI Name (Read-only)", disabled=True),
                         "platform": st.column_config.TextColumn("Platform / Broker"),
                         "investment_type": st.column_config.TextColumn("Asset Type"),
                         "investment_amount": st.column_config.NumberColumn("Invested (₹)", format="₹ %.2f"),
