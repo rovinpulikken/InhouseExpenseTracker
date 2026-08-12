@@ -979,6 +979,13 @@ else:
             col_pred_inputs, col_pred_chart = st.columns([1, 2])
             
             with col_pred_inputs:
+                custom_inflation = st.number_input(
+                    "Inflation Rate to Use (%)", 
+                    value=float(personal_rate), 
+                    step=0.5, 
+                    format="%.2f", 
+                    help="Defaults to your personalized historical inflation rate based on your category spend weightings, but you can override it here."
+                )
                 pred_base_year = st.number_input("Base Year", min_value=2020, max_value=2030, value=2024, key="pred_base")
                 pred_target_year = st.number_input("Target Prediction Year", min_value=2025, max_value=2060, value=2034, key="pred_target")
                 
@@ -1001,7 +1008,7 @@ else:
                 else:
                     # Generate projection data
                     proj_years = list(range(pred_base_year, pred_target_year + 1))
-                    proj_expenses = [baseline_expense * ((1 + (personal_rate / 100.0)) ** (y - pred_base_year)) for y in proj_years]
+                    proj_expenses = [baseline_expense * ((1 + (custom_inflation / 100.0)) ** (y - pred_base_year)) for y in proj_years]
                     
                     proj_df = pd.DataFrame({
                         "Year": proj_years,
@@ -1012,7 +1019,7 @@ else:
                         proj_df, 
                         x="Year", 
                         y="Projected Annual Expense (₹)",
-                        title=f"Expense Projection at {personal_rate}% Inflation",
+                        title=f"Expense Projection at {custom_inflation}% Inflation",
                         template="plotly_dark",
                         color_discrete_sequence=["#ef4444"]
                     )
