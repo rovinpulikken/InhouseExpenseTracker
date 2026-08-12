@@ -1325,13 +1325,21 @@ def find_duplicate_investments(username: Optional[str] = None, family_id: Option
             params.append(username)
             
     cursor.execute(query, params)
+    
+    columns = [col[0] for col in cursor.description] if cursor.description else []
+    
     rows = cursor.fetchall()
     conn.close()
     
     # Group by all fields except id, created_at, last_updated_at
     groups = {}
     for row in rows:
-        r_dict = dict(row)
+        if isinstance(row, dict):
+            r_dict = row
+        elif hasattr(row, "keys"):
+            r_dict = dict(row)
+        else:
+            r_dict = dict(zip(columns, row))
         # Create a tuple of the fields that must match exactly
         key = (
             r_dict.get("username"),
