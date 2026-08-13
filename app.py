@@ -495,15 +495,24 @@ else:
         # Calculate current month metrics
         now = datetime.datetime.now()
         curr_month_str = now.strftime('%Y-%m')
-        df_curr_month = df[df['Date'].dt.strftime('%Y-%m') == curr_month_str]
-        total_curr_month = df_curr_month['Amount'].sum() if not df_curr_month.empty else 0.0
+        df = get_expenses_df(fy=selected_fy, username=current_user["username"], view_mode=view_mode, family_id=user_family_id)
+        
+        if not df.empty and "expense_date" in df.columns:
+            df_curr_month = df[df['expense_date'].dt.strftime('%Y-%m') == curr_month_str]
+            total_curr_month = df_curr_month['amount'].sum() if not df_curr_month.empty else 0.0
+        else:
+            df_curr_month = pd.DataFrame()
+            total_curr_month = 0.0
         
         c1, c2, c3 = st.columns(3)
         c1.metric(f"Total Spent ({now.strftime('%B %Y')})", format_inr(total_curr_month))
         
         st.markdown("### Top Spending Categories This Month")
         if not df_curr_month.empty:
-            top_cats = df_curr_month.groupby('Category')['Amount'].sum().sort_values(ascending=False).head(5)
+            top_cats = df_curr_month.groupby('category')['amount'].sum().sort_values(ascending=False).head(5)
+            # Rename for display
+            top_cats.index.name = "Category"
+            top_cats.name = "Amount"
             st.dataframe(top_cats.reset_index().style.format({"Amount": "₹{:,.2f}"}), use_container_width=True)
         else:
             st.info("No expenses logged for this month yet.")
