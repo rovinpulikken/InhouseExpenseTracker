@@ -472,47 +472,58 @@ else:
             return 0, f"Error processing file: {e}"
 
     # ----------------------------------------------------
-    # MAIN NAVIGATION TABS
+    # MAIN NAVIGATION (SIDEBAR)
     # ----------------------------------------------------
-    tab_labels = [
-        "📊 Manual Entry & Excel Grid",
-        "📑 Itemized Period Explorer",
-        "✏️ Edit & Delete Expenses",
-        "📊 Indian FY Trends",
-        "📈 Inflation & CPI Analytics",
-        "🚨 Expense Surge Detector",
-        "🎯 Budgeting & Investments",
-        "📝 Database Log & Export"
+    nav_options = [
+        "🏠 Dashboard",
+        "💸 Transactions",
+        "📈 Insights & Analytics",
+        "🔮 Wealth & Planning",
+        "⚙️ Settings & Admin"
     ]
-
-    if current_user["role"] == "Admin":
-        tab_labels.append("👑 Admin & User Management")
-
-    tabs_list = st.tabs(tab_labels)
-    tab_manual = tabs_list[0]
-    tab_itemized = tabs_list[1]
-    tab_edit_delete = tabs_list[2]
-    tab_trends = tabs_list[3]
-    tab_cpi = tabs_list[4]
-    tab_surge = tabs_list[5]
-    tab_budget = tabs_list[6]
-    tab_data = tabs_list[7]
-    tab_admin = tabs_list[8] if current_user["role"] == "Admin" else None
+    
+    nav_selection = st.sidebar.radio("Navigation", nav_options)
+    st.sidebar.markdown("---")
 
     # ----------------------------------------------------
-    # TAB 1: MANUAL ENTRY & EXCEL GRID
+    # 🏠 DASHBOARD
     # ----------------------------------------------------
-    with tab_manual:
-        st.subheader("📝 Manual Data Entry & Excel Spreadsheet Tools")
-        st.write("You can enter expenses directly using an Excel-like interactive table with **Auto-Categorization**, import existing Excel/CSV sheets, or add quick single entries.")
+    if nav_selection == "🏠 Dashboard":
+        st.header("🏠 Dashboard Overview")
+        st.write(f"Welcome back, **{current_user['username']}**!")
         
-        manual_sub_tab1, manual_sub_tab2, manual_sub_tab3 = st.tabs([
-            "📊 Excel-like Interactive Grid",
-            "📂 Excel / CSV File Import",
-            "⚡ Quick Single Entry Form"
+        # Calculate current month metrics
+        now = datetime.now()
+        curr_month_str = now.strftime('%Y-%m')
+        df_curr_month = df[df['Date'].dt.strftime('%Y-%m') == curr_month_str]
+        total_curr_month = df_curr_month['Amount'].sum() if not df_curr_month.empty else 0.0
+        
+        c1, c2, c3 = st.columns(3)
+        c1.metric(f"Total Spent ({now.strftime('%B %Y')})", format_inr(total_curr_month))
+        
+        st.markdown("### Top Spending Categories This Month")
+        if not df_curr_month.empty:
+            top_cats = df_curr_month.groupby('Category')['Amount'].sum().sort_values(ascending=False).head(5)
+            st.dataframe(top_cats.reset_index().style.format({"Amount": "₹{:,.2f}"}), use_container_width=True)
+        else:
+            st.info("No expenses logged for this month yet.")
+            
+        st.info("👈 Use the **Sidebar Navigation** to manage transactions, view insights, or plan your wealth.")
+
+    # ----------------------------------------------------
+    # 💸 TRANSACTIONS & ENTRY
+    # ----------------------------------------------------
+    elif nav_selection == "💸 Transactions":
+        st.header("💸 Transactions")
+        st.write("Manage your manual entries, file imports, and edit or delete existing expenses.")
+        
+        tx_tab1, tx_tab2, tx_tab3 = st.tabs([
+            "📊 Add Expenses (Grid)",
+            "📂 File Import & Quick Add",
+            "✏️ Edit & Delete Existing"
         ])
         
-        with manual_sub_tab1:
+        with tx_tab1:
             st.markdown("#### Interactive Spreadsheet Grid (Auto-Categorizing)")
             st.caption("Type descriptions (e.g., 'Swiggy', 'D-Mart', 'Petrol', 'Electricity bill') and click **✨ Auto-Categorize & Save** below!")
             
@@ -563,7 +574,8 @@ else:
                     else:
                         st.warning("Please enter at least one row with an amount > 0.")
                     
-        with manual_sub_tab2:
+        with tx_tab2:
+            st.markdown("### File Import & Quick Add")
             col_ex_left, col_ex_right = st.columns(2)
             
             with col_ex_left:
@@ -594,7 +606,8 @@ else:
                         else:
                             st.error(msg)
                             
-        with manual_sub_tab3:
+        st.divider()
+        if True:
             st.markdown("#### Add Single Expense Entry (with Smart Auto-Categorization)")
             m1, m2, m3, m4, m5 = st.columns([1.5, 2, 2, 1.5, 1.5])
             with m1:
