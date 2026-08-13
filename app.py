@@ -2121,7 +2121,11 @@ else:
         # ----------------------------------------------------
         # TAB 9: ADMIN & USER MANAGEMENT (Admin Only)
         # ----------------------------------------------------
-        if tab_admin:
+        if current_user.get("role") != "Admin" and not is_super_admin:
+            with sa_tab2:
+                st.info("⚠️ You do not have administrator privileges to view this section.")
+                
+        if current_user.get("role") == "Admin" or is_super_admin:
             with sa_tab2:
                 st.subheader("👑 Administrator & Family Workspace Management")
                 st.caption("Manage household user accounts, share family join codes, assign roles, and verify Turso cloud database connection.")
