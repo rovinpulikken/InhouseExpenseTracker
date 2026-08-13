@@ -1361,20 +1361,23 @@ else:
             inv_df = get_user_investments_df(username=current_user["username"] if view_mode != "Family" else None, family_id=user_family_id)
             total_active_investments = float(inv_df["current_value"].sum()) if not inv_df.empty and "current_value" in inv_df.columns else 0.0
 
-            inv_col1, inv_col2, inv_col3 = st.columns([1, 1.2, 1.5])
+            inv_col1, inv_col2, inv_col3, inv_col4 = st.columns([1, 1.2, 1.5, 1.8])
             with inv_col1:
-                u_age = st.number_input("👤 Your Age (Years)", min_value=18, max_value=85, value=35, step=1, key="invest_user_age")
+                u_age = st.number_input("👤 Your Age", min_value=18, max_value=85, value=35, step=1, key="invest_user_age")
             with inv_col2:
-                use_portfolio_networth = st.toggle("Link Networth from Active Investments", value=True, help="Automatically link your total active investment valuation here.")
+                st.write("") # vertical spacing to align toggle
+                st.write("")
+                use_portfolio_networth = st.toggle("Link Networth", value=True, help="Automatically link your total active investment valuation here.")
+            with inv_col3:
                 if use_portfolio_networth:
                     u_savings = total_active_investments
                     st.metric("💰 Linked Portfolio Networth", format_inr_short(u_savings))
                 else:
                     # Need a separate key to preserve manual state
                     u_savings = st.number_input("💰 Your Networth (₹)", min_value=0.0, value=total_active_investments, step=50000.0, format="%.2f", key="invest_user_savings_manual")
-            with inv_col3:
+            with inv_col4:
                 u_sip_budget = st.number_input(
-                    "💵 Monthly Insurance & Investment Budget (₹)",
+                    "💵 Monthly Budget (₹)",
                     min_value=1000.0,
                     value=max(5000.0, curr_insurance_invest_monthly),
                     step=1000.0,

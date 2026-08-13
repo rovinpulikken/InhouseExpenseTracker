@@ -12,6 +12,7 @@
 - Populated the `sector_segment` database column using Mutual Fund category metadata retrieved from the AMFI lookup tool.
 - Added "Personal Expense Predictor" sub-tab under Inflation & CPI Analytics to project future expenses based on a dynamically calculated personalized inflation rate, weighted by the user's historical category spending.
 - Added a toggle option in the "Investment & Wealth Planner" to explicitly use the "Networth" (Current Portfolio Valuation) from the Active Investments tab or allow the user to manually override it.
+- Realigned the configuration inputs (Age, Networth Toggle, Networth Amount, Monthly Budget) in the "Investment & Wealth Planner" to render cleanly in a single horizontal row.
 
 ## [Unreleased]
 ### Added
