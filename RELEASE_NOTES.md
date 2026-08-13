@@ -19,6 +19,7 @@
 ## [Unreleased]
 ### Added
 - **Gemini AI Integration**: Universal statement parsing using `google-genai` for PDFs, Images, and CSVs.
+- **Extended Profile**: Added new demographic and financial fields (Sex, Date of Birth, Address, City, State, Country, Income Range, Occupation, Marital Status, Risk Tolerance) to the database schema and created a comprehensive User Profile editor in the Settings & Admin tab.
 
 ### Fixed
 - **Page Layout & Scrolling**: Fixed an issue where the top KPI dashboard blocks occupied the entire screen height when navigating to other tabs, eliminating the need for constant scrolling.

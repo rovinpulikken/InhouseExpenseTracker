@@ -213,6 +213,17 @@ def init_db():
         cursor.execute("ALTER TABLE users ADD COLUMN gemini_api_key TEXT")
     if "age" not in u_cols:
         cursor.execute("ALTER TABLE users ADD COLUMN age INTEGER DEFAULT 35")
+    if "sex" not in u_cols:
+        cursor.execute("ALTER TABLE users ADD COLUMN sex TEXT DEFAULT ''")
+        cursor.execute("ALTER TABLE users ADD COLUMN dob TEXT DEFAULT ''")
+        cursor.execute("ALTER TABLE users ADD COLUMN address TEXT DEFAULT ''")
+        cursor.execute("ALTER TABLE users ADD COLUMN city TEXT DEFAULT ''")
+        cursor.execute("ALTER TABLE users ADD COLUMN state TEXT DEFAULT ''")
+        cursor.execute("ALTER TABLE users ADD COLUMN country TEXT DEFAULT 'India'")
+        cursor.execute("ALTER TABLE users ADD COLUMN income_range TEXT DEFAULT ''")
+        cursor.execute("ALTER TABLE users ADD COLUMN occupation TEXT DEFAULT ''")
+        cursor.execute("ALTER TABLE users ADD COLUMN marital_status TEXT DEFAULT ''")
+        cursor.execute("ALTER TABLE users ADD COLUMN risk_tolerance TEXT DEFAULT 'Moderate'")
 
     # 3. Expenses Table
     cursor.execute("""
@@ -436,11 +447,12 @@ def authenticate_user(username: str, password_attempt: str) -> Optional[Dict[str
     conn = get_connection()
     cursor = conn.cursor()
     cursor.execute("""
-        SELECT u.id, u.username, u.password_hash, u.full_name, u.role, u.family_id, f.family_name, f.family_code, u.gemini_api_key, u.age
+        SELECT u.id, u.username, u.password_hash, u.full_name, u.role, u.family_id, f.family_name, f.family_code, 
+               u.gemini_api_key, u.age, u.sex, u.dob, u.address, u.city, u.state, u.country, u.income_range, 
+               u.occupation, u.marital_status, u.risk_tolerance
         FROM users u
         LEFT JOIN families f ON u.family_id = f.id
         WHERE u.username = ?
-
     """, (username.strip().lower(),))
     row = cursor.fetchone()
     conn.close()
@@ -448,24 +460,20 @@ def authenticate_user(username: str, password_attempt: str) -> Optional[Dict[str
     if not row:
         return None
         
-    user_dict = dict(row) if isinstance(row, sqlite3.Row) else {
-        "id": row[0], "username": row[1], "password_hash": row[2], "full_name": row[3], "role": row[4],
-        "family_id": row[5] or 1, "family_name": row[6] or "Primary Household", "family_code": row[7] or "PRIMARY-1001", "gemini_api_key": row[8],
-        "age": row[9] if row[9] is not None else 35
-    }
+    if isinstance(row, sqlite3.Row):
+        user_dict = dict(row)
+    else:
+        user_dict = {
+            "id": row[0], "username": row[1], "password_hash": row[2], "full_name": row[3], "role": row[4],
+            "family_id": row[5] or 1, "family_name": row[6] or "Primary Household", "family_code": row[7] or "PRIMARY-1001", 
+            "gemini_api_key": row[8], "age": row[9] if row[9] is not None else 35,
+            "sex": row[10], "dob": row[11], "address": row[12], "city": row[13], "state": row[14], 
+            "country": row[15], "income_range": row[16], "occupation": row[17], "marital_status": row[18], "risk_tolerance": row[19]
+        }
     
     if verify_password(user_dict["password_hash"], password_attempt):
-        return {
-            "id": user_dict["id"],
-            "username": user_dict["username"],
-            "full_name": user_dict["full_name"],
-            "role": user_dict["role"],
-            "family_id": user_dict["family_id"],
-            "family_name": user_dict["family_name"],
-            "family_code": user_dict["family_code"],
-            "gemini_api_key": user_dict.get("gemini_api_key"),
-            "age": user_dict.get("age", 35)
-        }
+        user_dict.pop("password_hash", None)
+        return user_dict
     return None
 
 def update_user_gemini_key(username: str, api_key: str) -> bool:
@@ -490,6 +498,32 @@ def update_user_age(username: str, age: int) -> bool:
         return True
     except Exception as e:
         print(f"Error updating age for user {username}: {e}")
+        return False
+
+def update_user_profile(username: str, profile_data: dict) -> bool:
+    try:
+        conn = get_connection()
+        cursor = conn.cursor()
+        
+        update_fields = []
+        params = []
+        for key, value in profile_data.items():
+            if key in ["full_name", "age", "sex", "dob", "address", "city", "state", "country", "income_range", "occupation", "marital_status", "risk_tolerance"]:
+                update_fields.append(f"{key} = ?")
+                params.append(value)
+                
+        if not update_fields:
+            return False
+            
+        params.append(username.strip().lower())
+        query = f"UPDATE users SET {', '.join(update_fields)} WHERE username = ?"
+        
+        cursor.execute(query, tuple(params))
+        conn.commit()
+        conn.close()
+        return True
+    except Exception as e:
+        print(f"Error updating profile for user {username}: {e}")
         return False
 
 def create_user(username: str, password: str, full_name: str, role: str = "Member", family_id: int = 1) -> Tuple[bool, str]:

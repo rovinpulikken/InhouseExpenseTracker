@@ -64,6 +64,7 @@ from database import (
     update_user_password,
     update_user_role,
     update_user_age,
+    update_user_profile,
     get_all_users,
     delete_user,
     get_db_type,
@@ -2064,14 +2065,71 @@ else:
             st.caption("Update your personal details. This information is used across the dashboard and wealth planner.")
             
             with st.form("update_profile_form"):
-                new_age = st.number_input("👤 Your Age", min_value=18, max_value=100, value=current_user.get("age", 35), step=1)
-                if st.form_submit_button("💾 Save Profile"):
-                    if update_user_age(current_user["username"], new_age):
-                        st.session_state["user"]["age"] = new_age
+                st.markdown("#### 1. Basic Information")
+                c1, c2, c3, c4 = st.columns(4)
+                with c1:
+                    new_name = st.text_input("Full Name", value=current_user.get("full_name", ""))
+                with c2:
+                    new_age = st.number_input("Age", min_value=18, max_value=100, value=current_user.get("age", 35), step=1)
+                with c3:
+                    cur_sex = current_user.get("sex", "Not Specified")
+                    new_sex = st.selectbox("Sex", ["Not Specified", "Male", "Female", "Other"], index=["Not Specified", "Male", "Female", "Other"].index(cur_sex) if cur_sex in ["Not Specified", "Male", "Female", "Other"] else 0)
+                with c4:
+                    try:
+                        parsed_dob = datetime.datetime.strptime(current_user.get("dob", ""), "%Y-%m-%d").date()
+                    except:
+                        parsed_dob = datetime.date(1990, 1, 1)
+                    new_dob = st.date_input("Date of Birth", value=parsed_dob)
+                
+                st.markdown("#### 2. Location Details")
+                new_address = st.text_area("Address", value=current_user.get("address", ""))
+                l1, l2, l3 = st.columns(3)
+                with l1:
+                    new_city = st.text_input("City", value=current_user.get("city", ""))
+                with l2:
+                    new_state = st.text_input("State", value=current_user.get("state", ""))
+                with l3:
+                    new_country = st.text_input("Country", value=current_user.get("country", "India"))
+                
+                st.markdown("#### 3. Financial & Wealth Planner Meta")
+                f1, f2, f3 = st.columns(3)
+                with f1:
+                    inc_opts = ["Not Specified", "< ₹10L", "₹10L - ₹25L", "₹25L - ₹50L", "> ₹50L"]
+                    cur_inc = current_user.get("income_range", "Not Specified")
+                    new_income = st.selectbox("Annual Income Range", inc_opts, index=inc_opts.index(cur_inc) if cur_inc in inc_opts else 0)
+                    new_occ = st.text_input("Occupation / Profession", value=current_user.get("occupation", ""))
+                with f2:
+                    mar_opts = ["Not Specified", "Single", "Married", "Divorced", "Widowed"]
+                    cur_mar = current_user.get("marital_status", "Not Specified")
+                    new_marital = st.selectbox("Marital Status", mar_opts, index=mar_opts.index(cur_mar) if cur_mar in mar_opts else 0)
+                with f3:
+                    risk_opts = ["Conservative", "Moderate", "Aggressive"]
+                    cur_risk = current_user.get("risk_tolerance", "Moderate")
+                    new_risk = st.selectbox("Risk Tolerance (Wealth Planner)", risk_opts, index=risk_opts.index(cur_risk) if cur_risk in risk_opts else 1)
+                
+                if st.form_submit_button("💾 Save Profile", type="primary", use_container_width=True):
+                    profile_data = {
+                        "full_name": new_name,
+                        "age": new_age,
+                        "sex": new_sex,
+                        "dob": new_dob.isoformat(),
+                        "address": new_address,
+                        "city": new_city,
+                        "state": new_state,
+                        "country": new_country,
+                        "income_range": new_income,
+                        "occupation": new_occ,
+                        "marital_status": new_marital,
+                        "risk_tolerance": new_risk
+                    }
+                    if update_user_profile(current_user["username"], profile_data):
+                        # Update session state dynamically
+                        for k, v in profile_data.items():
+                            st.session_state["user"][k] = v
                         st.success("Profile updated successfully!")
                         st.rerun()
                     else:
-                        st.error("Failed to update profile.")
+                        st.error("Failed to update profile. Please try again.")
                         
         with sa_tab1:
             st.subheader("📝 Interactive Database Log, Edit & Delete Manager")
