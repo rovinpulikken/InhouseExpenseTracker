@@ -647,303 +647,316 @@ else:
                     st.warning("Please enter an amount > 0.")
 
     # ----------------------------------------------------
-    # TAB 2: ITEMIZED PERIOD EXPLORER
-    # ----------------------------------------------------
-    with tab_itemized:
-        st.subheader(f"📑 Itemized Expense Explorer ({selected_fy})")
-        st.write("Explore itemized line-by-line expenses with customizable period filters (**Monthly, Quarterly, Half-Yearly, Yearly**) alongside cumulative **QTD, H1, H2, and YTD** totals.")
-        
-        cum_metrics = get_cumulative_metrics(fy=selected_fy if selected_fy != "All FYs" else None, username=current_user["username"], view_mode=view_mode)
-        
-        m_col1, m_col2, m_col3, m_col4 = st.columns(4)
-        with m_col1:
-            st.markdown(f"""
-            <div class="metric-card">
-                <div class="metric-label">QTD Total (Quarter to Date)</div>
-                <div class="metric-value" style="color:#38bdf8;">{format_inr_short(cum_metrics['QTD'])}</div>
-                <div style="color:#64748b; font-size:0.8rem;">{format_inr(cum_metrics['QTD'])}</div>
-            </div>
-            """, unsafe_allow_html=True)
-            
-        with m_col2:
-            st.markdown(f"""
-            <div class="metric-card">
-                <div class="metric-label">H1 Total (Apr - Sep)</div>
-                <div class="metric-value" style="color:#818cf8;">{format_inr_short(cum_metrics['H1'])}</div>
-                <div style="color:#64748b; font-size:0.8rem;">{format_inr(cum_metrics['H1'])}</div>
-            </div>
-            """, unsafe_allow_html=True)
-
-        with m_col3:
-            st.markdown(f"""
-            <div class="metric-card">
-                <div class="metric-label">H2 Total (Oct - Mar)</div>
-                <div class="metric-value" style="color:#c084fc;">{format_inr_short(cum_metrics['H2'])}</div>
-                <div style="color:#64748b; font-size:0.8rem;">{format_inr(cum_metrics['H2'])}</div>
-            </div>
-            """, unsafe_allow_html=True)
-
-        with m_col4:
-            st.markdown(f"""
-            <div class="metric-card">
-                <div class="metric-label">YTD / Full FY Total</div>
-                <div class="metric-value" style="color:#34d399;">{format_inr_short(cum_metrics['YTD'])}</div>
-                <div style="color:#64748b; font-size:0.8rem;">{format_inr(cum_metrics['YTD'])}</div>
-            </div>
-            """, unsafe_allow_html=True)
-
-        st.markdown("<br>", unsafe_allow_html=True)
-        
-        ctrl_col1, ctrl_col2 = st.columns([1, 2])
-        with ctrl_col1:
-            granularity = st.radio(
-                "Select Time Granularity",
-                ["Monthly", "Quarterly", "Half-Yearly", "Yearly (Full FY)"],
-                horizontal=False
-            )
-            
-        all_df = get_expenses_df(fy=selected_fy, username=current_user["username"], view_mode=view_mode)
-        filtered_df = pd.DataFrame()
-        period_title = ""
-        
-        with ctrl_col2:
-            if granularity == "Monthly":
-                if not all_df.empty and "Month_Year" in all_df.columns:
-                    months_available = sorted(all_df["Month_Year"].unique().tolist(), reverse=True)
-                    selected_month = st.selectbox(
-                        "Select Month",
-                        options=["All Months in FY"] + months_available,
-                        format_func=format_month_label
-                    )
-                    if selected_month != "All Months in FY":
-                        filtered_df = all_df[all_df["Month_Year"] == selected_month]
-                        period_title = f"Itemized Expenses for {format_month_label(selected_month)}"
-                    else:
-                        filtered_df = all_df
-                        period_title = f"All Itemized Expenses for {selected_fy}"
-                else:
-                    st.info("No monthly transaction data available.")
-                    
-            elif granularity == "Quarterly":
-                selected_q = st.selectbox("Select Quarter", ["Q1 (Apr - Jun)", "Q2 (Jul - Sep)", "Q3 (Oct - Dec)", "Q4 (Jan - Mar)"])
-                q_code = selected_q.split()[0]
-                filtered_df = all_df[all_df["quarter"] == q_code] if not all_df.empty else pd.DataFrame()
-                period_title = f"Itemized Expenses for {selected_q} ({selected_fy})"
-                
-            elif granularity == "Half-Yearly":
-                selected_h = st.selectbox("Select Half Year", ["H1 (Apr - Sep)", "H2 (Oct - Mar)"])
-                h_code = selected_h.split()[0]
-                filtered_df = all_df[all_df["half_year"] == h_code] if not all_df.empty and "half_year" in all_df.columns else pd.DataFrame()
-                period_title = f"Itemized Expenses for {selected_h} ({selected_fy})"
-                
-            else: # Yearly
-                filtered_df = all_df
-                period_title = f"Full Year Itemized Expenses ({selected_fy})"
-                
-        st.markdown("---")
-        st.markdown(f"### {period_title}")
-        
-        if filtered_df.empty:
-            st.warning("No itemized expenses found for the selected period.")
-        else:
-            period_total_val = filtered_df["amount"].sum()
-            st.info(f"💰 Total Itemized Expenses for **{period_title}**: **{format_inr(period_total_val)}** across **{len(filtered_df)}** transactions.")
-            
-            item_cat_summary = filtered_df.groupby("category")["amount"].agg(
-                Itemized_Total="sum",
-                Count="count"
-            ).reset_index()
-            
-            item_cat_summary["Share_%"] = (item_cat_summary["Itemized_Total"] / period_total_val) * 100
-            item_cat_summary = item_cat_summary.sort_values(by="Itemized_Total", ascending=False)
-            
-            st.markdown("#### 📊 Itemized Summary by Category")
-            st.dataframe(
-                item_cat_summary,
-                column_config={
-                    "category": st.column_config.TextColumn("Category"),
-                    "Itemized_Total": st.column_config.NumberColumn("Itemized Total (₹)", format="₹ %.2f"),
-                    "Count": st.column_config.NumberColumn("Entries"),
-                    "Share_%": st.column_config.NumberColumn("Share of Period Total", format="%.1f %%")
-                },
-                use_container_width=True,
-                hide_index=True
-            )
-            
-            st.markdown("#### 📋 Itemized Transactions Ledger")
-            st.dataframe(
-                filtered_df[["id", "expense_date", "category", "description", "amount", "quarter", "half_year", "visibility", "username", "source_note"]],
-                column_config={
-                    "id": st.column_config.NumberColumn("ID"),
-                    "expense_date": st.column_config.DateColumn("Date"),
-                    "category": st.column_config.TextColumn("Category"),
-                    "description": st.column_config.TextColumn("Item / Description"),
-                    "amount": st.column_config.NumberColumn("Amount (₹)", format="₹ %.2f"),
-                    "quarter": st.column_config.TextColumn("Quarter"),
-                    "half_year": st.column_config.TextColumn("Half Year"),
-                    "visibility": st.column_config.TextColumn("Sharing"),
-                    "username": st.column_config.TextColumn("Logged By"),
-                    "source_note": st.column_config.TextColumn("Source")
-                },
-                use_container_width=True,
-                hide_index=True
-            )
-
-    # ----------------------------------------------------
     # TAB 3: EDIT & DELETE EXPENSES
     # ----------------------------------------------------
-    with tab_edit_delete:
-        st.subheader(f"✏️ Edit & Delete Expenses ({selected_fy})")
-        st.write("Modify existing entries, re-assign categories, edit amounts, or delete records.")
-        
-        expenses_df_all = get_expenses_df(fy=selected_fy, username=current_user["username"], view_mode=view_mode)
-        
-        if expenses_df_all.empty:
-            st.warning("No expense records available to edit or delete.")
-        else:
-            edit_mode_tab1, edit_mode_tab2, edit_mode_tab3, edit_mode_tab4 = st.tabs([
-                "📝 Inline Table Editor",
-                "🔍 Search & Edit Single Record",
-                "🗑️ Delete Single Record",
-                "🧹 Clear Entire Month Data"
-            ])
+        with tx_tab3:
+            st.subheader(f"✏️ Edit & Delete Expenses ({selected_fy})")
+            st.write("Modify existing entries, re-assign categories, edit amounts, or delete records.")
             
-            with edit_mode_tab1:
-                st.markdown("#### Interactive Database Table Editor")
-                st.caption("Edit dates, categories, descriptions, or amounts directly in the grid. FY and Quarters recalculate automatically upon saving.")
+            expenses_df_all = get_expenses_df(fy=selected_fy, username=current_user["username"], view_mode=view_mode)
+            
+            if expenses_df_all.empty:
+                st.warning("No expense records available to edit or delete.")
+            else:
+                edit_mode_tab1, edit_mode_tab2, edit_mode_tab3, edit_mode_tab4 = st.tabs([
+                    "📝 Inline Table Editor",
+                    "🔍 Search & Edit Single Record",
+                    "🗑️ Delete Single Record",
+                    "🧹 Clear Entire Month Data"
+                ])
                 
-                edited_df_inline = st.data_editor(
-                    expenses_df_all[["id", "expense_date", "category", "description", "amount", "visibility", "source_note"]],
-                    num_rows="dynamic",
+                with edit_mode_tab1:
+                    st.markdown("#### Interactive Database Table Editor")
+                    st.caption("Edit dates, categories, descriptions, or amounts directly in the grid. FY and Quarters recalculate automatically upon saving.")
+                    
+                    edited_df_inline = st.data_editor(
+                        expenses_df_all[["id", "expense_date", "category", "description", "amount", "visibility", "source_note"]],
+                        num_rows="dynamic",
+                        column_config={
+                            "id": st.column_config.NumberColumn("ID", disabled=True),
+                            "expense_date": st.column_config.DateColumn("Date", required=True),
+                            "category": st.column_config.SelectboxColumn("Category", options=EXPENSE_CATEGORIES, required=True),
+                            "description": st.column_config.TextColumn("Description"),
+                            "amount": st.column_config.NumberColumn("Amount (₹)", min_value=0.0, format="₹ %.2f", required=True),
+                            "visibility": st.column_config.SelectboxColumn("Visibility", options=["Family", "Private"], required=True),
+                            "source_note": st.column_config.TextColumn("Source", disabled=True)
+                        },
+                        use_container_width=True,
+                        hide_index=True,
+                        key="inline_editor_tab3"
+                    )
+                    
+                    if st.button("💾 Save All Edits to Database", type="primary", use_container_width=True):
+                        updated_count = update_expenses_df(edited_df_inline)
+                        st.success(f"🎉 Successfully updated {updated_count} record(s) in database!")
+                        st.rerun()
+                        
+                with edit_mode_tab2:
+                    st.markdown("#### Select & Modify Single Record")
+                    record_ids = expenses_df_all["id"].tolist()
+                    selected_id = st.selectbox("Select Expense ID to Edit", record_ids, key="single_edit_id")
+                    
+                    target_record = expenses_df_all[expenses_df_all["id"] == selected_id].iloc[0]
+                    
+                    e_c1, e_c2, e_c3, e_c4, e_c5 = st.columns([1.5, 2, 2, 1.5, 1.5])
+                    with e_c1:
+                        cur_dt = pd.to_datetime(target_record["expense_date"]).date() if not pd.isna(target_record["expense_date"]) else datetime.date.today()
+                        new_dt = st.date_input("Date", cur_dt, key="single_new_dt")
+                    with e_c2:
+                        cur_cat = target_record["category"] if target_record["category"] in EXPENSE_CATEGORIES else EXPENSE_CATEGORIES[0]
+                        new_cat = st.selectbox("Category", EXPENSE_CATEGORIES, index=EXPENSE_CATEGORIES.index(cur_cat), key="single_new_cat")
+                    with e_c3:
+                        new_desc = st.text_input("Description", value=str(target_record["description"]), key="single_new_desc")
+                    with e_c4:
+                        new_amt = st.number_input("Amount (₹)", min_value=0.0, value=float(target_record["amount"]), step=100.0, key="single_new_amt")
+                    with e_c5:
+                        cur_vis = target_record.get("visibility", "Family") if target_record.get("visibility") in ["Family", "Private"] else "Family"
+                        new_vis = st.selectbox("Sharing", ["Family", "Private"], index=0 if cur_vis == "Family" else 1, key="single_new_vis")
+                        
+                    if st.button(f"💾 Update Record #{selected_id}", type="primary", use_container_width=True):
+                        single_df = pd.DataFrame([{
+                            "id": selected_id,
+                            "expense_date": new_dt.isoformat(),
+                            "category": new_cat,
+                            "description": new_desc,
+                            "amount": new_amt,
+                            "visibility": new_vis
+                        }])
+                        update_expenses_df(single_df)
+                        st.success(f"Updated record #{selected_id}!")
+                        st.rerun()
+                        
+                with edit_mode_tab3:
+                    st.markdown("#### Delete Single Record by ID")
+                    del_id_select = st.selectbox("Select Expense ID to Delete", record_ids, key="single_del_id_select")
+                    del_target = expenses_df_all[expenses_df_all["id"] == del_id_select].iloc[0]
+                    
+                    st.info(f"Target Record #{del_id_select}: {del_target['expense_date']} | {del_target['category']} | {del_target['description']} | {format_inr(del_target['amount'])}")
+                    
+                    if st.button(f"🗑️ Permanently Delete Record #{del_id_select}", type="primary", use_container_width=True):
+                        delete_expense(int(del_id_select))
+                        st.success(f"Deleted record #{del_id_select}!")
+                        st.rerun()
+                        
+                with edit_mode_tab4:
+                    st.markdown("#### Bulk Delete Entire Month Data")
+                    if "Month_Year" in expenses_df_all.columns:
+                        available_m = sorted(expenses_df_all["Month_Year"].unique().tolist(), reverse=True)
+                        del_month_target = st.selectbox("Select Month to Wipe", available_m, format_func=format_month_label, key="bulk_del_m")
+                        month_records = expenses_df_all[expenses_df_all["Month_Year"] == del_month_target]
+                        m_sum = month_records["amount"].sum()
+                        
+                        st.warning(f"⚠️ Month **{del_month_target}** contains **{len(month_records)}** entries totaling **{format_inr(m_sum)}**.")
+                        confirm_chk = st.checkbox(f"I confirm deletion of all entries for {del_month_target}", key="chk_bulk_del")
+                        
+                        if st.button(f"🔥 Wipe All Data for {del_month_target}", type="primary", disabled=not confirm_chk, use_container_width=True):
+                            cnt_del = delete_month_expenses(del_month_target)
+                            st.success(f"Deleted {cnt_del} records for {del_month_target}!")
+                            st.rerun()
+
+
+        # ----------------------------------------------------
+        # 📈 INSIGHTS & ANALYTICS
+        # ----------------------------------------------------
+    elif nav_selection == "📈 Insights & Analytics":
+        st.header("📈 Insights & Analytics")
+        ia_tab1, ia_tab2, ia_tab3, ia_tab4 = st.tabs([
+            "📑 Itemized Explorer", 
+            "📊 FY Trends", 
+            "📈 Inflation & CPI", 
+            "🚨 Anomaly Detection"
+        ])
+
+    # ----------------------------------------------------
+    # TAB 2: ITEMIZED PERIOD EXPLORER
+    # ----------------------------------------------------
+        with ia_tab1:
+            st.subheader(f"📑 Itemized Expense Explorer ({selected_fy})")
+            st.write("Explore itemized line-by-line expenses with customizable period filters (**Monthly, Quarterly, Half-Yearly, Yearly**) alongside cumulative **QTD, H1, H2, and YTD** totals.")
+            
+            cum_metrics = get_cumulative_metrics(fy=selected_fy if selected_fy != "All FYs" else None, username=current_user["username"], view_mode=view_mode)
+            
+            m_col1, m_col2, m_col3, m_col4 = st.columns(4)
+            with m_col1:
+                st.markdown(f"""
+                <div class="metric-card">
+                    <div class="metric-label">QTD Total (Quarter to Date)</div>
+                    <div class="metric-value" style="color:#38bdf8;">{format_inr_short(cum_metrics['QTD'])}</div>
+                    <div style="color:#64748b; font-size:0.8rem;">{format_inr(cum_metrics['QTD'])}</div>
+                </div>
+                """, unsafe_allow_html=True)
+                
+            with m_col2:
+                st.markdown(f"""
+                <div class="metric-card">
+                    <div class="metric-label">H1 Total (Apr - Sep)</div>
+                    <div class="metric-value" style="color:#818cf8;">{format_inr_short(cum_metrics['H1'])}</div>
+                    <div style="color:#64748b; font-size:0.8rem;">{format_inr(cum_metrics['H1'])}</div>
+                </div>
+                """, unsafe_allow_html=True)
+
+            with m_col3:
+                st.markdown(f"""
+                <div class="metric-card">
+                    <div class="metric-label">H2 Total (Oct - Mar)</div>
+                    <div class="metric-value" style="color:#c084fc;">{format_inr_short(cum_metrics['H2'])}</div>
+                    <div style="color:#64748b; font-size:0.8rem;">{format_inr(cum_metrics['H2'])}</div>
+                </div>
+                """, unsafe_allow_html=True)
+
+            with m_col4:
+                st.markdown(f"""
+                <div class="metric-card">
+                    <div class="metric-label">YTD / Full FY Total</div>
+                    <div class="metric-value" style="color:#34d399;">{format_inr_short(cum_metrics['YTD'])}</div>
+                    <div style="color:#64748b; font-size:0.8rem;">{format_inr(cum_metrics['YTD'])}</div>
+                </div>
+                """, unsafe_allow_html=True)
+
+            st.markdown("<br>", unsafe_allow_html=True)
+            
+            ctrl_col1, ctrl_col2 = st.columns([1, 2])
+            with ctrl_col1:
+                granularity = st.radio(
+                    "Select Time Granularity",
+                    ["Monthly", "Quarterly", "Half-Yearly", "Yearly (Full FY)"],
+                    horizontal=False
+                )
+                
+            all_df = get_expenses_df(fy=selected_fy, username=current_user["username"], view_mode=view_mode)
+            filtered_df = pd.DataFrame()
+            period_title = ""
+            
+            with ctrl_col2:
+                if granularity == "Monthly":
+                    if not all_df.empty and "Month_Year" in all_df.columns:
+                        months_available = sorted(all_df["Month_Year"].unique().tolist(), reverse=True)
+                        selected_month = st.selectbox(
+                            "Select Month",
+                            options=["All Months in FY"] + months_available,
+                            format_func=format_month_label
+                        )
+                        if selected_month != "All Months in FY":
+                            filtered_df = all_df[all_df["Month_Year"] == selected_month]
+                            period_title = f"Itemized Expenses for {format_month_label(selected_month)}"
+                        else:
+                            filtered_df = all_df
+                            period_title = f"All Itemized Expenses for {selected_fy}"
+                    else:
+                        st.info("No monthly transaction data available.")
+                        
+                elif granularity == "Quarterly":
+                    selected_q = st.selectbox("Select Quarter", ["Q1 (Apr - Jun)", "Q2 (Jul - Sep)", "Q3 (Oct - Dec)", "Q4 (Jan - Mar)"])
+                    q_code = selected_q.split()[0]
+                    filtered_df = all_df[all_df["quarter"] == q_code] if not all_df.empty else pd.DataFrame()
+                    period_title = f"Itemized Expenses for {selected_q} ({selected_fy})"
+                    
+                elif granularity == "Half-Yearly":
+                    selected_h = st.selectbox("Select Half Year", ["H1 (Apr - Sep)", "H2 (Oct - Mar)"])
+                    h_code = selected_h.split()[0]
+                    filtered_df = all_df[all_df["half_year"] == h_code] if not all_df.empty and "half_year" in all_df.columns else pd.DataFrame()
+                    period_title = f"Itemized Expenses for {selected_h} ({selected_fy})"
+                    
+                else: # Yearly
+                    filtered_df = all_df
+                    period_title = f"Full Year Itemized Expenses ({selected_fy})"
+                    
+            st.markdown("---")
+            st.markdown(f"### {period_title}")
+            
+            if filtered_df.empty:
+                st.warning("No itemized expenses found for the selected period.")
+            else:
+                period_total_val = filtered_df["amount"].sum()
+                st.info(f"💰 Total Itemized Expenses for **{period_title}**: **{format_inr(period_total_val)}** across **{len(filtered_df)}** transactions.")
+                
+                item_cat_summary = filtered_df.groupby("category")["amount"].agg(
+                    Itemized_Total="sum",
+                    Count="count"
+                ).reset_index()
+                
+                item_cat_summary["Share_%"] = (item_cat_summary["Itemized_Total"] / period_total_val) * 100
+                item_cat_summary = item_cat_summary.sort_values(by="Itemized_Total", ascending=False)
+                
+                st.markdown("#### 📊 Itemized Summary by Category")
+                st.dataframe(
+                    item_cat_summary,
                     column_config={
-                        "id": st.column_config.NumberColumn("ID", disabled=True),
-                        "expense_date": st.column_config.DateColumn("Date", required=True),
-                        "category": st.column_config.SelectboxColumn("Category", options=EXPENSE_CATEGORIES, required=True),
-                        "description": st.column_config.TextColumn("Description"),
-                        "amount": st.column_config.NumberColumn("Amount (₹)", min_value=0.0, format="₹ %.2f", required=True),
-                        "visibility": st.column_config.SelectboxColumn("Visibility", options=["Family", "Private"], required=True),
-                        "source_note": st.column_config.TextColumn("Source", disabled=True)
+                        "category": st.column_config.TextColumn("Category"),
+                        "Itemized_Total": st.column_config.NumberColumn("Itemized Total (₹)", format="₹ %.2f"),
+                        "Count": st.column_config.NumberColumn("Entries"),
+                        "Share_%": st.column_config.NumberColumn("Share of Period Total", format="%.1f %%")
                     },
                     use_container_width=True,
-                    hide_index=True,
-                    key="inline_editor_tab3"
+                    hide_index=True
                 )
                 
-                if st.button("💾 Save All Edits to Database", type="primary", use_container_width=True):
-                    updated_count = update_expenses_df(edited_df_inline)
-                    st.success(f"🎉 Successfully updated {updated_count} record(s) in database!")
-                    st.rerun()
-                    
-            with edit_mode_tab2:
-                st.markdown("#### Select & Modify Single Record")
-                record_ids = expenses_df_all["id"].tolist()
-                selected_id = st.selectbox("Select Expense ID to Edit", record_ids, key="single_edit_id")
-                
-                target_record = expenses_df_all[expenses_df_all["id"] == selected_id].iloc[0]
-                
-                e_c1, e_c2, e_c3, e_c4, e_c5 = st.columns([1.5, 2, 2, 1.5, 1.5])
-                with e_c1:
-                    cur_dt = pd.to_datetime(target_record["expense_date"]).date() if not pd.isna(target_record["expense_date"]) else datetime.date.today()
-                    new_dt = st.date_input("Date", cur_dt, key="single_new_dt")
-                with e_c2:
-                    cur_cat = target_record["category"] if target_record["category"] in EXPENSE_CATEGORIES else EXPENSE_CATEGORIES[0]
-                    new_cat = st.selectbox("Category", EXPENSE_CATEGORIES, index=EXPENSE_CATEGORIES.index(cur_cat), key="single_new_cat")
-                with e_c3:
-                    new_desc = st.text_input("Description", value=str(target_record["description"]), key="single_new_desc")
-                with e_c4:
-                    new_amt = st.number_input("Amount (₹)", min_value=0.0, value=float(target_record["amount"]), step=100.0, key="single_new_amt")
-                with e_c5:
-                    cur_vis = target_record.get("visibility", "Family") if target_record.get("visibility") in ["Family", "Private"] else "Family"
-                    new_vis = st.selectbox("Sharing", ["Family", "Private"], index=0 if cur_vis == "Family" else 1, key="single_new_vis")
-                    
-                if st.button(f"💾 Update Record #{selected_id}", type="primary", use_container_width=True):
-                    single_df = pd.DataFrame([{
-                        "id": selected_id,
-                        "expense_date": new_dt.isoformat(),
-                        "category": new_cat,
-                        "description": new_desc,
-                        "amount": new_amt,
-                        "visibility": new_vis
-                    }])
-                    update_expenses_df(single_df)
-                    st.success(f"Updated record #{selected_id}!")
-                    st.rerun()
-                    
-            with edit_mode_tab3:
-                st.markdown("#### Delete Single Record by ID")
-                del_id_select = st.selectbox("Select Expense ID to Delete", record_ids, key="single_del_id_select")
-                del_target = expenses_df_all[expenses_df_all["id"] == del_id_select].iloc[0]
-                
-                st.info(f"Target Record #{del_id_select}: {del_target['expense_date']} | {del_target['category']} | {del_target['description']} | {format_inr(del_target['amount'])}")
-                
-                if st.button(f"🗑️ Permanently Delete Record #{del_id_select}", type="primary", use_container_width=True):
-                    delete_expense(int(del_id_select))
-                    st.success(f"Deleted record #{del_id_select}!")
-                    st.rerun()
-                    
-            with edit_mode_tab4:
-                st.markdown("#### Bulk Delete Entire Month Data")
-                if "Month_Year" in expenses_df_all.columns:
-                    available_m = sorted(expenses_df_all["Month_Year"].unique().tolist(), reverse=True)
-                    del_month_target = st.selectbox("Select Month to Wipe", available_m, format_func=format_month_label, key="bulk_del_m")
-                    month_records = expenses_df_all[expenses_df_all["Month_Year"] == del_month_target]
-                    m_sum = month_records["amount"].sum()
-                    
-                    st.warning(f"⚠️ Month **{del_month_target}** contains **{len(month_records)}** entries totaling **{format_inr(m_sum)}**.")
-                    confirm_chk = st.checkbox(f"I confirm deletion of all entries for {del_month_target}", key="chk_bulk_del")
-                    
-                    if st.button(f"🔥 Wipe All Data for {del_month_target}", type="primary", disabled=not confirm_chk, use_container_width=True):
-                        cnt_del = delete_month_expenses(del_month_target)
-                        st.success(f"Deleted {cnt_del} records for {del_month_target}!")
-                        st.rerun()
+                st.markdown("#### 📋 Itemized Transactions Ledger")
+                st.dataframe(
+                    filtered_df[["id", "expense_date", "category", "description", "amount", "quarter", "half_year", "visibility", "username", "source_note"]],
+                    column_config={
+                        "id": st.column_config.NumberColumn("ID"),
+                        "expense_date": st.column_config.DateColumn("Date"),
+                        "category": st.column_config.TextColumn("Category"),
+                        "description": st.column_config.TextColumn("Item / Description"),
+                        "amount": st.column_config.NumberColumn("Amount (₹)", format="₹ %.2f"),
+                        "quarter": st.column_config.TextColumn("Quarter"),
+                        "half_year": st.column_config.TextColumn("Half Year"),
+                        "visibility": st.column_config.TextColumn("Sharing"),
+                        "username": st.column_config.TextColumn("Logged By"),
+                        "source_note": st.column_config.TextColumn("Source")
+                    },
+                    use_container_width=True,
+                    hide_index=True
+                )
 
-    # ----------------------------------------------------
-    # TAB 4: INDIAN FY TRENDS
-    # ----------------------------------------------------
-    with tab_trends:
-        st.subheader(f"📊 Indian Financial Year Trends ({selected_fy})")
-        st.write("Visualizes monthly spending trajectories, quarterly spending distributions, and category breakdowns.")
-        
-        trend_df = get_monthly_trend_df(fy=selected_fy, username=current_user["username"], view_mode=view_mode)
-        
-        if trend_df.empty:
-            st.warning("No trend data available for the selected Financial Year.")
-        else:
-            st.markdown("#### Monthly Expense Trajectory (Apr - Mar)")
-            fig_month = px.bar(
-                trend_df,
-                x="YearMonth",
-                y="Monthly_Total",
-                color="category",
-                title=f"Monthly Expenses Breakdown ({selected_fy})",
-                labels={"Monthly_Total": "Amount (₹)", "YearMonth": "Month"},
-                template="plotly_dark"
-            )
-            fig_month.update_layout(paper_bgcolor="#1e293b", plot_bgcolor="#1e293b")
-            st.plotly_chart(fig_month, use_container_width=True)
+        # ----------------------------------------------------
+        # TAB 4: INDIAN FY TRENDS
+        # ----------------------------------------------------
+        with ia_tab2:
+            st.subheader(f"📊 Indian Financial Year Trends ({selected_fy})")
+            st.write("Visualizes monthly spending trajectories, quarterly spending distributions, and category breakdowns.")
             
-            q_trend_df = get_quarterly_trend_df(fy=selected_fy, username=current_user["username"], view_mode=view_mode)
-            if not q_trend_df.empty:
-                st.markdown("#### Quarterly Expenditure Distribution (Q1 - Q4)")
-                fig_q = px.bar(
-                    q_trend_df,
-                    x="quarter",
-                    y="Quarterly_Total",
+            trend_df = get_monthly_trend_df(fy=selected_fy, username=current_user["username"], view_mode=view_mode)
+            
+            if trend_df.empty:
+                st.warning("No trend data available for the selected Financial Year.")
+            else:
+                st.markdown("#### Monthly Expense Trajectory (Apr - Mar)")
+                fig_month = px.bar(
+                    trend_df,
+                    x="YearMonth",
+                    y="Monthly_Total",
                     color="category",
-                    barmode="group",
-                    title=f"Quarterly Expenses by Category ({selected_fy})",
-                    labels={"Quarterly_Total": "Amount (₹)", "quarter": "Quarter"},
+                    title=f"Monthly Expenses Breakdown ({selected_fy})",
+                    labels={"Monthly_Total": "Amount (₹)", "YearMonth": "Month"},
                     template="plotly_dark"
                 )
-                fig_q.update_layout(paper_bgcolor="#1e293b", plot_bgcolor="#1e293b")
-                st.plotly_chart(fig_q, use_container_width=True)
+                fig_month.update_layout(paper_bgcolor="#1e293b", plot_bgcolor="#1e293b")
+                st.plotly_chart(fig_month, use_container_width=True)
+                
+                q_trend_df = get_quarterly_trend_df(fy=selected_fy, username=current_user["username"], view_mode=view_mode)
+                if not q_trend_df.empty:
+                    st.markdown("#### Quarterly Expenditure Distribution (Q1 - Q4)")
+                    fig_q = px.bar(
+                        q_trend_df,
+                        x="quarter",
+                        y="Quarterly_Total",
+                        color="category",
+                        barmode="group",
+                        title=f"Quarterly Expenses by Category ({selected_fy})",
+                        labels={"Quarterly_Total": "Amount (₹)", "quarter": "Quarter"},
+                        template="plotly_dark"
+                    )
+                    fig_q.update_layout(paper_bgcolor="#1e293b", plot_bgcolor="#1e293b")
+                    st.plotly_chart(fig_q, use_container_width=True)
 
-    # ----------------------------------------------------
-    # TAB 5: INFLATION & CPI ANALYTICS
-    # ----------------------------------------------------
-    with tab_cpi:
-        st.subheader("📈 Inflation & Purchasing Power Analytics")
-        
+        # ----------------------------------------------------
+        # TAB 5: INFLATION & CPI ANALYTICS
+        # ----------------------------------------------------
+        with ia_tab3:
+            st.subheader("📈 Inflation & Purchasing Power Analytics")
+            
         sub_tab_cpi, sub_tab_personal = st.tabs(["General CPI Analytics", "Personal Expense Predictor"])
         
         with sub_tab_cpi:
@@ -1054,135 +1067,141 @@ else:
     # ----------------------------------------------------
     # TAB 6: EXPENSE SURGE DETECTOR & AI SAVINGS ADVISOR
     # ----------------------------------------------------
-    with tab_surge:
-        st.subheader("🚨 Expense Surge & Anomaly Detector")
-        st.caption("Select a Month, Quarter, Half-Year, or Financial Year to pinpoint categories spiking above baseline averages and generate AI cost-savings advice.")
+        with ia_tab4:
+            st.subheader("🚨 Expense Surge & Anomaly Detector")
+            st.caption("Select a Month, Quarter, Half-Year, or Financial Year to pinpoint categories spiking above baseline averages and generate AI cost-savings advice.")
 
-        s_col1, s_col2 = st.columns([1, 1])
-        with s_col1:
-            timeframe_type = st.selectbox(
-                "📅 Select Timeframe Granularity",
-                options=["Month-wise", "Quarter-wise", "Half Year-wise", "Financial Year"],
-                key="surge_tf_type"
-            )
-
-        dummy_df, available_periods = get_period_surge_analytics(
-            timeframe_type=timeframe_type,
-            selected_period=None,
-            fy=selected_fy,
-            username=current_user["username"],
-            view_mode=view_mode,
-            family_id=user_family_id
-        )
-
-        with s_col2:
-            if available_periods:
-                fmt_fn = format_month_label if timeframe_type == "Month-wise" else (lambda x: str(x))
-                selected_period = st.selectbox(
-                    "🎯 Select Target Period",
-                    options=available_periods,
-                    format_func=fmt_fn,
-                    key="surge_target_period"
+            s_col1, s_col2 = st.columns([1, 1])
+            with s_col1:
+                timeframe_type = st.selectbox(
+                    "📅 Select Timeframe Granularity",
+                    options=["Month-wise", "Quarter-wise", "Half Year-wise", "Financial Year"],
+                    key="surge_tf_type"
                 )
-            else:
-                selected_period = None
-                st.info("No records available for the selected timeframe.")
 
-        if selected_period:
-            period_surge_df, _ = get_period_surge_analytics(
+            dummy_df, available_periods = get_period_surge_analytics(
                 timeframe_type=timeframe_type,
-                selected_period=selected_period,
+                selected_period=None,
                 fy=selected_fy,
                 username=current_user["username"],
                 view_mode=view_mode,
                 family_id=user_family_id
             )
 
-            if not period_surge_df.empty:
-                # Key Metrics Cards
-                active_spends = period_surge_df[period_surge_df["Period_Spend"] > 0]
-                anomalies_df = period_surge_df[period_surge_df["Is_Anomaly"] == True]
-                top_surging_cat = period_surge_df.iloc[0]["category"] if not period_surge_df.empty else "N/A"
-                top_surge_pct = period_surge_df.iloc[0]["Surge_%"] if not period_surge_df.empty else 0.0
-                total_excess = period_surge_df["Surge_Amount"].apply(lambda x: max(0.0, x)).sum()
-
-                m_c1, m_c2, m_c3 = st.columns(3)
-                with m_c1:
-                    st.metric("🔥 Top Surging Category", top_surging_cat, f"+{top_surge_pct:.1f}%")
-                with m_c2:
-                    st.metric("💸 Total Excess Spend Over Baseline", format_inr(total_excess))
-                with m_c3:
-                    st.metric("⚠️ Detected Anomaly Spikes", f"{len(anomalies_df)} Categories")
-
-                st.markdown("<br>", unsafe_allow_html=True)
-
-                # Grouped Bar Chart: Selected Period Spend vs Baseline Average
-                st.markdown(f"#### 📊 Category Spend vs Baseline Average ({selected_period})")
-                chart_df = period_surge_df[period_surge_df["Period_Spend"] > 0].copy()
-                if not chart_df.empty:
-                    fig_surge = px.bar(
-                        chart_df,
-                        x="category",
-                        y=["Period_Spend", "Baseline_Avg"],
-                        barmode="group",
-                        labels={"value": "Amount (₹)", "category": "Category", "variable": "Metric"},
-                        color_discrete_map={"Period_Spend": "#ef4444", "Baseline_Avg": "#3b82f6"},
-                        height=400
+            with s_col2:
+                if available_periods:
+                    fmt_fn = format_month_label if timeframe_type == "Month-wise" else (lambda x: str(x))
+                    selected_period = st.selectbox(
+                        "🎯 Select Target Period",
+                        options=available_periods,
+                        format_func=fmt_fn,
+                        key="surge_target_period"
                     )
-                    fig_surge.update_layout(
-                        legend=dict(title=None, orientation="h", yanchor="bottom", y=1.02, xanchor="right", x=1),
-                        margin=dict(l=20, r=20, t=30, b=20)
-                    )
-                    st.plotly_chart(fig_surge, use_container_width=True)
+                else:
+                    selected_period = None
+                    st.info("No records available for the selected timeframe.")
 
-                # Detailed Table
-                st.markdown(f"#### 📝 Surge & Anomaly Analysis Table ({selected_period})")
-                st.dataframe(
-                    period_surge_df[["category", "Period_Spend", "Baseline_Avg", "Surge_Amount", "Surge_%", "Is_Anomaly"]],
-                    column_config={
-                        "category": st.column_config.TextColumn("Category"),
-                        "Period_Spend": st.column_config.NumberColumn(f"Spend in {selected_period} (₹)", format="₹ %.2f"),
-                        "Baseline_Avg": st.column_config.NumberColumn("Historical Baseline Avg (₹)", format="₹ %.2f"),
-                        "Surge_Amount": st.column_config.NumberColumn("Excess / Surge (₹)", format="₹ %.2f"),
-                        "Surge_%": st.column_config.NumberColumn("Spike %", format="%.1f %%"),
-                        "Is_Anomaly": st.column_config.CheckboxColumn("Anomaly Tag")
-                    },
-                    use_container_width=True,
-                    hide_index=True
+            if selected_period:
+                period_surge_df, _ = get_period_surge_analytics(
+                    timeframe_type=timeframe_type,
+                    selected_period=selected_period,
+                    fy=selected_fy,
+                    username=current_user["username"],
+                    view_mode=view_mode,
+                    family_id=user_family_id
                 )
 
-                st.markdown("<hr>", unsafe_allow_html=True)
+                if not period_surge_df.empty:
+                    # Key Metrics Cards
+                    active_spends = period_surge_df[period_surge_df["Period_Spend"] > 0]
+                    anomalies_df = period_surge_df[period_surge_df["Is_Anomaly"] == True]
+                    top_surging_cat = period_surge_df.iloc[0]["category"] if not period_surge_df.empty else "N/A"
+                    top_surge_pct = period_surge_df.iloc[0]["Surge_%"] if not period_surge_df.empty else 0.0
+                    total_excess = period_surge_df["Surge_Amount"].apply(lambda x: max(0.0, x)).sum()
 
-                # AI Spend Rationalization & Savings Advisor Section
-                st.markdown(f"### 🤖 Gemini AI & ML Spend Rationalization Advisor ({selected_period})")
-                st.caption("Generate actionable cost reduction strategies, root cause insights, and target savings tailored for your household.")
+                    m_c1, m_c2, m_c3 = st.columns(3)
+                    with m_c1:
+                        st.metric("🔥 Top Surging Category", top_surging_cat, f"+{top_surge_pct:.1f}%")
+                    with m_c2:
+                        st.metric("💸 Total Excess Spend Over Baseline", format_inr(total_excess))
+                    with m_c3:
+                        st.metric("⚠️ Detected Anomaly Spikes", f"{len(anomalies_df)} Categories")
 
-                if st.button("💡 Generate AI Cost Savings & Rationalization Strategy", type="primary", use_container_width=True):
-                    with st.spinner("🤖 Analyzing spending patterns with Machine Learning & Gemini AI..."):
-                        ai_advice = generate_ai_spend_rationalization(period_surge_df, timeframe_label=f"{timeframe_type} ({selected_period})")
+                    st.markdown("<br>", unsafe_allow_html=True)
 
-                    st.success("🎉 AI Spend Rationalization Report Generated!")
-                    st.info(ai_advice.get("summary", ""))
+                    # Grouped Bar Chart: Selected Period Spend vs Baseline Average
+                    st.markdown(f"#### 📊 Category Spend vs Baseline Average ({selected_period})")
+                    chart_df = period_surge_df[period_surge_df["Period_Spend"] > 0].copy()
+                    if not chart_df.empty:
+                        fig_surge = px.bar(
+                            chart_df,
+                            x="category",
+                            y=["Period_Spend", "Baseline_Avg"],
+                            barmode="group",
+                            labels={"value": "Amount (₹)", "category": "Category", "variable": "Metric"},
+                            color_discrete_map={"Period_Spend": "#ef4444", "Baseline_Avg": "#3b82f6"},
+                            height=400
+                        )
+                        fig_surge.update_layout(
+                            legend=dict(title=None, orientation="h", yanchor="bottom", y=1.02, xanchor="right", x=1),
+                            margin=dict(l=20, r=20, t=30, b=20)
+                        )
+                        st.plotly_chart(fig_surge, use_container_width=True)
 
-                    st.markdown(f"#### 💰 Potential Target Savings: **{ai_advice.get('total_potential_savings', '₹ 0')}**")
+                    # Detailed Table
+                    st.markdown(f"#### 📝 Surge & Anomaly Analysis Table ({selected_period})")
+                    st.dataframe(
+                        period_surge_df[["category", "Period_Spend", "Baseline_Avg", "Surge_Amount", "Surge_%", "Is_Anomaly"]],
+                        column_config={
+                            "category": st.column_config.TextColumn("Category"),
+                            "Period_Spend": st.column_config.NumberColumn(f"Spend in {selected_period} (₹)", format="₹ %.2f"),
+                            "Baseline_Avg": st.column_config.NumberColumn("Historical Baseline Avg (₹)", format="₹ %.2f"),
+                            "Surge_Amount": st.column_config.NumberColumn("Excess / Surge (₹)", format="₹ %.2f"),
+                            "Surge_%": st.column_config.NumberColumn("Spike %", format="%.1f %%"),
+                            "Is_Anomaly": st.column_config.CheckboxColumn("Anomaly Tag")
+                        },
+                        use_container_width=True,
+                        hide_index=True
+                    )
 
-                    recs = ai_advice.get("recommendations", [])
-                    if recs:
-                        for idx, rec in enumerate(recs, 1):
-                            with st.expander(f"💡 #{idx} {rec.get('category', 'Category')} — Estimated Savings: {rec.get('est_savings', '₹ 0')}", expanded=True):
-                                st.markdown(f"**Issue Identified**: {rec.get('issue', '')}")
-                                st.markdown(f"**Actionable Advice**: {rec.get('suggestion', '')}")
+                    st.markdown("<hr>", unsafe_allow_html=True)
+
+                    # AI Spend Rationalization & Savings Advisor Section
+                    st.markdown(f"### 🤖 Gemini AI & ML Spend Rationalization Advisor ({selected_period})")
+                    st.caption("Generate actionable cost reduction strategies, root cause insights, and target savings tailored for your household.")
+
+                    if st.button("💡 Generate AI Cost Savings & Rationalization Strategy", type="primary", use_container_width=True):
+                        with st.spinner("🤖 Analyzing spending patterns with Machine Learning & Gemini AI..."):
+                            ai_advice = generate_ai_spend_rationalization(period_surge_df, timeframe_label=f"{timeframe_type} ({selected_period})")
+
+                        st.success("🎉 AI Spend Rationalization Report Generated!")
+                        st.info(ai_advice.get("summary", ""))
+
+                        st.markdown(f"#### 💰 Potential Target Savings: **{ai_advice.get('total_potential_savings', '₹ 0')}**")
+
+                        recs = ai_advice.get("recommendations", [])
+                        if recs:
+                            for idx, rec in enumerate(recs, 1):
+                                with st.expander(f"💡 #{idx} {rec.get('category', 'Category')} — Estimated Savings: {rec.get('est_savings', '₹ 0')}", expanded=True):
+                                    st.markdown(f"**Issue Identified**: {rec.get('issue', '')}")
+                                    st.markdown(f"**Actionable Advice**: {rec.get('suggestion', '')}")
+                else:
+                    st.info("No transaction data found for this period.")
             else:
-                st.info("No transaction data found for this period.")
-        else:
-            st.info("No period available to display surge analytics.")
+                st.info("No period available to display surge analytics.")
 
+
+        # ----------------------------------------------------
+        # 🔮 WEALTH & PLANNING
+        # ----------------------------------------------------
+    elif nav_selection == "🔮 Wealth & Planning":
     # ----------------------------------------------------
     # TAB 7: BUDGETING & INVESTMENTS
     # ----------------------------------------------------
-    with tab_budget:
-        st.subheader(f"🎯 Budgeting, Investments & Active Portfolio ({selected_fy})")
-        
+        wp_tab1, = st.tabs(["🎯 Budget & Wealth"])
+        with wp_tab1:
+            st.subheader(f"🎯 Budgeting, Investments & Active Portfolio ({selected_fy})")
+            
         subtab_budget, subtab_invest, subtab_holdings = st.tabs([
             "🎯 Category Budget Planner & Performance",
             "📈 Investment & Wealth Portfolio Planner",
@@ -2002,211 +2021,212 @@ else:
             else:
                 st.info("💡 No active holdings recorded yet. Use the form above to add your first investment asset!")
 
-    with tab_data:
-        st.subheader("📝 Interactive Database Log, Edit & Delete Manager")
-        if is_super_admin:
-            st.caption("👑 **Super Admin View**: You have access to view, edit, and export records across the entire database or filter by family using the sidebar.")
-        else:
-            st.caption("Double-click any cell to edit dates, categories, descriptions, or amounts directly. Click **Save All Edits** to update database.")
-        
-        expenses_table = get_expenses_df(fy=selected_fy, username=current_user["username"], view_mode=view_mode, family_id=user_family_id)
-        
-        if not expenses_table.empty:
-            # Fetch all historical labeled records for Machine Learning training
-            all_hist_df = get_expenses_df(fy=None, username=None, view_mode="All", family_id=user_family_id)
-            hist_records = all_hist_df.to_dict("records") if not all_hist_df.empty else []
+        sa_tab1, sa_tab2 = st.tabs(["💾 Data Export", "👑 Admin"])
+        with sa_tab1:
+            st.subheader("📝 Interactive Database Log, Edit & Delete Manager")
+            if is_super_admin:
+                st.caption("👑 **Super Admin View**: You have access to view, edit, and export records across the entire database or filter by family using the sidebar.")
+            else:
+                st.caption("Double-click any cell to edit dates, categories, descriptions, or amounts directly. Click **Save All Edits** to update database.")
             
-            # Machine Learning Model Status & Toolbar
-            st.markdown("""
-            <div style="background-color: #1e293b; padding: 12px 16px; border-radius: 8px; border-left: 4px solid #38bdf8; margin-bottom: 15px;">
-                <div style="font-weight: 600; color: #38bdf8; font-size: 0.95rem;">🤖 Machine Learning Auto-Categorization Toolbar</div>
-                <div style="color: #94a3b8; font-size: 0.85rem;">Automatically categorize expenses based on past learned spending patterns & Indian merchant rules.</div>
-            </div>
-            """, unsafe_allow_html=True)
+            expenses_table = get_expenses_df(fy=selected_fy, username=current_user["username"], view_mode=view_mode, family_id=user_family_id)
             
-            ml_col1, ml_col2 = st.columns([1, 1])
-            with ml_col1:
-                if st.button("🤖 Auto-Categorize Uncategorized/Misc (ML)", type="secondary", use_container_width=True, help="Auto-fills Miscellaneous or blank categories using ML learnings from historical records."):
-                    updated_df, mod_cnt, t_cnt = apply_ml_auto_categorization(expenses_table, hist_records, overwrite_all=False)
-                    if mod_cnt > 0:
-                        saved_n = update_expenses_df(updated_df)
-                        st.success(f"🎉 ML Engine auto-categorized **{mod_cnt}** record(s) based on **{t_cnt}** learned historical patterns!")
-                        st.rerun()
-                    else:
-                        st.info("ℹ️ All records in the current view are already categorized.")
-                        
-            with ml_col2:
-                if st.button("⚡ Re-Categorize ALL Items with ML Learnings", type="secondary", use_container_width=True, help="Re-applies ML categorizer across ALL items based on latest database learnings."):
-                    updated_df, mod_cnt, t_cnt = apply_ml_auto_categorization(expenses_table, hist_records, overwrite_all=True)
-                    if mod_cnt > 0:
-                        saved_n = update_expenses_df(updated_df)
-                        st.success(f"⚡ ML Engine re-categorized **{mod_cnt}** item(s) using **{t_cnt}** learned patterns!")
-                        st.rerun()
-                    else:
-                        st.info("ℹ️ All categories are already up-to-date with ML learnings.")
-                        
-            st.markdown("<br>", unsafe_allow_html=True)
-            
-            if "expense_date" in expenses_table.columns:
-                expenses_table["expense_date"] = pd.to_datetime(expenses_table["expense_date"]).dt.date
+            if not expenses_table.empty:
+                # Fetch all historical labeled records for Machine Learning training
+                all_hist_df = get_expenses_df(fy=None, username=None, view_mode="All", family_id=user_family_id)
+                hist_records = all_hist_df.to_dict("records") if not all_hist_df.empty else []
                 
-            cols_to_show = ["id", "expense_date", "category", "description", "amount", "financial_year", "quarter", "half_year", "visibility", "username"]
-            if "family_id" in expenses_table.columns and is_super_admin:
-                cols_to_show.append("family_id")
-            cols_to_show.append("source_note")
-
-            edited_db = st.data_editor(
-                expenses_table[cols_to_show],
-                num_rows="dynamic",
-                column_config={
-                    "id": st.column_config.NumberColumn("ID", disabled=True),
-                    "expense_date": st.column_config.DateColumn("Date", required=True),
-                    "category": st.column_config.SelectboxColumn("Category", options=EXPENSE_CATEGORIES, required=True),
-                    "description": st.column_config.TextColumn("Description"),
-                    "amount": st.column_config.NumberColumn("Amount (₹)", min_value=0.0, format="₹ %.2f", required=True),
-                    "financial_year": st.column_config.TextColumn("FY", disabled=True),
-                    "quarter": st.column_config.TextColumn("Quarter", disabled=True),
-                    "half_year": st.column_config.TextColumn("Half Year", disabled=True),
-                    "visibility": st.column_config.SelectboxColumn("Sharing", options=["Family", "Private"], required=True),
-                    "username": st.column_config.TextColumn("Logged By", disabled=True),
-                    "family_id": st.column_config.NumberColumn("Family ID", disabled=True),
-                    "source_note": st.column_config.TextColumn("Source", disabled=True)
-                },
-                use_container_width=True,
-                hide_index=True,
-                key="db_log_editor"
-            )
-            
-            col_act1, col_act2 = st.columns([1, 1])
-            with col_act1:
-                if st.button("💾 Save All Database Edits & Updates", type="primary", use_container_width=True):
-                    updated_count = update_expenses_df(edited_db)
-                    st.success(f"🎉 Successfully updated {updated_count} record(s) in database!")
-                    st.rerun()
+                # Machine Learning Model Status & Toolbar
+                st.markdown("""
+                <div style="background-color: #1e293b; padding: 12px 16px; border-radius: 8px; border-left: 4px solid #38bdf8; margin-bottom: 15px;">
+                    <div style="font-weight: 600; color: #38bdf8; font-size: 0.95rem;">🤖 Machine Learning Auto-Categorization Toolbar</div>
+                    <div style="color: #94a3b8; font-size: 0.85rem;">Automatically categorize expenses based on past learned spending patterns & Indian merchant rules.</div>
+                </div>
+                """, unsafe_allow_html=True)
+                
+                ml_col1, ml_col2 = st.columns([1, 1])
+                with ml_col1:
+                    if st.button("🤖 Auto-Categorize Uncategorized/Misc (ML)", type="secondary", use_container_width=True, help="Auto-fills Miscellaneous or blank categories using ML learnings from historical records."):
+                        updated_df, mod_cnt, t_cnt = apply_ml_auto_categorization(expenses_table, hist_records, overwrite_all=False)
+                        if mod_cnt > 0:
+                            saved_n = update_expenses_df(updated_df)
+                            st.success(f"🎉 ML Engine auto-categorized **{mod_cnt}** record(s) based on **{t_cnt}** learned historical patterns!")
+                            st.rerun()
+                        else:
+                            st.info("ℹ️ All records in the current view are already categorized.")
+                            
+                with ml_col2:
+                    if st.button("⚡ Re-Categorize ALL Items with ML Learnings", type="secondary", use_container_width=True, help="Re-applies ML categorizer across ALL items based on latest database learnings."):
+                        updated_df, mod_cnt, t_cnt = apply_ml_auto_categorization(expenses_table, hist_records, overwrite_all=True)
+                        if mod_cnt > 0:
+                            saved_n = update_expenses_df(updated_df)
+                            st.success(f"⚡ ML Engine re-categorized **{mod_cnt}** item(s) using **{t_cnt}** learned patterns!")
+                            st.rerun()
+                        else:
+                            st.info("ℹ️ All categories are already up-to-date with ML learnings.")
+                            
+                st.markdown("<br>", unsafe_allow_html=True)
+                
+                if "expense_date" in expenses_table.columns:
+                    expenses_table["expense_date"] = pd.to_datetime(expenses_table["expense_date"]).dt.date
                     
-            with col_act2:
-                csv_data = expenses_table.to_csv(index=False).encode('utf-8')
-                export_label = "📥 Export Full Database to CSV" if (is_super_admin and user_family_id is None) else "📥 Export Family Log to CSV"
-                file_name_label = f"Expenses_{'Full_Database' if (is_super_admin and user_family_id is None) else f'Family_{user_family_id}'}_{selected_fy.replace(' ', '_')}.csv"
-                st.download_button(
-                    label=export_label,
-                    data=csv_data,
-                    file_name=file_name_label,
-                    mime="text/csv",
-                    use_container_width=True
+                cols_to_show = ["id", "expense_date", "category", "description", "amount", "financial_year", "quarter", "half_year", "visibility", "username"]
+                if "family_id" in expenses_table.columns and is_super_admin:
+                    cols_to_show.append("family_id")
+                cols_to_show.append("source_note")
+
+                edited_db = st.data_editor(
+                    expenses_table[cols_to_show],
+                    num_rows="dynamic",
+                    column_config={
+                        "id": st.column_config.NumberColumn("ID", disabled=True),
+                        "expense_date": st.column_config.DateColumn("Date", required=True),
+                        "category": st.column_config.SelectboxColumn("Category", options=EXPENSE_CATEGORIES, required=True),
+                        "description": st.column_config.TextColumn("Description"),
+                        "amount": st.column_config.NumberColumn("Amount (₹)", min_value=0.0, format="₹ %.2f", required=True),
+                        "financial_year": st.column_config.TextColumn("FY", disabled=True),
+                        "quarter": st.column_config.TextColumn("Quarter", disabled=True),
+                        "half_year": st.column_config.TextColumn("Half Year", disabled=True),
+                        "visibility": st.column_config.SelectboxColumn("Sharing", options=["Family", "Private"], required=True),
+                        "username": st.column_config.TextColumn("Logged By", disabled=True),
+                        "family_id": st.column_config.NumberColumn("Family ID", disabled=True),
+                        "source_note": st.column_config.TextColumn("Source", disabled=True)
+                    },
+                    use_container_width=True,
+                    hide_index=True,
+                    key="db_log_editor"
                 )
-        else:
-            st.info("No records found in database.")
+                
+                col_act1, col_act2 = st.columns([1, 1])
+                with col_act1:
+                    if st.button("💾 Save All Database Edits & Updates", type="primary", use_container_width=True):
+                        updated_count = update_expenses_df(edited_db)
+                        st.success(f"🎉 Successfully updated {updated_count} record(s) in database!")
+                        st.rerun()
+                        
+                with col_act2:
+                    csv_data = expenses_table.to_csv(index=False).encode('utf-8')
+                    export_label = "📥 Export Full Database to CSV" if (is_super_admin and user_family_id is None) else "📥 Export Family Log to CSV"
+                    file_name_label = f"Expenses_{'Full_Database' if (is_super_admin and user_family_id is None) else f'Family_{user_family_id}'}_{selected_fy.replace(' ', '_')}.csv"
+                    st.download_button(
+                        label=export_label,
+                        data=csv_data,
+                        file_name=file_name_label,
+                        mime="text/csv",
+                        use_container_width=True
+                    )
+            else:
+                st.info("No records found in database.")
 
-    # ----------------------------------------------------
-    # TAB 9: ADMIN & USER MANAGEMENT (Admin Only)
-    # ----------------------------------------------------
-    if tab_admin:
-        with tab_admin:
-            st.subheader("👑 Administrator & Family Workspace Management")
-            st.caption("Manage household user accounts, share family join codes, assign roles, and verify Turso cloud database connection.")
-            
-            st.markdown(f"""
-            <div style="background-color: #1e293b; padding: 18px; border-radius: 10px; border: 1px solid #334155; margin-bottom: 20px;">
-                <h4 style="color: #38bdf8; margin-top: 0; margin-bottom: 6px;">🏠 Active Family Workspace: {user_family_name}</h4>
-                <p style="color: #94a3b8; font-size: 0.95rem; margin-bottom: 8px;">Family Join Code: <code style="font-size: 1.15rem; color: #fbbf24; background: #0f172a; padding: 4px 10px; border-radius: 4px; font-weight: 700;">{user_family_code}</code></p>
-                <p style="color: #64748b; font-size: 0.82rem; margin-bottom: 0;">💡 Share this Join Code with your family members so they can join this household workspace when signing up.</p>
-            </div>
-            """, unsafe_allow_html=True)
-            
-            st.markdown("---")
-            
-            # Section 1: Register New User
-            st.markdown("### ➕ Register New Household Member Account")
-            with st.form("create_user_form"):
-                c_col1, c_col2, c_col3, c_col4 = st.columns([2, 2, 2, 1.5])
-                with c_col1:
-                    c_user = st.text_input("Username", placeholder="e.g. spouse, rahul, priya").strip().lower()
-                with c_col2:
-                    c_name = st.text_input("Full Name", placeholder="e.g. Rahul Sharma").strip()
-                with c_col3:
-                    c_pwd = st.text_input("Initial Password", type="password", help="Minimum 4 characters")
-                with c_col4:
-                    c_role = st.selectbox("Role", ["Member", "Admin"], help="Admins can manage users; Members can log private & family expenses.")
-                    
-                if st.form_submit_button("🚀 Create User Account", type="primary", use_container_width=True):
-                    ok, msg = create_user(c_user, c_pwd, c_name, c_role, family_id=user_family_id)
-                    if ok:
-                        st.success(msg)
-                        st.rerun()
-                    else:
-                        st.error(msg)
+        # ----------------------------------------------------
+        # TAB 9: ADMIN & USER MANAGEMENT (Admin Only)
+        # ----------------------------------------------------
+        if tab_admin:
+            with sa_tab2:
+                st.subheader("👑 Administrator & Family Workspace Management")
+                st.caption("Manage household user accounts, share family join codes, assign roles, and verify Turso cloud database connection.")
+                
+                st.markdown(f"""
+                <div style="background-color: #1e293b; padding: 18px; border-radius: 10px; border: 1px solid #334155; margin-bottom: 20px;">
+                    <h4 style="color: #38bdf8; margin-top: 0; margin-bottom: 6px;">🏠 Active Family Workspace: {user_family_name}</h4>
+                    <p style="color: #94a3b8; font-size: 0.95rem; margin-bottom: 8px;">Family Join Code: <code style="font-size: 1.15rem; color: #fbbf24; background: #0f172a; padding: 4px 10px; border-radius: 4px; font-weight: 700;">{user_family_code}</code></p>
+                    <p style="color: #64748b; font-size: 0.82rem; margin-bottom: 0;">💡 Share this Join Code with your family members so they can join this household workspace when signing up.</p>
+                </div>
+                """, unsafe_allow_html=True)
+                
+                st.markdown("---")
+                
+                # Section 1: Register New User
+                st.markdown("### ➕ Register New Household Member Account")
+                with st.form("create_user_form"):
+                    c_col1, c_col2, c_col3, c_col4 = st.columns([2, 2, 2, 1.5])
+                    with c_col1:
+                        c_user = st.text_input("Username", placeholder="e.g. spouse, rahul, priya").strip().lower()
+                    with c_col2:
+                        c_name = st.text_input("Full Name", placeholder="e.g. Rahul Sharma").strip()
+                    with c_col3:
+                        c_pwd = st.text_input("Initial Password", type="password", help="Minimum 4 characters")
+                    with c_col4:
+                        c_role = st.selectbox("Role", ["Member", "Admin"], help="Admins can manage users; Members can log private & family expenses.")
                         
-            st.markdown("---")
-            
-            # Section 2: User Directory & Access Management
-            st.markdown(f"### 👥 {user_family_name} Members & Directory")
-            users_list = get_all_users(family_id=user_family_id)
-            u_df = pd.DataFrame(users_list)
-            st.dataframe(u_df, use_container_width=True, hide_index=True)
-            
-            m_col1, m_col2 = st.columns(2)
-            with m_col1:
-                st.markdown("##### 🎭 Update User Role")
-                target_user_role = st.selectbox("Select User for Role Change", [u["username"] for u in users_list], key="admin_role_target")
-                new_r = st.selectbox("Assign Role", ["Member", "Admin"], key="admin_role_select")
-                if st.button("Update User Role", type="primary", use_container_width=True):
-                    ok, msg = update_user_role(target_user_role, new_r)
-                    if ok:
-                        st.success(msg)
-                        st.rerun()
-                    else:
-                        st.error(msg)
-                        
-            with m_col2:
-                st.markdown("##### 🗑️ Delete User Account")
-                non_admin_users = [u["username"] for u in users_list if u["username"] != "admin"]
-                if non_admin_users:
-                    target_user_del = st.selectbox("Select User to Delete", non_admin_users, key="admin_del_target")
-                    if st.button(f"🗑️ Delete User '{target_user_del}'", use_container_width=True):
-                        ok, msg = delete_user(target_user_del)
+                    if st.form_submit_button("🚀 Create User Account", type="primary", use_container_width=True):
+                        ok, msg = create_user(c_user, c_pwd, c_name, c_role, family_id=user_family_id)
                         if ok:
                             st.success(msg)
                             st.rerun()
                         else:
                             st.error(msg)
-                else:
-                    st.caption("No secondary users available to delete.")
-                    
-            st.markdown("---")
-            
-            # Section 3: Password Change & Turso Cloud Status
-            sec_col1, sec_col2 = st.columns(2)
-            with sec_col1:
-                st.markdown("### 🔑 Change My Password")
-                with st.form("pwd_change_form"):
-                    new_p1 = st.text_input("New Password", type="password", help="Minimum 4 characters")
-                    new_p2 = st.text_input("Confirm New Password", type="password")
-                    if st.form_submit_button("💾 Update My Password", type="primary", use_container_width=True):
-                        if new_p1 != new_p2:
-                            st.error("Passwords do not match.")
+                            
+                st.markdown("---")
+                
+                # Section 2: User Directory & Access Management
+                st.markdown(f"### 👥 {user_family_name} Members & Directory")
+                users_list = get_all_users(family_id=user_family_id)
+                u_df = pd.DataFrame(users_list)
+                st.dataframe(u_df, use_container_width=True, hide_index=True)
+                
+                m_col1, m_col2 = st.columns(2)
+                with m_col1:
+                    st.markdown("##### 🎭 Update User Role")
+                    target_user_role = st.selectbox("Select User for Role Change", [u["username"] for u in users_list], key="admin_role_target")
+                    new_r = st.selectbox("Assign Role", ["Member", "Admin"], key="admin_role_select")
+                    if st.button("Update User Role", type="primary", use_container_width=True):
+                        ok, msg = update_user_role(target_user_role, new_r)
+                        if ok:
+                            st.success(msg)
+                            st.rerun()
                         else:
-                            ok, msg = update_user_password(current_user["username"], new_p1)
+                            st.error(msg)
+                            
+                with m_col2:
+                    st.markdown("##### 🗑️ Delete User Account")
+                    non_admin_users = [u["username"] for u in users_list if u["username"] != "admin"]
+                    if non_admin_users:
+                        target_user_del = st.selectbox("Select User to Delete", non_admin_users, key="admin_del_target")
+                        if st.button(f"🗑️ Delete User '{target_user_del}'", use_container_width=True):
+                            ok, msg = delete_user(target_user_del)
                             if ok:
                                 st.success(msg)
+                                st.rerun()
                             else:
                                 st.error(msg)
-                                
-            with sec_col2:
-                st.markdown("### 🌐 Database Storage Engine Status")
-                db_type = get_db_type()
-                if "Turso" in db_type:
-                    st.success("✅ **Connected to Turso Cloud Database!** Your expense records persist 24/7 in the cloud.")
-                else:
-                    st.info("💻 **Running on Local SQLite Database** (`data/expenses.db`).")
-                    st.markdown("""
-                    ##### How to connect to Turso Cloud Database:
-                    1. Create a free database on [Turso.tech](https://turso.tech).
-                    2. Copy your database URL (`libsql://...`) and Auth Token.
-                    3. Add them to environment variables or `.streamlit/secrets.toml`:
-                       ```toml
-                       TURSO_DATABASE_URL = "libsql://your-db-name.turso.io"
-                       TURSO_AUTH_TOKEN = "your-turso-auth-token"
-                       ```
-                    4. Restart Streamlit — your app will automatically connect to Turso Cloud!
-                    """)
+                    else:
+                        st.caption("No secondary users available to delete.")
+                        
+                st.markdown("---")
+                
+                # Section 3: Password Change & Turso Cloud Status
+                sec_col1, sec_col2 = st.columns(2)
+                with sec_col1:
+                    st.markdown("### 🔑 Change My Password")
+                    with st.form("pwd_change_form"):
+                        new_p1 = st.text_input("New Password", type="password", help="Minimum 4 characters")
+                        new_p2 = st.text_input("Confirm New Password", type="password")
+                        if st.form_submit_button("💾 Update My Password", type="primary", use_container_width=True):
+                            if new_p1 != new_p2:
+                                st.error("Passwords do not match.")
+                            else:
+                                ok, msg = update_user_password(current_user["username"], new_p1)
+                                if ok:
+                                    st.success(msg)
+                                else:
+                                    st.error(msg)
+                                    
+                with sec_col2:
+                    st.markdown("### 🌐 Database Storage Engine Status")
+                    db_type = get_db_type()
+                    if "Turso" in db_type:
+                        st.success("✅ **Connected to Turso Cloud Database!** Your expense records persist 24/7 in the cloud.")
+                    else:
+                        st.info("💻 **Running on Local SQLite Database** (`data/expenses.db`).")
+                        st.markdown("""
+                        ##### How to connect to Turso Cloud Database:
+                        1. Create a free database on [Turso.tech](https://turso.tech).
+                        2. Copy your database URL (`libsql://...`) and Auth Token.
+                        3. Add them to environment variables or `.streamlit/secrets.toml`:
+                           ```toml
+                           TURSO_DATABASE_URL = "libsql://your-db-name.turso.io"
+                           TURSO_AUTH_TOKEN = "your-turso-auth-token"
+                           ```
+                        4. Restart Streamlit — your app will automatically connect to Turso Cloud!
+                        """)

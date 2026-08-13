@@ -31,6 +31,7 @@
 - **Database Insertion**: Fixed parameter alignment `TypeError` in `insert_investment` after adding the description field.
 - **Live Market Tracker**: Fixed `KeyError` when querying missing asset classes.
 - **Retirement Simulator**: Fixed a `TypeError` when processing empty cells in the one-time expenses data editor.
+- **Navigation Tabs Crash**: Fixed a `NameError` causing crashes by restoring missing sidebar navigation `elif` blocks for "Insights & Analytics", "Wealth & Planning", and "Settings & Admin" sections.
 
 
 ### Changed
