@@ -33,6 +33,7 @@
 - **Retirement Simulator**: Fixed a `TypeError` when processing empty cells in the one-time expenses data editor.
 - **Navigation Tabs Crash**: Fixed a `NameError` causing crashes by restoring missing sidebar navigation `elif` blocks for "Insights & Analytics", "Wealth & Planning", and "Settings & Admin" sections.
 - **Admin Tab Crash**: Fixed a `NameError` for `tab_admin` in the Settings & Admin section by replacing the deprecated tab reference with proper role-based access control checks (`is_super_admin` / "Admin").
+- **Settings & Admin Content**: Fixed an issue where the "Data Export" and "Admin" tabs were incorrectly rendering inside the "Wealth & Planning" section by adding the missing `elif nav_selection == "⚙️ Settings & Admin":` block.
 
 
 ### Changed

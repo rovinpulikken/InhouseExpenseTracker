@@ -2021,6 +2021,10 @@ else:
             else:
                 st.info("💡 No active holdings recorded yet. Use the form above to add your first investment asset!")
 
+    # ----------------------------------------------------
+    # ⚙️ SETTINGS & ADMIN
+    # ----------------------------------------------------
+    elif nav_selection == "⚙️ Settings & Admin":
         sa_tab1, sa_tab2 = st.tabs(["💾 Data Export", "👑 Admin"])
         with sa_tab1:
             st.subheader("📝 Interactive Database Log, Edit & Delete Manager")
