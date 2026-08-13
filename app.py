@@ -337,12 +337,7 @@ else:
         help="Filter dashboard metrics, trajectory charts, and itemized lists by a specific month."
     )
 
-    st.sidebar.markdown("---")
-    st.sidebar.caption(f"💾 Storage Engine: **{get_db_type()}**")
 
-    if st.sidebar.button("🚪 Sign Out", use_container_width=True):
-        st.session_state.clear()
-        st.rerun()
 
     # ----------------------------------------------------
     # HEADER & TOP KPI ROW
@@ -484,6 +479,11 @@ else:
     
     nav_selection = st.sidebar.radio("Navigation", nav_options)
     st.sidebar.markdown("---")
+
+    st.sidebar.markdown(f"<div style='font-size: 14px; color: gray; margin-bottom: 10px;'>💾 Storage Engine: <b>{get_db_type()}</b></div>", unsafe_allow_html=True)
+    if st.sidebar.button("🚪 Sign Out", use_container_width=True):
+        st.session_state.clear()
+        st.rerun()
 
     # ----------------------------------------------------
     # 🏠 DASHBOARD

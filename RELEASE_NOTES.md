@@ -36,6 +36,7 @@
 
 ### Changed
 - **UI Navigation**: Renamed the "Budgeting & Targets" tab to "Budgeting & Investments" for clarity.
+- **Sidebar Layout**: Moved the "Storage Engine" and "Sign Out" button to the bottom of the sidebar, below the navigation menu, and increased the Storage Engine font size by 2px.
 - **Current Savings Auto-Fill**: The 'Current Total Savings / Corpus' field in the Wealth Planner now automatically fetches and calculates the sum of all your active investments in the portfolio tracker as the default value.
 
 ### Added
