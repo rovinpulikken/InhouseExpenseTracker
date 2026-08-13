@@ -23,6 +23,7 @@
 - **API Key Persistence**: Added the ability to securely save the Gemini API key directly to the user profile in the database.
 - **Portfolio Filters**: Added a multi-select filter for "Asset Class" in the Active Investment Portfolio detailed view.
 - **Investment Schema Update**: Added `description` field for storing Stock Code / Name.
+- **User Profile Updates**: Added `age` column to the user database schema for persistence and introduced a dedicated User Profile editor in the Settings & Admin tab to allow users to update it.
 
 ### Fixed
 - **Dashboard Crash**: Fixed a `NameError` caused by missing expense dataframe initialization in the Dashboard view.
@@ -38,7 +39,8 @@
 
 ### Changed
 - **UI Navigation**: Renamed the "Budgeting & Targets" tab to "Budgeting & Investments" for clarity.
-- **Sidebar Layout**: Moved the "Storage Engine" and "Sign Out" button to the bottom of the sidebar, below the navigation menu, and increased the Storage Engine font size by 2px.
+- **Sidebar Layout**: Moved the primary navigation menu to the absolute top of the sidebar. Moved the "Storage Engine" and "Sign Out" button to the bottom of the sidebar, below the navigation menu, and increased the Storage Engine font size by 2px.
+- **Dashboard Layout**: Restructured the Top KPI dashboard into two cleanly aligned thematic rows (Household Expenses Overview and Personal Wealth & Profile), expanding the visible metrics to include dynamically calculated Networth and User Age.
 - **Current Savings Auto-Fill**: The 'Current Total Savings / Corpus' field in the Wealth Planner now automatically fetches and calculates the sum of all your active investments in the portfolio tracker as the default value.
 
 ### Added

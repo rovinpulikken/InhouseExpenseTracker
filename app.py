@@ -63,6 +63,7 @@ from database import (
     create_user,
     update_user_password,
     update_user_role,
+    update_user_age,
     get_all_users,
     delete_user,
     get_db_type,
@@ -291,6 +292,20 @@ else:
     </div>
     """, unsafe_allow_html=True)
 
+    # ----------------------------------------------------
+    # MAIN NAVIGATION (SIDEBAR)
+    # ----------------------------------------------------
+    nav_options = [
+        "🏠 Dashboard",
+        "💸 Transactions",
+        "📈 Insights & Analytics",
+        "🔮 Wealth & Planning",
+        "⚙️ Settings & Admin"
+    ]
+    
+    nav_selection = st.sidebar.radio("Navigation", nav_options)
+    st.sidebar.markdown("---")
+
     if is_super_admin:
         all_fams = get_all_families()
         fam_options = ["🌐 Entire Database (All Families)"] + [f"{f['family_name']} ({f['family_code']})" for f in all_fams]
@@ -358,7 +373,8 @@ else:
     top_category = cat_breakdown.iloc[0]["category"] if not cat_breakdown.empty else "N/A"
     top_cat_amount = cat_breakdown.iloc[0]["Total_Amount"] if not cat_breakdown.empty else 0.0
 
-    col1, col2, col3, col4, col5 = st.columns(5)
+    st.markdown("### 📊 Household Expenses Overview")
+    col1, col2, col3, col4 = st.columns(4)
     with col1:
         st.markdown(f"""
         <div class="metric-card">
@@ -395,7 +411,31 @@ else:
         </div>
         """, unsafe_allow_html=True)
 
-    with col5:
+    st.markdown("### 👤 Personal Wealth & Profile")
+    w_col1, w_col2, w_col3 = st.columns(3)
+    
+    with w_col1:
+        inv_df = get_user_investments_df(current_user["username"], family_id=user_family_id)
+        total_active_investments = float(inv_df["current_value"].sum()) if not inv_df.empty and "current_value" in inv_df.columns else 0.0
+        st.markdown(f"""
+        <div class="metric-card">
+            <div class="metric-label">Linked Portfolio Networth</div>
+            <div class="metric-value" style="color: #10b981;">{format_inr_short(total_active_investments)}</div>
+            <div style="color: #64748b; font-size: 0.8rem;">Active Investments</div>
+        </div>
+        """, unsafe_allow_html=True)
+        
+    with w_col2:
+        user_age = current_user.get("age", 35)
+        st.markdown(f"""
+        <div class="metric-card">
+            <div class="metric-label">Your Age</div>
+            <div class="metric-value" style="color: #a855f7;">{user_age}</div>
+            <div style="color: #64748b; font-size: 0.8rem;">Years</div>
+        </div>
+        """, unsafe_allow_html=True)
+
+    with w_col3:
         cpi_rate = 5.6 # Avg Indian CPI
         st.markdown(f"""
         <div class="metric-card">
@@ -404,6 +444,7 @@ else:
             <div style="color: #64748b; font-size: 0.8rem;">Avg Annual Inflation (RBI)</div>
         </div>
         """, unsafe_allow_html=True)
+
 
     st.markdown("<br>", unsafe_allow_html=True)
 
@@ -466,20 +507,7 @@ else:
         except Exception as e:
             return 0, f"Error processing file: {e}"
 
-    # ----------------------------------------------------
-    # MAIN NAVIGATION (SIDEBAR)
-    # ----------------------------------------------------
-    nav_options = [
-        "🏠 Dashboard",
-        "💸 Transactions",
-        "📈 Insights & Analytics",
-        "🔮 Wealth & Planning",
-        "⚙️ Settings & Admin"
-    ]
-    
-    nav_selection = st.sidebar.radio("Navigation", nav_options)
     st.sidebar.markdown("---")
-
     st.sidebar.markdown(f"<div style='font-size: 14px; color: gray; margin-bottom: 10px;'>💾 Storage Engine: <b>{get_db_type()}</b></div>", unsafe_allow_html=True)
     if st.sidebar.button("🚪 Sign Out", use_container_width=True):
         st.session_state.clear()
@@ -487,6 +515,7 @@ else:
 
     # ----------------------------------------------------
     # 🏠 DASHBOARD
+
     # ----------------------------------------------------
     if nav_selection == "🏠 Dashboard":
         st.header("🏠 Dashboard Overview")
@@ -2025,7 +2054,22 @@ else:
     # ⚙️ SETTINGS & ADMIN
     # ----------------------------------------------------
     elif nav_selection == "⚙️ Settings & Admin":
-        sa_tab1, sa_tab2 = st.tabs(["💾 Data Export", "👑 Admin"])
+        sa_tab1, sa_tab2, sa_tab3 = st.tabs(["💾 Data Export", "👑 Admin", "👤 Profile"])
+        
+        with sa_tab3:
+            st.subheader("👤 User Profile Settings")
+            st.caption("Update your personal details. This information is used across the dashboard and wealth planner.")
+            
+            with st.form("update_profile_form"):
+                new_age = st.number_input("👤 Your Age", min_value=18, max_value=100, value=current_user.get("age", 35), step=1)
+                if st.form_submit_button("💾 Save Profile"):
+                    if update_user_age(current_user["username"], new_age):
+                        st.session_state["user"]["age"] = new_age
+                        st.success("Profile updated successfully!")
+                        st.rerun()
+                    else:
+                        st.error("Failed to update profile.")
+                        
         with sa_tab1:
             st.subheader("📝 Interactive Database Log, Edit & Delete Manager")
             if is_super_admin:
