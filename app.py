@@ -493,7 +493,7 @@ else:
         st.write(f"Welcome back, **{current_user['username']}**!")
         
         # Calculate current month metrics
-        now = datetime.now()
+        now = datetime.datetime.now()
         curr_month_str = now.strftime('%Y-%m')
         df_curr_month = df[df['Date'].dt.strftime('%Y-%m') == curr_month_str]
         total_curr_month = df_curr_month['Amount'].sum() if not df_curr_month.empty else 0.0

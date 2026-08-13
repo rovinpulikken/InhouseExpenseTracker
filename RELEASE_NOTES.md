@@ -25,6 +25,7 @@
 - **Investment Schema Update**: Added `description` field for storing Stock Code / Name.
 
 ### Fixed
+- **App Crash**: Fixed an `AttributeError` on `datetime.now()` caused by incorrect datetime module usage during dashboard initialization.
 - **Authentication State**: Fixed a `KeyError` related to the `current_user` dictionary in session state.
 - **Database Insertion**: Fixed parameter alignment `TypeError` in `insert_investment` after adding the description field.
 - **Live Market Tracker**: Fixed `KeyError` when querying missing asset classes.
