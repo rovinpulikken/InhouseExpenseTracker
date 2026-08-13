@@ -28,6 +28,7 @@
 - **Authentication State**: Fixed a `KeyError` related to the `current_user` dictionary in session state.
 - **Database Insertion**: Fixed parameter alignment `TypeError` in `insert_investment` after adding the description field.
 - **Live Market Tracker**: Fixed `KeyError` when querying missing asset classes.
+- **Retirement Simulator**: Fixed a `TypeError` when processing empty cells in the one-time expenses data editor.
 
 
 ### Changed

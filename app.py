@@ -1540,8 +1540,19 @@ else:
 
             one_time_expenses_list = []
             for _, row in one_time_exp_df.iterrows():
-                amt = float(row.get("Amount (₹)", 0.0))
-                age_val = int(row.get("Age", u_age))
+                raw_amt = row.get("Amount (₹)", 0.0)
+                raw_age = row.get("Age", u_age)
+                
+                try:
+                    amt = float(raw_amt) if raw_amt is not None and str(raw_amt).strip() != "" else 0.0
+                except (ValueError, TypeError):
+                    amt = 0.0
+                
+                try:
+                    age_val = int(raw_age) if raw_age is not None and str(raw_age).strip() != "" else u_age
+                except (ValueError, TypeError):
+                    age_val = u_age
+
                 if amt > 0:
                     one_time_expenses_list.append({"amount": amt, "age": age_val})
 
