@@ -1377,7 +1377,7 @@ else:
                     u_savings = st.number_input("💰 Your Networth (₹)", min_value=0.0, value=total_active_investments, step=50000.0, format="%.2f", key="invest_user_savings_manual")
             with inv_col4:
                 u_sip_budget = st.number_input(
-                    "💵 Monthly Budget (₹)",
+                    "💵 Monthly recurring Investments (₹)",
                     min_value=1000.0,
                     value=max(5000.0, curr_insurance_invest_monthly),
                     step=1000.0,
@@ -1523,6 +1523,28 @@ else:
                     format_func=lambda x: f"Last {x} Years"
                 )
 
+            st.markdown("#### 💸 Additional Planner Assumptions")
+            st.caption("Factor in extra expenses before retirement. These will drain your accumulating corpus.")
+            add_col1, add_col2 = st.columns(2)
+            with add_col1:
+                default_expenses = pd.DataFrame([{"Expense Description": "", "Amount (₹)": 0.0, "Age": min(ret_age, u_age + 5)}])
+                one_time_exp_df = st.data_editor(default_expenses, num_rows="dynamic", key="one_time_exp_editor", use_container_width=True, hide_index=True)
+            with add_col2:
+                add_recurring_exp = st.number_input(
+                    "Additional Monthly Recurring Expenses (₹)", 
+                    min_value=0.0, 
+                    value=0.0, 
+                    step=5000.0, 
+                    help="Extra monthly expenses you want to plan for (e.g., ongoing medical costs) during the accumulation phase."
+                )
+
+            one_time_expenses_list = []
+            for _, row in one_time_exp_df.iterrows():
+                amt = float(row.get("Amount (₹)", 0.0))
+                age_val = int(row.get("Age", u_age))
+                if amt > 0:
+                    one_time_expenses_list.append({"amount": amt, "age": age_val})
+
             if st.button("🔮 Calculate Retirement Corpus", type="primary", use_container_width=True):
                 from investment_planner import fetch_index_historical_cagr, calculate_retirement_corpus, generate_ai_retirement_advisory
                 
@@ -1543,7 +1565,9 @@ else:
                         retirement_age=ret_age,
                         current_savings=u_savings,
                         monthly_sip=u_sip_budget,
-                        cagr_decimal=cagr_decimal
+                        cagr_decimal=cagr_decimal,
+                        one_time_expenses=one_time_expenses_list,
+                        additional_monthly_expense=add_recurring_exp
                     )
 
                     r1, r2, r3 = st.columns(3)

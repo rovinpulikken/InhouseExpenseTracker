@@ -13,6 +13,8 @@
 - Added "Personal Expense Predictor" sub-tab under Inflation & CPI Analytics to project future expenses based on a dynamically calculated personalized inflation rate, weighted by the user's historical category spending.
 - Added a toggle option in the "Investment & Wealth Planner" to explicitly use the "Networth" (Current Portfolio Valuation) from the Active Investments tab or allow the user to manually override it.
 - Realigned the configuration inputs (Age, Networth Toggle, Networth Amount, Monthly Budget) in the "Investment & Wealth Planner" to render cleanly in a single horizontal row.
+- Renamed "Monthly Budget" label in the Investment and Wealth Planner to "Monthly recurring Investments".
+- Added support for factoring in multiple one-time expenses (like child's education or house downpayment) and additional ongoing monthly recurring expenses (like medical costs) directly into the Retirement Simulation model to dynamically reduce the final retirement corpus.
 
 ## [Unreleased]
 ### Added

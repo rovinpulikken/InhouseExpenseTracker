@@ -429,10 +429,13 @@ def fetch_index_historical_cagr(ticker: str, years: int) -> float:
         print(f"Error fetching yfinance data for {ticker}: {e}")
         return 0.12 # Fallback to standard 12%
 
-def calculate_retirement_corpus(current_age: int, retirement_age: int, current_savings: float, monthly_sip: float, cagr_decimal: float) -> Dict[str, Any]:
+def calculate_retirement_corpus(current_age: int, retirement_age: int, current_savings: float, monthly_sip: float, cagr_decimal: float, one_time_expenses: List[Dict[str, Any]] = None, additional_monthly_expense: float = 0.0) -> Dict[str, Any]:
     """
-    Calculates the projected retirement corpus based on current age and savings.
+    Calculates the projected retirement corpus based on current age and savings, accounting for expenses.
     """
+    if one_time_expenses is None:
+        one_time_expenses = []
+
     years = max(1, retirement_age - current_age)
     n_months = years * 12
     r_monthly = cagr_decimal / 12.0
@@ -443,11 +446,31 @@ def calculate_retirement_corpus(current_age: int, retirement_age: int, current_s
     # Future value of monthly SIP
     if r_monthly > 0:
         fv_sip = monthly_sip * (((1 + r_monthly) ** n_months - 1) / r_monthly) * (1 + r_monthly)
+        fv_recurring_exp = additional_monthly_expense * (((1 + r_monthly) ** n_months - 1) / r_monthly) * (1 + r_monthly)
     else:
         fv_sip = monthly_sip * n_months
+        fv_recurring_exp = additional_monthly_expense * n_months
 
-    total_fv = round(fv_lump + fv_sip, 2)
-    total_invested = round(current_savings + (monthly_sip * n_months), 2)
+    # Future value of one time expenses
+    fv_one_time_total = 0.0
+    total_one_time_invested_reduction = 0.0
+    for exp in one_time_expenses:
+        exp_age = exp.get("age", current_age)
+        exp_amount = exp.get("amount", 0.0)
+        
+        # Only consider expenses that occur between current age and retirement age
+        if current_age <= exp_age <= retirement_age:
+            months_from_now = (exp_age - current_age) * 12
+            months_to_compound = max(0, n_months - months_from_now)
+            fv_exp = exp_amount * ((1 + r_monthly) ** months_to_compound)
+            fv_one_time_total += fv_exp
+            total_one_time_invested_reduction += exp_amount
+
+    total_fv = round(fv_lump + fv_sip - fv_recurring_exp - fv_one_time_total, 2)
+    # Ensure total_fv does not drop below 0
+    total_fv = max(0.0, total_fv)
+
+    total_invested = round(current_savings + (monthly_sip * n_months) - (additional_monthly_expense * n_months) - total_one_time_invested_reduction, 2)
     wealth_gain = round(total_fv - total_invested, 2)
 
     # 4% Safe Withdrawal Rate (SWR) monthly
