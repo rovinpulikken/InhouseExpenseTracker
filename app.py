@@ -1433,7 +1433,11 @@ else:
 
             inv_col1, inv_col2, inv_col3, inv_col4 = st.columns([1, 1.2, 1.5, 1.8])
             with inv_col1:
-                u_age = st.number_input("👤 Your Age", min_value=18, max_value=85, value=35, step=1, key="invest_user_age")
+                u_age = st.number_input("👤 Your Age", min_value=18, max_value=85, value=current_user.get("age", 35), step=1, key="invest_user_age")
+                if u_age != current_user.get("age", 35):
+                    from database import update_user_age
+                    if update_user_age(current_user["username"], u_age):
+                        st.session_state["user"]["age"] = u_age
             with inv_col2:
                 st.write("") # vertical spacing to align toggle
                 st.write("")
