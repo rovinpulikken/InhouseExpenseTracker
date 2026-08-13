@@ -119,6 +119,14 @@ st.markdown("""
         color: #94a3b8;
         margin-bottom: 1.5rem;
     }
+    .dashboard-box {
+        background-color: #0f172a;
+        border-radius: 12px;
+        padding: 20px;
+        border: 1px solid #1e293b;
+        box-shadow: inset 0 2px 4px 0 rgba(0, 0, 0, 0.06);
+        margin-bottom: 20px;
+    }
     .metric-card {
         background-color: #1e293b;
         border-radius: 10px;
@@ -171,6 +179,7 @@ st.markdown("""
         .metric-card { padding: 12px 10px !important; margin-bottom: 8px !important; }
         .metric-value { font-size: 1.4rem !important; }
         .metric-label { font-size: 0.78rem !important; }
+        .dashboard-box { padding: 12px !important; margin-bottom: 12px !important; }
         [data-testid="stTabs"] [role="tablist"] {
             overflow-x: auto !important;
             -webkit-overflow-scrolling: touch;
@@ -372,81 +381,10 @@ else:
     cat_breakdown = get_category_breakdown(fy=selected_fy, username=current_user["username"], view_mode=view_mode, family_id=user_family_id)
     top_category = cat_breakdown.iloc[0]["category"] if not cat_breakdown.empty else "N/A"
     top_cat_amount = cat_breakdown.iloc[0]["Total_Amount"] if not cat_breakdown.empty else 0.0
-
-    st.markdown("### 📊 Household Expenses Overview")
-    col1, col2, col3, col4 = st.columns(4)
-    with col1:
-        st.markdown(f"""
-        <div class="metric-card">
-            <div class="metric-label">Total Expense ({selected_fy})</div>
-            <div class="metric-value">{format_inr_short(total_spent)}</div>
-            <div style="color: #64748b; font-size: 0.8rem;">{format_inr(total_spent)}</div>
-        </div>
-        """, unsafe_allow_html=True)
-
-    with col2:
-        st.markdown(f"""
-        <div class="metric-card">
-            <div class="metric-label">Avg Monthly Spend</div>
-            <div class="metric-value" style="color: #38bdf8;">{format_inr_short(avg_monthly_spent)}</div>
-            <div style="color: #64748b; font-size: 0.8rem;">{format_inr(avg_monthly_spent)} / month</div>
-        </div>
-        """, unsafe_allow_html=True)
-
-    with col3:
-        st.markdown(f"""
-        <div class="metric-card">
-            <div class="metric-label">Logged Entries</div>
-            <div class="metric-value">{total_txns}</div>
-            <div style="color: #64748b; font-size: 0.8rem;">Transactions recorded</div>
-        </div>
-        """, unsafe_allow_html=True)
-
-    with col4:
-        st.markdown(f"""
-        <div class="metric-card">
-            <div class="metric-label">Top Expense Category</div>
-            <div class="metric-value" style="font-size: 1.3rem; color: #f43f5e;">{top_category}</div>
-            <div style="color: #64748b; font-size: 0.8rem;">{format_inr_short(top_cat_amount)}</div>
-        </div>
-        """, unsafe_allow_html=True)
-
-    st.markdown("### 👤 Personal Wealth & Profile")
-    w_col1, w_col2, w_col3 = st.columns(3)
-    
-    with w_col1:
-        inv_df = get_user_investments_df(current_user["username"], family_id=user_family_id)
-        total_active_investments = float(inv_df["current_value"].sum()) if not inv_df.empty and "current_value" in inv_df.columns else 0.0
-        st.markdown(f"""
-        <div class="metric-card">
-            <div class="metric-label">Linked Portfolio Networth</div>
-            <div class="metric-value" style="color: #10b981;">{format_inr_short(total_active_investments)}</div>
-            <div style="color: #64748b; font-size: 0.8rem;">Active Investments</div>
-        </div>
-        """, unsafe_allow_html=True)
-        
-    with w_col2:
-        user_age = current_user.get("age", 35)
-        st.markdown(f"""
-        <div class="metric-card">
-            <div class="metric-label">Your Age</div>
-            <div class="metric-value" style="color: #a855f7;">{user_age}</div>
-            <div style="color: #64748b; font-size: 0.8rem;">Years</div>
-        </div>
-        """, unsafe_allow_html=True)
-
-    with w_col3:
-        cpi_rate = 5.6 # Avg Indian CPI
-        st.markdown(f"""
-        <div class="metric-card">
-            <div class="metric-label">Indian CPI Benchmark</div>
-            <div class="metric-value" style="color: #fbbf24;">{cpi_rate}%</div>
-            <div style="color: #64748b; font-size: 0.8rem;">Avg Annual Inflation (RBI)</div>
-        </div>
-        """, unsafe_allow_html=True)
-
-
-    st.markdown("<br>", unsafe_allow_html=True)
+    inv_df = get_user_investments_df(current_user["username"], family_id=user_family_id)
+    total_active_investments = float(inv_df["current_value"].sum()) if not inv_df.empty and "current_value" in inv_df.columns else 0.0
+    user_age = current_user.get("age", 35)
+    cpi_rate = 5.6 # Avg Indian CPI
 
     # Helper for Excel Template Download
     def generate_excel_template() -> bytes:
@@ -520,6 +458,67 @@ else:
     if nav_selection == "🏠 Dashboard":
         st.header("🏠 Dashboard Overview")
         st.write(f"Welcome back, **{current_user['username']}**!")
+        
+        # Consolidated Dashboard KPI Boxes
+        col_left, col_right = st.columns(2)
+        with col_left:
+            st.markdown(f"""
+            <div class="dashboard-box">
+                <h4 style="margin-top: 0; margin-bottom: 15px; color: #f8fafc; font-size: 1.1rem; border-bottom: 1px solid #334155; padding-bottom: 8px;">📊 Household Expenses Overview</h4>
+                <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 12px;">
+                    <div class="metric-card">
+                        <div class="metric-label">Total Expense ({selected_fy})</div>
+                        <div class="metric-value" style="font-size: 1.5rem;">{format_inr_short(total_spent)}</div>
+                        <div style="color: #64748b; font-size: 0.78rem; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;">{format_inr(total_spent)}</div>
+                    </div>
+                    <div class="metric-card">
+                        <div class="metric-label">Avg Monthly Spend</div>
+                        <div class="metric-value" style="color: #38bdf8; font-size: 1.5rem;">{format_inr_short(avg_monthly_spent)}</div>
+                        <div style="color: #64748b; font-size: 0.78rem; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;">{format_inr(avg_monthly_spent)}/mo</div>
+                    </div>
+                    <div class="metric-card">
+                        <div class="metric-label">Logged Entries</div>
+                        <div class="metric-value" style="font-size: 1.5rem;">{total_txns}</div>
+                        <div style="color: #64748b; font-size: 0.78rem; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;">Transactions</div>
+                    </div>
+                    <div class="metric-card">
+                        <div class="metric-label">Top Category</div>
+                        <div class="metric-value" style="font-size: 1.15rem; color: #f43f5e; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; line-height: 1.8rem;" title="{top_category}">{top_category}</div>
+                        <div style="color: #64748b; font-size: 0.78rem; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;">{format_inr_short(top_cat_amount)}</div>
+                    </div>
+                </div>
+            </div>
+            """, unsafe_allow_html=True)
+            
+        with col_right:
+            st.markdown(f"""
+            <div class="dashboard-box">
+                <h4 style="margin-top: 0; margin-bottom: 15px; color: #f8fafc; font-size: 1.1rem; border-bottom: 1px solid #334155; padding-bottom: 8px;">👤 Personal Wealth & Profile</h4>
+                <div style="display: flex; flex-direction: column; gap: 12px;">
+                    <div class="metric-card" style="display: flex; justify-content: space-between; align-items: center; padding: 12px 16px;">
+                        <div>
+                            <div class="metric-label">Portfolio Networth</div>
+                            <div style="color: #64748b; font-size: 0.78rem;">Active Investments</div>
+                        </div>
+                        <div class="metric-value" style="color: #10b981; font-size: 1.5rem;">{format_inr_short(total_active_investments)}</div>
+                    </div>
+                    <div class="metric-card" style="display: flex; justify-content: space-between; align-items: center; padding: 12px 16px;">
+                        <div>
+                            <div class="metric-label">Your Age</div>
+                            <div style="color: #64748b; font-size: 0.78rem;">Years</div>
+                        </div>
+                        <div class="metric-value" style="color: #a855f7; font-size: 1.5rem;">{user_age}</div>
+                    </div>
+                    <div class="metric-card" style="display: flex; justify-content: space-between; align-items: center; padding: 12px 16px;">
+                        <div>
+                            <div class="metric-label">CPI Benchmark</div>
+                            <div style="color: #64748b; font-size: 0.78rem;">Avg Annual Inflation (RBI)</div>
+                        </div>
+                        <div class="metric-value" style="color: #fbbf24; font-size: 1.5rem;">{cpi_rate}%</div>
+                    </div>
+                </div>
+            </div>
+            """, unsafe_allow_html=True)
         
         # Calculate current month metrics
         now = datetime.datetime.now()

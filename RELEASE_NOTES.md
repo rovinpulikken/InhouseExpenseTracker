@@ -19,6 +19,13 @@
 ## [Unreleased]
 ### Added
 - **Gemini AI Integration**: Universal statement parsing using `google-genai` for PDFs, Images, and CSVs.
+
+### Fixed
+- **Page Layout & Scrolling**: Fixed an issue where the top KPI dashboard blocks occupied the entire screen height when navigating to other tabs, eliminating the need for constant scrolling.
+
+### Changed
+- **UI Navigation & Layout**: Consolidated the main dashboard KPIs (Household Expenses Overview and Personal Wealth & Profile) into two side-by-side structured container boxes (`.dashboard-box`) inside the Dashboard page overview tab rather than rendering them globally on every single page navigation.
+- **Responsive Layout**: Designed custom CSS and media query rules for the consolidated boxes to stack vertically on mobile screens for optimal mobile navigation.
 - **Statement Template**: Expanded the downloadable CSV template to include all 10 investment database fields for seamless non-AI ingestion.
 - **API Key Persistence**: Added the ability to securely save the Gemini API key directly to the user profile in the database.
 - **Portfolio Filters**: Added a multi-select filter for "Asset Class" in the Active Investment Portfolio detailed view.
