@@ -23,6 +23,7 @@
 
 ### Fixed
 - **Page Layout & Scrolling**: Fixed an issue where the top KPI dashboard blocks occupied the entire screen height when navigating to other tabs, eliminating the need for constant scrolling.
+- **Profile Form**: Allowed Date of Birth field to select years going back to 1900.
 
 ### Changed
 - **UI Navigation & Layout**: Consolidated the main dashboard KPIs (Household Expenses Overview and Personal Wealth & Profile) into two side-by-side structured container boxes (`.dashboard-box`) inside the Dashboard page overview tab rather than rendering them globally on every single page navigation.

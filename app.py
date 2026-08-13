@@ -2079,7 +2079,7 @@ else:
                         parsed_dob = datetime.datetime.strptime(current_user.get("dob", ""), "%Y-%m-%d").date()
                     except:
                         parsed_dob = datetime.date(1990, 1, 1)
-                    new_dob = st.date_input("Date of Birth", value=parsed_dob)
+                    new_dob = st.date_input("Date of Birth", value=parsed_dob, min_value=datetime.date(1900, 1, 1), max_value=datetime.date.today())
                 
                 st.markdown("#### 2. Location Details")
                 new_address = st.text_area("Address", value=current_user.get("address", ""))
