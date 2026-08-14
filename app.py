@@ -1255,6 +1255,9 @@ else:
             suggested_base_df = get_suggested_budgets(fy=target_fy_clean, username=current_user["username"], view_mode=view_mode, family_id=user_family_id)
             total_hist_avg_monthly = float(suggested_base_df["hist_monthly_avg"].sum())
 
+            if "target_monthly_val" not in st.session_state:
+                st.session_state["target_monthly_val"] = float(max(50000.0, float(round(total_hist_avg_monthly, -3))) if total_hist_avg_monthly > 0 else 75000.0)
+
             t_col_inc, t_col1, t_col2, t_col3 = st.columns([1.5, 2, 1.2, 1.2])
             with t_col_inc:
                 monthly_income_input = st.number_input(
@@ -1268,13 +1271,12 @@ else:
                 target_monthly_input = st.number_input(
                     "💰 Target Total Household Monthly Spend (₹)",
                     min_value=1000.0,
-                    value=float(st.session_state.get("target_monthly_val", max(50000.0, float(round(total_hist_avg_monthly, -3))) if total_hist_avg_monthly > 0 else 75000.0)),
+                    value=st.session_state["target_monthly_val"],
                     step=5000.0,
-                    key="target_monthly_input_widget",
                     help="Set your total desired monthly expenditure ceiling across all categories."
                 )
                 # Ensure the value in session state is synced with the widget
-                st.session_state["target_monthly_val"] = target_monthly_input
+                st.session_state["target_monthly_val"] = float(target_monthly_input)
 
             with t_col2:
                 st.markdown("<br>", unsafe_allow_html=True)
@@ -1312,8 +1314,7 @@ else:
                         new_target += val
                 
                 # Update the Target Total Spend to match the historical averages sum
-                st.session_state["target_monthly_input_widget"] = float(round(new_target, -3)) if new_target > 0 else 50000.0
-                st.session_state["target_monthly_val"] = st.session_state["target_monthly_input_widget"]
+                st.session_state["target_monthly_val"] = float(round(new_target, -3)) if new_target > 0 else 50000.0
 
                 st.success(f"⚡ Filled all category limits with past monthly averages and updated target spend to {format_inr(st.session_state['target_monthly_val'])}!")
                 st.rerun()
