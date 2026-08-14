@@ -1255,7 +1255,15 @@ else:
             suggested_base_df = get_suggested_budgets(fy=target_fy_clean, username=current_user["username"], view_mode=view_mode, family_id=user_family_id)
             total_hist_avg_monthly = float(suggested_base_df["hist_monthly_avg"].sum())
 
-            t_col1, t_col2, t_col3 = st.columns([2, 1.2, 1.2])
+            t_col_inc, t_col1, t_col2, t_col3 = st.columns([1.5, 2, 1.2, 1.2])
+            with t_col_inc:
+                monthly_income_input = st.number_input(
+                    "💵 Expected Monthly Income (₹)",
+                    min_value=0.0,
+                    value=100000.0,
+                    step=5000.0,
+                    help="Your total expected monthly income. Used to calculate target savings and investments."
+                )
             with t_col1:
                 target_monthly_input = st.number_input(
                     "💰 Target Total Household Monthly Spend (₹)",
@@ -1299,11 +1307,15 @@ else:
                 st.rerun()
 
             if btn_apply_prop:
-                prop_df = get_suggested_budgets(fy=target_fy_clean, username=current_user["username"], view_mode=view_mode, target_total_monthly=target_monthly_input, family_id=user_family_id)
+                prop_target = monthly_income_input * 0.80  # 80% of income for expenses
+                prop_df = get_suggested_budgets(fy=target_fy_clean, username=current_user["username"], view_mode=view_mode, target_total_monthly=prop_target, family_id=user_family_id)
                 for idx, r in prop_df.iterrows():
                     c = r["category"]
-                    st.session_state["budget_dict"][c] = round(float(r["suggested_monthly"]), 2)
-                st.success(f"🎯 Proportions calculated and allocated matching ₹ {format_inr(target_monthly_input)} target!")
+                    if c == "Insurance & Investments":
+                        st.session_state["budget_dict"][c] = round(float(monthly_income_input * 0.20), 2)
+                    else:
+                        st.session_state["budget_dict"][c] = round(float(r["suggested_monthly"]), 2)
+                st.success(f"🎯 Auto-allocated! Set Investments to 20% ({format_inr(monthly_income_input * 0.20)}) and distributed the remaining 80% to expenses.")
                 st.rerun()
 
             # ------------------------------------------------
@@ -1315,7 +1327,8 @@ else:
 
             hist_avg_map = dict(zip(suggested_base_df["category"], suggested_base_df["hist_monthly_avg"]))
 
-            for cat in EXPENSE_CATEGORIES:
+            other_cats = [c for c in EXPENSE_CATEGORIES if c != "Insurance & Investments"]
+            for cat in other_cats:
                 current_val = float(st.session_state["budget_dict"].get(cat, 10000.0))
                 h_avg = float(hist_avg_map.get(cat, 0.0))
 
@@ -1362,6 +1375,32 @@ else:
                     st.caption("Annual Cap")
 
                 st.markdown("<hr style='margin: 6px 0; border-color: #334155;'>", unsafe_allow_html=True)
+            
+            # Dynamic calculation for Insurance & Investments
+            cat = "Insurance & Investments"
+            total_others = sum([float(st.session_state["budget_dict"].get(c, 0.0)) for c in other_cats])
+            calc_inv = max(0.0, float(monthly_income_input - total_others))
+            st.session_state["budget_dict"][cat] = calc_inv
+
+            # Render it special
+            cat_col1, cat_col2, cat_col3, cat_col4, cat_col5 = st.columns([2.5, 1.8, 2.5, 1.8, 1.8])
+            with cat_col1:
+                st.markdown(f"**{cat}** (Auto-Calculated)")
+                st.caption(f"Income - All Other Expenses")
+            with cat_col2:
+                 st.write("")
+            with cat_col3:
+                 st.markdown(f"**{format_inr(calc_inv)}**")
+            with cat_col4:
+                 st.write("")
+            with cat_col5:
+                 st.markdown(f"**{format_inr_short(calc_inv * 12.0)}**")
+                 st.caption("Annual Cap")
+                 
+            st.markdown("<hr style='margin: 6px 0; border-color: #334155;'>", unsafe_allow_html=True)
+
+            if monthly_income_input < total_others:
+                 st.warning("⚠️ Warning: Your allocated expenses exceed your expected monthly income. Please reduce your category limits.")
 
             # ------------------------------------------------
             # LIVE BUDGET SUMMARY BAR & SAVE BUTTON

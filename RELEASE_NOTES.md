@@ -20,6 +20,7 @@
 ### Added
 - **Gemini AI Integration**: Universal statement parsing using `google-genai` for PDFs, Images, and CSVs.
 - **Extended Profile**: Added new demographic and financial fields (Sex, Date of Birth, Address, City, State, Country, Income Range, Occupation, Marital Status, Risk Tolerance) to the database schema and created a comprehensive User Profile editor in the Settings & Admin tab.
+- **Income-Driven Budgeting**: Added a "Monthly Expected Income" field to the Category Budget Planner. The "Insurance & Investments" budget is now dynamically locked to equal `Income - Sum(Other Expenses)`. Auto-allocation now strictly reserves 20% for Insurance & Investments, distributing the remainder proportionally to other expenses. Added a deficit warning if expenses exceed income.
 
 ### Fixed
 - **Page Layout & Scrolling**: Fixed an issue where the top KPI dashboard blocks occupied the entire screen height when navigating to other tabs, eliminating the need for constant scrolling.
