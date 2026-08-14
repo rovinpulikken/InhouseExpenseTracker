@@ -983,10 +983,14 @@ def get_suggested_budgets(fy: str, username: Optional[str] = None, view_mode: st
         merged["annual_limit"] = merged["suggested_monthly"] * 12.0
         return merged
 
-    # Compute average monthly spending per category across all historical months
-    period_summary = df.groupby(["Month_Year", "category"])["amount"].sum().reset_index()
-    hist_avg = period_summary.groupby("category")["amount"].mean().reset_index()
-    hist_avg.rename(columns={"amount": "hist_monthly_avg"}, inplace=True)
+    # Compute true historical average by dividing total sum per category by total active months
+    total_months = df["Month_Year"].nunique()
+    if total_months == 0:
+        total_months = 1
+    
+    hist_sum = df.groupby("category")["amount"].sum().reset_index()
+    hist_sum["hist_monthly_avg"] = hist_sum["amount"] / float(total_months)
+    hist_avg = hist_sum[["category", "hist_monthly_avg"]]
 
     merged = pd.merge(cat_df, hist_avg, on="category", how="left").fillna(0.0)
     merged = pd.merge(merged, b_df, on="category", how="left").fillna(0.0)
