@@ -1255,8 +1255,13 @@ else:
             suggested_base_df = get_suggested_budgets(fy=target_fy_clean, username=current_user["username"], view_mode=view_mode, family_id=user_family_id)
             total_hist_avg_monthly = float(suggested_base_df["hist_monthly_avg"].sum())
 
-            if "target_monthly_val" not in st.session_state:
-                st.session_state["target_monthly_val"] = float(max(50000.0, float(round(total_hist_avg_monthly, -3))) if total_hist_avg_monthly > 0 else 75000.0)
+            # Calculate the sum of user-entered categories (excluding auto-calculated Investments)
+            other_cats = [c for c in EXPENSE_CATEGORIES if c != "Insurance & Investments"]
+            current_entered_sum = sum([float(st.session_state.get("budget_dict", {}).get(c, 0.0)) for c in other_cats])
+            
+            # Fallback if empty
+            if current_entered_sum == 0:
+                current_entered_sum = max(50000.0, float(round(total_hist_avg_monthly, -3))) if total_hist_avg_monthly > 0 else 75000.0
 
             t_col_inc, t_col1, t_col2, t_col3 = st.columns([1.5, 2, 1.2, 1.2])
             with t_col_inc:
@@ -1271,12 +1276,17 @@ else:
                 target_monthly_input = st.number_input(
                     "💰 Target Total Household Monthly Spend (₹)",
                     min_value=1000.0,
-                    value=st.session_state["target_monthly_val"],
+                    value=float(current_entered_sum),
                     step=5000.0,
-                    help="Set your total desired monthly expenditure ceiling across all categories."
+                    help="Sum of all your category limits. Edit this to auto-scale your categories proportionally."
                 )
-                # Ensure the value in session state is synced with the widget
-                st.session_state["target_monthly_val"] = float(target_monthly_input)
+                
+            # If user manually edited the Target Total, auto-scale the categories
+            if "budget_dict" in st.session_state and target_monthly_input != current_entered_sum and current_entered_sum > 0:
+                scale_factor = target_monthly_input / current_entered_sum
+                for c in other_cats:
+                    st.session_state["budget_dict"][c] = round(float(st.session_state["budget_dict"][c]) * scale_factor, 2)
+                st.rerun()
 
             with t_col2:
                 st.markdown("<br>", unsafe_allow_html=True)
@@ -1305,18 +1315,12 @@ else:
                     st.session_state["budget_dict"][c] = m
 
             if btn_apply_hist:
-                new_target = 0.0
                 for idx, r in suggested_base_df.iterrows():
                     c = r["category"]
                     if c != "Insurance & Investments":
                         val = round(float(r["hist_monthly_avg"]), 2)
                         st.session_state["budget_dict"][c] = val
-                        new_target += val
-                
-                # Update the Target Total Spend to match the historical averages sum
-                st.session_state["target_monthly_val"] = float(round(new_target, -3)) if new_target > 0 else 50000.0
-
-                st.success(f"⚡ Filled all category limits with past monthly averages and updated target spend to {format_inr(st.session_state['target_monthly_val'])}!")
+                st.success("⚡ Filled all category limits with past monthly averages!")
                 st.rerun()
 
             if btn_apply_prop:
@@ -1340,7 +1344,6 @@ else:
 
             hist_avg_map = dict(zip(suggested_base_df["category"], suggested_base_df["hist_monthly_avg"]))
 
-            other_cats = [c for c in EXPENSE_CATEGORIES if c != "Insurance & Investments"]
             for cat in other_cats:
                 current_val = float(st.session_state["budget_dict"].get(cat, 10000.0))
                 h_avg = float(hist_avg_map.get(cat, 0.0))
