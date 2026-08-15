@@ -53,6 +53,7 @@ from database import (
     set_category_budget,
     batch_set_category_budgets,
     get_suggested_budgets,
+    get_category_budget,
     get_budget_status,
     delete_expense,
     delete_month_expenses,
