@@ -2203,7 +2203,7 @@ else:
                                     existing_val = float(b_df.iloc[0]["monthly_limit"])
                                 
                                 new_limit = existing_val + new_emi
-                                batch_set_category_budgets(target_fy_clean, [{"category": new_debt_cat, "monthly_limit": new_limit, "annual_limit": new_limit * 12}], family_id=user_family_id)
+                                set_category_budget(target_fy_clean, new_debt_cat, new_limit, new_limit * 12, family_id=user_family_id)
 
                             add_debt(new_debt_name, new_debt_cat, new_principal, new_principal, new_rate, new_emi, new_tenure, str(new_start_date), user_family_id)
                             st.success(f"Successfully added {new_debt_name} to your liabilities and synced its EMI ({format_inr(new_emi)}) to the '{new_debt_cat}' Budget Planner!")
