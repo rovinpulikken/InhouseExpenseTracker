@@ -77,7 +77,11 @@ from database import (
     create_family,
     get_family_by_code,
     join_family_by_code,
-    get_all_families
+    get_all_families,
+    add_debt,
+    get_debts,
+    add_debt_payment,
+    get_debt_payments
 )
 from cpi_data import (
     get_cpi_df,
