@@ -20,6 +20,24 @@ EXPENSE_CATEGORIES = [
     "Miscellaneous"
 ]
 
+# Debt & Liabilities Categories
+DEBT_CATEGORIES = [
+    "Housing Loan / Mortgage",
+    "Loans for Investment",
+    "Education / Student Loans",
+    "Credit Card Debt",
+    "Auto / Car Loans",
+    "Personal Loans",
+    "Buy Now, Pay Later",
+    "Peer-to-Peer / Family Loans",
+    "Tax Liabilities",
+    "Overdraft / Line of Credit",
+    "Other Debt / Liability"
+]
+
+# Append debt categories to standard expense categories so they appear in Budget Planner
+EXPENSE_CATEGORIES.extend(DEBT_CATEGORIES)
+
 def get_indian_fy(dt: datetime.date) -> str:
     """
     Returns the Indian Financial Year string (e.g. 'FY 2024-25') for a given date.

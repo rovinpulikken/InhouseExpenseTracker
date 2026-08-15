@@ -305,6 +305,38 @@ def init_db():
         cursor.execute("ALTER TABLE investments ADD COLUMN description TEXT DEFAULT ''")
     if "resolved_name" not in i_cols:
         cursor.execute("ALTER TABLE investments ADD COLUMN resolved_name TEXT DEFAULT ''")
+        
+    # 6. Debts Table
+    cursor.execute("""
+        CREATE TABLE IF NOT EXISTS debts (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            debt_name TEXT NOT NULL,
+            debt_category TEXT NOT NULL,
+            total_principal REAL NOT NULL,
+            outstanding_principal REAL NOT NULL,
+            interest_rate REAL NOT NULL,
+            monthly_emi REAL NOT NULL,
+            tenure_months INTEGER,
+            start_date DATE,
+            family_id INTEGER DEFAULT 1,
+            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+        )
+    """)
+    
+    # 7. Debt Payments Table
+    cursor.execute("""
+        CREATE TABLE IF NOT EXISTS debt_payments (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            debt_id INTEGER NOT NULL,
+            payment_date DATE NOT NULL,
+            principal_paid REAL NOT NULL,
+            interest_paid REAL NOT NULL,
+            family_id INTEGER DEFAULT 1,
+            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+            FOREIGN KEY(debt_id) REFERENCES debts(id)
+        )
+    """)
+
     
     # Seed default admin if users table is empty
     cursor.execute("SELECT COUNT(*) FROM users")
@@ -1434,3 +1466,68 @@ def delete_duplicate_investments(duplicate_ids: List[int]) -> int:
     conn.commit()
     conn.close()
     return deleted_count
+
+# ----------------------------------------------------
+# DEBT & LIABILITIES MANAGEMENT
+# ----------------------------------------------------
+def add_debt(debt_name: str, debt_category: str, total_principal: float, outstanding_principal: float, interest_rate: float, monthly_emi: float, tenure_months: int, start_date: str, family_id: int) -> int:
+    conn = get_connection()
+    cursor = conn.cursor()
+    cursor.execute("""
+        INSERT INTO debts (debt_name, debt_category, total_principal, outstanding_principal, interest_rate, monthly_emi, tenure_months, start_date, family_id)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+    """, (debt_name, debt_category, total_principal, outstanding_principal, interest_rate, monthly_emi, tenure_months, start_date, family_id))
+    debt_id = cursor.lastrowid
+    conn.commit()
+    conn.close()
+    return debt_id
+
+def get_debts(family_id: int) -> pd.DataFrame:
+    conn = get_connection()
+    df = pd.read_sql_query("""
+        SELECT * FROM debts WHERE family_id = ? ORDER BY created_at DESC
+    """, conn, params=(family_id,))
+    conn.close()
+    return df
+
+def get_debt_by_id(debt_id: int) -> Optional[Dict[str, Any]]:
+    conn = get_connection()
+    cursor = conn.cursor()
+    cursor.execute("SELECT * FROM debts WHERE id = ?", (debt_id,))
+    row = cursor.fetchone()
+    conn.close()
+    if row:
+        return dict(row) if isinstance(row, sqlite3.Row) else {
+            "id": row[0], "debt_name": row[1], "debt_category": row[2], 
+            "total_principal": row[3], "outstanding_principal": row[4], 
+            "interest_rate": row[5], "monthly_emi": row[6], "tenure_months": row[7], 
+            "start_date": row[8], "family_id": row[9], "created_at": row[10]
+        }
+    return None
+
+def add_debt_payment(debt_id: int, payment_date: str, principal_paid: float, interest_paid: float, family_id: int) -> bool:
+    conn = get_connection()
+    cursor = conn.cursor()
+    cursor.execute("""
+        INSERT INTO debt_payments (debt_id, payment_date, principal_paid, interest_paid, family_id)
+        VALUES (?, ?, ?, ?, ?)
+    """, (debt_id, payment_date, principal_paid, interest_paid, family_id))
+    
+    # Also update the outstanding principal on the debt table
+    cursor.execute("""
+        UPDATE debts 
+        SET outstanding_principal = outstanding_principal - ?
+        WHERE id = ?
+    """, (principal_paid, debt_id))
+    
+    conn.commit()
+    conn.close()
+    return True
+
+def get_debt_payments(debt_id: int) -> pd.DataFrame:
+    conn = get_connection()
+    df = pd.read_sql_query("""
+        SELECT * FROM debt_payments WHERE debt_id = ? ORDER BY payment_date DESC
+    """, conn, params=(debt_id,))
+    conn.close()
+    return df

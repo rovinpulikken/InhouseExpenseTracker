@@ -386,6 +386,9 @@ else:
     total_active_investments = float(inv_df["current_value"].sum()) if not inv_df.empty and "current_value" in inv_df.columns else 0.0
     user_age = current_user.get("age", 35)
     cpi_rate = 5.6 # Avg Indian CPI
+    
+    dash_debts_df = get_debts(family_id=user_family_id)
+    total_active_debts = float(dash_debts_df["outstanding_principal"].sum()) if not dash_debts_df.empty else 0.0
 
     # Helper for Excel Template Download
     def generate_excel_template() -> bytes:
@@ -516,6 +519,13 @@ else:
                             <div style="color: #64748b; font-size: 0.78rem;">Avg Annual Inflation (RBI)</div>
                         </div>
                         <div class="metric-value" style="color: #fbbf24; font-size: 1.5rem;">{cpi_rate}%</div>
+                    </div>
+                    <div class="metric-card" style="display: flex; justify-content: space-between; align-items: center; padding: 12px 16px;">
+                        <div>
+                            <div class="metric-label">Total Active Debt</div>
+                            <div style="color: #64748b; font-size: 0.78rem;">Outstanding Principal</div>
+                        </div>
+                        <div class="metric-value" style="color: #ef4444; font-size: 1.5rem;">{format_inr_short(total_active_debts)}</div>
                     </div>
                 </div>
             </div>
@@ -1231,10 +1241,11 @@ else:
         with wp_tab1:
             st.subheader(f"🎯 Budgeting, Investments & Active Portfolio ({selected_fy})")
             
-        subtab_budget, subtab_invest, subtab_holdings = st.tabs([
+        subtab_budget, subtab_invest, subtab_holdings, subtab_debts = st.tabs([
             "🎯 Category Budget Planner & Performance",
             "📈 Investment & Wealth Portfolio Planner",
-            "💼 Active Investment Portfolio & Holdings Tracker"
+            "💼 Active Investment Portfolio & Holdings Tracker",
+            "🏦 Debt & Liabilities Management"
         ])
 
         target_fy_clean = selected_fy if selected_fy != "All FYs" else (all_fys[0] if all_fys else "FY 2024-25")
@@ -2120,6 +2131,150 @@ else:
 
             else:
                 st.info("💡 No active holdings recorded yet. Use the form above to add your first investment asset!")
+
+        with subtab_debts:
+            st.caption("Track your liabilities, outstanding principal, interest rates, and loan tenures.")
+            
+            # Fetch all debts for the family
+            debts_df = get_debts(family_id=user_family_id)
+            
+            # ------------------------------------------------
+            # DEBT SUMMARY DASHBOARD
+            # ------------------------------------------------
+            if not debts_df.empty:
+                total_outstanding = debts_df["outstanding_principal"].sum()
+                total_monthly_emi = debts_df["monthly_emi"].sum()
+                
+                st.markdown("""
+                <div style="background-color: #1e293b; padding: 14px 18px; border-radius: 8px; border-left: 4px solid #ef4444; margin-bottom: 15px;">
+                    <div style="font-weight: 600; color: #ef4444; font-size: 0.95rem;">🏦 Total Debt & Liabilities Overview</div>
+                </div>
+                """, unsafe_allow_html=True)
+                
+                sum_c1, sum_c2, sum_c3 = st.columns(3)
+                with sum_c1:
+                    st.metric("Total Outstanding Debt", format_inr(total_outstanding))
+                with sum_c2:
+                    st.metric("Total Monthly EMI", format_inr(total_monthly_emi))
+                with sum_c3:
+                    st.metric("Active Loans", str(len(debts_df)))
+                    
+                st.markdown("<hr>", unsafe_allow_html=True)
+                
+            # ------------------------------------------------
+            # ADD NEW DEBT FORM
+            # ------------------------------------------------
+            with st.expander("➕ Add New Debt / Liability", expanded=debts_df.empty):
+                with st.form("add_debt_form"):
+                    st.markdown("#### Enter Loan / Debt Details")
+                    dc1, dc2 = st.columns(2)
+                    with dc1:
+                        new_debt_name = st.text_input("Debt / Loan Name", placeholder="e.g. HDFC Home Loan")
+                        new_debt_cat = st.selectbox("Category", DEBT_CATEGORIES)
+                    with dc2:
+                        new_principal = st.number_input("Total Principal Amount", min_value=0.0, step=10000.0)
+                        new_start_date = st.date_input("Start Date", value=datetime.date.today())
+                        
+                    dc3, dc4, dc5 = st.columns(3)
+                    with dc3:
+                        new_rate = st.number_input("Interest Rate (%)", min_value=0.0, max_value=100.0, step=0.1, format="%.2f")
+                    with dc4:
+                        new_tenure = st.number_input("Tenure (Months)", min_value=1, step=12)
+                    with dc5:
+                        new_emi = st.number_input("Monthly EMI / Payment", min_value=0.0, step=1000.0)
+                        
+                    if st.form_submit_button("💾 Save Liability", type="primary", use_container_width=True):
+                        if new_debt_name and new_principal > 0:
+                            # Auto-sync to Budget Planner as Fixed Expense
+                            if new_emi > 0:
+                                if "budget_dict" in st.session_state:
+                                    st.session_state["budget_dict"][new_debt_cat] = st.session_state["budget_dict"].get(new_debt_cat, 0.0) + new_emi
+                                
+                                # Instantly save this new budget to DB so it persists in the Budget Planner Tab
+                                existing_val = 0.0
+                                b_df = get_category_budget(target_fy_clean, new_debt_cat, family_id=user_family_id)
+                                if not b_df.empty:
+                                    existing_val = float(b_df.iloc[0]["monthly_limit"])
+                                
+                                new_limit = existing_val + new_emi
+                                batch_set_category_budgets(target_fy_clean, [{"category": new_debt_cat, "monthly_limit": new_limit, "annual_limit": new_limit * 12}], family_id=user_family_id)
+
+                            add_debt(new_debt_name, new_debt_cat, new_principal, new_principal, new_rate, new_emi, new_tenure, str(new_start_date), user_family_id)
+                            st.success(f"Successfully added {new_debt_name} to your liabilities and synced its EMI ({format_inr(new_emi)}) to the '{new_debt_cat}' Budget Planner!")
+                            st.rerun()
+                        else:
+                            st.error("Please provide a valid Debt Name and Principal Amount.")
+
+            # ------------------------------------------------
+            # DEBT PORTFOLIO & PAYMENT LOGGING
+            # ------------------------------------------------
+            st.markdown("<br>", unsafe_allow_html=True)
+            st.markdown("### 📊 Active Debt Portfolio")
+            
+            if not debts_df.empty:
+                for idx, row in debts_df.iterrows():
+                    did = row["id"]
+                    dname = row["debt_name"]
+                    dcat = row["debt_category"]
+                    outstanding = row["outstanding_principal"]
+                    total = row["total_principal"]
+                    emi = row["monthly_emi"]
+                    rate = row["interest_rate"]
+                    
+                    paid_pct = 0.0
+                    if total > 0:
+                        paid_pct = max(0.0, min(100.0, ((total - outstanding) / total) * 100))
+                        
+                    with st.container():
+                        st.markdown(f"""
+                        <div class="dashboard-box" style="margin-bottom: 10px;">
+                            <div style="display: flex; justify-content: space-between; align-items: flex-start; margin-bottom: 10px;">
+                                <div>
+                                    <div style="font-size: 1.1rem; font-weight: 700; color: #f8fafc;">{dname}</div>
+                                    <div style="font-size: 0.85rem; color: #94a3b8;">{dcat} • {rate}% Interest</div>
+                                </div>
+                                <div style="text-align: right;">
+                                    <div style="font-size: 1.2rem; font-weight: 700; color: #ef4444;">{format_inr(outstanding)}</div>
+                                    <div style="font-size: 0.85rem; color: #94a3b8;">Outstanding</div>
+                                </div>
+                            </div>
+                            
+                            <div style="margin-bottom: 15px;">
+                                <div style="display: flex; justify-content: space-between; font-size: 0.8rem; margin-bottom: 4px;">
+                                    <span style="color: #64748b;">Principal Paid: {paid_pct:.1f}%</span>
+                                    <span style="color: #64748b;">Total: {format_inr(total)}</span>
+                                </div>
+                                <div style="width: 100%; background-color: #334155; border-radius: 4px; height: 8px;">
+                                    <div style="width: {paid_pct}%; background-color: #10b981; height: 100%; border-radius: 4px;"></div>
+                                </div>
+                            </div>
+                        </div>
+                        """, unsafe_allow_html=True)
+                        
+                        with st.expander(f"💸 Log EMI/Payment for {dname}"):
+                            with st.form(f"pay_debt_{did}"):
+                                pc1, pc2 = st.columns(2)
+                                with pc1:
+                                    pay_date = st.date_input("Payment Date", value=datetime.date.today(), key=f"pd_{did}")
+                                    pay_principal = st.number_input("Principal Portion", min_value=0.0, step=100.0, key=f"pp_{did}")
+                                with pc2:
+                                    pay_interest = st.number_input("Interest Portion", min_value=0.0, step=100.0, key=f"pi_{did}")
+                                
+                                if st.form_submit_button("Record Payment", type="primary"):
+                                    if pay_principal > 0 or pay_interest > 0:
+                                        add_debt_payment(did, str(pay_date), pay_principal, pay_interest, user_family_id)
+                                        st.success(f"Payment recorded! Outstanding principal reduced by {format_inr(pay_principal)}.")
+                                        st.rerun()
+                                    else:
+                                        st.error("Please enter an amount.")
+                                        
+                        # Show payment history
+                        pay_df = get_debt_payments(did)
+                        if not pay_df.empty:
+                            with st.expander("📜 Payment History"):
+                                st.dataframe(pay_df[["payment_date", "principal_paid", "interest_paid"]], use_container_width=True, hide_index=True)
+            else:
+                st.info("No active debts. You are debt-free! 🎉")
 
     # ----------------------------------------------------
     # ⚙️ SETTINGS & ADMIN
