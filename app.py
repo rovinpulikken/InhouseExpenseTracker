@@ -1252,6 +1252,9 @@ else:
             </div>
             """, unsafe_allow_html=True)
 
+            suggested_base_df = get_suggested_budgets(fy=target_fy_clean, username=current_user["username"], view_mode=view_mode, family_id=user_family_id)
+            total_hist_avg_monthly = float(suggested_base_df["hist_monthly_avg"].sum())
+
             # Calculate the sum of user-entered categories (excluding auto-calculated Investments)
             other_cats = [c for c in EXPENSE_CATEGORIES if c != "Insurance & Investments"]
             current_entered_sum = sum([float(st.session_state.get("budget_dict", {}).get(c, 0.0)) for c in other_cats])
