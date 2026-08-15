@@ -32,6 +32,7 @@ import statement_parser
 import live_market_tracker
 from config import (
     EXPENSE_CATEGORIES,
+    DEBT_CATEGORIES,
     get_indian_fy,
     get_indian_quarter,
     get_indian_half_year,
