@@ -83,7 +83,9 @@ from database import (
     add_debt,
     get_debts,
     add_debt_payment,
-    get_debt_payments
+    get_debt_payments,
+    update_debt,
+    delete_debt
 )
 from cpi_data import (
     get_cpi_df,
@@ -2279,6 +2281,38 @@ else:
                         if not pay_df.empty:
                             with st.expander("📜 Payment History"):
                                 st.dataframe(pay_df[["payment_date", "principal_paid", "interest_paid"]], use_container_width=True, hide_index=True)
+                                
+                        with st.expander(f"✏️ Edit / Delete {dname}"):
+                            with st.form(f"edit_debt_{did}"):
+                                st.markdown("### Update Debt Details")
+                                ec1, ec2 = st.columns(2)
+                                with ec1:
+                                    e_dname = st.text_input("Debt Name", value=dname, key=f"edn_{did}")
+                                    e_dcat = st.selectbox("Category", DEBT_CATEGORIES, index=DEBT_CATEGORIES.index(dcat) if dcat in DEBT_CATEGORIES else 0, key=f"edc_{did}")
+                                    e_rate = st.number_input("Interest Rate (%)", value=float(rate), min_value=0.0, step=0.1, key=f"edr_{did}")
+                                    e_tenure = st.number_input("Tenure (Months)", value=int(row["tenure_months"]), min_value=1, step=1, key=f"edt_{did}")
+                                with ec2:
+                                    e_total = st.number_input("Total Principal", value=float(total), min_value=0.0, step=100.0, key=f"edtp_{did}")
+                                    e_out = st.number_input("Outstanding Principal", value=float(outstanding), min_value=0.0, step=100.0, key=f"edop_{did}")
+                                    e_emi = st.number_input("Monthly EMI", value=float(emi), min_value=0.0, step=100.0, key=f"edemi_{did}")
+                                    e_start = st.date_input("Start Date", value=datetime.datetime.strptime(row["start_date"], "%Y-%m-%d").date() if row["start_date"] else datetime.date.today(), key=f"edsd_{did}")
+                                    
+                                uc1, uc2 = st.columns(2)
+                                with uc1:
+                                    if st.form_submit_button("Update Liability", type="primary"):
+                                        if update_debt(did, e_dname, e_dcat, e_total, e_out, e_rate, e_emi, e_tenure, str(e_start), user_family_id):
+                                            st.success("Liability updated successfully!")
+                                            st.rerun()
+                                        else:
+                                            st.error("Failed to update.")
+                                with uc2:
+                                    if st.form_submit_button("🚨 Delete Liability"):
+                                        if delete_debt(did, user_family_id):
+                                            st.success("Liability deleted successfully!")
+                                            st.rerun()
+                                        else:
+                                            st.error("Failed to delete.")
+
             else:
                 st.info("No active debts. You are debt-free! 🎉")
 

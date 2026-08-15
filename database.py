@@ -1487,10 +1487,11 @@ def delete_duplicate_investments(duplicate_ids: List[int]) -> int:
 def add_debt(debt_name: str, debt_category: str, total_principal: float, outstanding_principal: float, interest_rate: float, monthly_emi: float, tenure_months: int, start_date: str, family_id: int) -> int:
     conn = get_connection()
     cursor = conn.cursor()
+    fam_id = int(family_id) if family_id else 1
     cursor.execute("""
         INSERT INTO debts (debt_name, debt_category, total_principal, outstanding_principal, interest_rate, monthly_emi, tenure_months, start_date, family_id)
         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
-    """, (debt_name, debt_category, total_principal, outstanding_principal, interest_rate, monthly_emi, tenure_months, start_date, family_id))
+    """, (debt_name, debt_category, total_principal, outstanding_principal, interest_rate, monthly_emi, tenure_months, start_date, fam_id))
     debt_id = cursor.lastrowid
     conn.commit()
     conn.close()
@@ -1498,26 +1499,48 @@ def add_debt(debt_name: str, debt_category: str, total_principal: float, outstan
 
 def get_debts(family_id: int) -> pd.DataFrame:
     conn = get_connection()
+    fam_id = int(family_id) if family_id else 1
     df = pd.read_sql_query("""
         SELECT * FROM debts WHERE family_id = ? ORDER BY created_at DESC
-    """, conn, params=(family_id,))
+    """, conn, params=(fam_id,))
     conn.close()
     return df
 
 def get_debt_by_id(debt_id: int) -> Optional[Dict[str, Any]]:
     conn = get_connection()
     cursor = conn.cursor()
-    cursor.execute("SELECT * FROM debts WHERE id = ?", (debt_id,))
+    cursor.execute("SELECT * FROM debts WHERE id = ?", (int(debt_id),))
     row = cursor.fetchone()
     conn.close()
     if row:
-        return dict(row) if isinstance(row, sqlite3.Row) else {
-            "id": row[0], "debt_name": row[1], "debt_category": row[2], 
-            "total_principal": row[3], "outstanding_principal": row[4], 
-            "interest_rate": row[5], "monthly_emi": row[6], "tenure_months": row[7], 
-            "start_date": row[8], "family_id": row[9], "created_at": row[10]
-        }
+        return dict(row)
     return None
+
+def update_debt(debt_id: int, debt_name: str, debt_category: str, total_principal: float, outstanding_principal: float, interest_rate: float, monthly_emi: float, tenure_months: int, start_date: str, family_id: int) -> bool:
+    conn = get_connection()
+    cursor = conn.cursor()
+    fam_id = int(family_id) if family_id else 1
+    cursor.execute("""
+        UPDATE debts 
+        SET debt_name=?, debt_category=?, total_principal=?, outstanding_principal=?, interest_rate=?, monthly_emi=?, tenure_months=?, start_date=?
+        WHERE id=? AND family_id=?
+    """, (debt_name, debt_category, total_principal, outstanding_principal, interest_rate, monthly_emi, tenure_months, start_date, int(debt_id), fam_id))
+    conn.commit()
+    rows_affected = cursor.rowcount
+    conn.close()
+    return rows_affected > 0
+
+def delete_debt(debt_id: int, family_id: int) -> bool:
+    conn = get_connection()
+    cursor = conn.cursor()
+    fam_id = int(family_id) if family_id else 1
+    cursor.execute("DELETE FROM debt_payments WHERE debt_id = ? AND family_id = ?", (int(debt_id), fam_id))
+    cursor.execute("DELETE FROM debts WHERE id = ? AND family_id = ?", (int(debt_id), fam_id))
+    conn.commit()
+    rows_affected = cursor.rowcount
+    conn.close()
+    return rows_affected > 0
+
 
 def add_debt_payment(debt_id: int, payment_date: str, principal_paid: float, interest_paid: float, family_id: int) -> bool:
     conn = get_connection()
