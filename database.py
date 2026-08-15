@@ -959,11 +959,12 @@ def get_surge_categories(fy: str, username: Optional[str] = None, view_mode: str
 def set_category_budget(fy: str, category: str, monthly_limit: float, annual_limit: float, family_id: int = 1):
     conn = get_connection()
     cursor = conn.cursor()
-    cursor.execute("DELETE FROM budgets WHERE financial_year = ? AND category = ? AND family_id = ?", (fy, category, int(family_id)))
+    fam_id = int(family_id) if family_id else 1
+    cursor.execute("DELETE FROM budgets WHERE financial_year = ? AND category = ? AND family_id = ?", (fy, category, fam_id))
     cursor.execute("""
         INSERT INTO budgets (financial_year, category, monthly_limit, annual_limit, family_id)
         VALUES (?, ?, ?, ?, ?)
-    """, (fy, category, monthly_limit, annual_limit, int(family_id)))
+    """, (fy, category, monthly_limit, annual_limit, fam_id))
     conn.commit()
     conn.close()
 
