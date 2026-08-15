@@ -1252,9 +1252,6 @@ else:
             </div>
             """, unsafe_allow_html=True)
 
-            suggested_base_df = get_suggested_budgets(fy=target_fy_clean, username=current_user["username"], view_mode=view_mode, family_id=user_family_id)
-            total_hist_avg_monthly = float(suggested_base_df["hist_monthly_avg"].sum())
-
             # Calculate the sum of user-entered categories (excluding auto-calculated Investments)
             other_cats = [c for c in EXPENSE_CATEGORIES if c != "Insurance & Investments"]
             current_entered_sum = sum([float(st.session_state.get("budget_dict", {}).get(c, 0.0)) for c in other_cats])
@@ -1262,6 +1259,15 @@ else:
             # Fallback if empty
             if current_entered_sum == 0:
                 current_entered_sum = max(50000.0, float(round(total_hist_avg_monthly, -3))) if total_hist_avg_monthly > 0 else 75000.0
+                
+            def autosave_all_budgets():
+                t_others = sum([float(st.session_state["budget_dict"].get(c, 0.0)) for c in other_cats])
+                st.session_state["budget_dict"]["Insurance & Investments"] = max(0.0, float(monthly_income_input - t_others))
+                records = [
+                    {"category": c, "monthly_limit": val, "annual_limit": val * 12.0}
+                    for c, val in st.session_state["budget_dict"].items()
+                ]
+                batch_set_category_budgets(target_fy_clean, records, family_id=user_family_id)
 
             t_col_inc, t_col1, t_col2, t_col3 = st.columns([1.5, 2, 1.2, 1.2])
             with t_col_inc:
@@ -1286,6 +1292,7 @@ else:
                 scale_factor = target_monthly_input / current_entered_sum
                 for c in other_cats:
                     st.session_state["budget_dict"][c] = round(float(st.session_state["budget_dict"][c]) * scale_factor, 2)
+                autosave_all_budgets()
                 st.rerun()
 
             with t_col2:
@@ -1320,7 +1327,8 @@ else:
                     if c != "Insurance & Investments":
                         val = round(float(r["hist_monthly_avg"]), 2)
                         st.session_state["budget_dict"][c] = val
-                st.success("⚡ Filled all category limits with past monthly averages!")
+                autosave_all_budgets()
+                st.success("⚡ Filled all category limits with past monthly averages and Auto-Saved!")
                 st.rerun()
 
             if btn_apply_prop:
@@ -1332,7 +1340,8 @@ else:
                         st.session_state["budget_dict"][c] = round(float(monthly_income_input * 0.20), 2)
                     else:
                         st.session_state["budget_dict"][c] = round(float(r["suggested_monthly"]), 2)
-                st.success(f"🎯 Auto-allocated! Set Investments to 20% ({format_inr(monthly_income_input * 0.20)}) and distributed the remaining 80% to expenses.")
+                autosave_all_budgets()
+                st.success(f"🎯 Auto-allocated and Auto-Saved! Set Investments to 20% ({format_inr(monthly_income_input * 0.20)}) and distributed the remaining 80% to expenses.")
                 st.rerun()
 
             # ------------------------------------------------
@@ -1359,9 +1368,11 @@ else:
                     b_minus5p = st.button("➖ 5%", key=f"sub_5p_{cat}", help=f"Decrease {cat} budget by 5%")
                     if b_minus1k:
                         st.session_state["budget_dict"][cat] = max(0.0, round(current_val - 1000.0, 2))
+                        autosave_all_budgets()
                         st.rerun()
                     if b_minus5p:
                         st.session_state["budget_dict"][cat] = max(0.0, round(current_val * 0.95, 2))
+                        autosave_all_budgets()
                         st.rerun()
 
                 with cat_col3:
@@ -1373,16 +1384,21 @@ else:
                         key=f"input_m_{cat}",
                         label_visibility="collapsed"
                     )
-                    st.session_state["budget_dict"][cat] = round(new_val, 2)
+                    if new_val != st.session_state["budget_dict"][cat]:
+                        st.session_state["budget_dict"][cat] = round(new_val, 2)
+                        autosave_all_budgets()
+                        st.rerun()
 
                 with cat_col4:
                     b_plus1k = st.button("➕ ₹1k", key=f"add_1k_{cat}", help=f"Increase {cat} budget by ₹1,000")
                     b_plus5p = st.button("➕ 5%", key=f"add_5p_{cat}", help=f"Increase {cat} budget by 5%")
                     if b_plus1k:
                         st.session_state["budget_dict"][cat] = round(current_val + 1000.0, 2)
+                        autosave_all_budgets()
                         st.rerun()
                     if b_plus5p:
                         st.session_state["budget_dict"][cat] = round(current_val * 1.05, 2)
+                        autosave_all_budgets()
                         st.rerun()
 
                 with cat_col5:
@@ -1433,15 +1449,8 @@ else:
                 st.metric("📅 Total Annual Budget Cap", format_inr(total_allocated_monthly * 12.0))
 
             st.markdown("<br>", unsafe_allow_html=True)
-
-            if st.button("💾 Save All Configured Category Budgets to Database", type="primary", use_container_width=True):
-                records_to_save = [
-                    {"category": c, "monthly_limit": val, "annual_limit": val * 12.0}
-                    for c, val in st.session_state["budget_dict"].items()
-                ]
-                saved_n = batch_set_category_budgets(target_fy_clean, records_to_save, family_id=user_family_id)
-                st.success(f"🎉 Successfully saved **{saved_n}** category budget target(s) for **{target_fy_clean}**!")
-                st.rerun()
+            
+            st.success("✅ **Auto-Save Enabled**: All changes you make above are instantly saved to the database.")
 
             # ------------------------------------------------
             # SECTION 3: BUDGET PERFORMANCE & UTILIZATION DASHBOARD
