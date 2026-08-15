@@ -2246,7 +2246,6 @@ else:
                                     <div style="font-size: 0.85rem; color: #94a3b8;">Outstanding</div>
                                 </div>
                             </div>
-                            
                             <div style="margin-bottom: 15px;">
                                 <div style="display: flex; justify-content: space-between; font-size: 0.8rem; margin-bottom: 4px;">
                                     <span style="color: #64748b;">Principal Paid: {paid_pct:.1f}%</span>
