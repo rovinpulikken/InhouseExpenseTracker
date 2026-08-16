@@ -15,7 +15,7 @@ def simulate_debt_payoff(debts_df: pd.DataFrame, strategy: str, total_monthly_bu
                 'id': row.get('id', 0),
                 'name': row['debt_name'],
                 'balance': float(row['outstanding_principal']),
-                'apr': float(row['interest_rate_percent']),
+                'apr': float(row['interest_rate']),
                 'emi': float(row['monthly_emi'])
             })
             
