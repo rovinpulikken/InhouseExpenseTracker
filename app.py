@@ -85,7 +85,9 @@ from database import (
     add_debt_payment,
     get_debt_payments,
     update_debt,
-    delete_debt
+    delete_debt,
+    record_portfolio_snapshot,
+    get_portfolio_snapshots_deltas
 )
 from cpi_data import (
     get_cpi_df,
@@ -1934,6 +1936,29 @@ else:
 
                 st.markdown("<br>", unsafe_allow_html=True)
                 
+                # Portfolio Snapshot Deltas
+                deltas = get_portfolio_snapshots_deltas(user_family_id, tot_current)
+                
+                st.markdown("#### ⏳ Historical Growth (vs Live Market)")
+                dh1, dh2, dh3, dh4 = st.columns(4)
+                
+                def format_delta(d):
+                    val = d["value"]
+                    pct = d["percent"]
+                    prefix = "+" if val >= 0 else ""
+                    return f"{prefix}{format_inr_short(val)} ({prefix}{pct:.2f}%)"
+                
+                with dh1:
+                    st.metric("Since Last Sync", "", delta=format_delta(deltas["previous_sync"]), delta_color="normal" if deltas["previous_sync"]["value"] >= 0 else "inverse")
+                with dh2:
+                    st.metric("7-Day Change", "", delta=format_delta(deltas["weekly"]), delta_color="normal" if deltas["weekly"]["value"] >= 0 else "inverse")
+                with dh3:
+                    st.metric("30-Day Change", "", delta=format_delta(deltas["monthly"]), delta_color="normal" if deltas["monthly"]["value"] >= 0 else "inverse")
+                with dh4:
+                    st.metric("1-Year Change", "", delta=format_delta(deltas["yearly"]), delta_color="normal" if deltas["yearly"]["value"] >= 0 else "inverse")
+
+                st.markdown("<br>", unsafe_allow_html=True)
+                
                 # Live Market Refresh
                 head_c1, head_c2 = st.columns([3, 1])
                 with head_c1:
@@ -1943,6 +1968,11 @@ else:
                         with st.spinner("Fetching latest NAVs from AMFI & Market APIs..."):
                             updated_df = live_market_tracker.update_portfolio_live_prices(holdings_df.copy())
                             update_investments_df(updated_df)
+                            
+                            # Record snapshot of the new total value
+                            new_tot = float(updated_df["current_value"].sum())
+                            record_portfolio_snapshot(user_family_id, new_tot)
+                            
                         st.success("✅ Portfolio synced with live market data!")
                         st.rerun()
 

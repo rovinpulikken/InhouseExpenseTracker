@@ -337,6 +337,15 @@ def init_db():
         )
     """)
 
+    # 8. Portfolio Snapshots Table
+    cursor.execute("""
+        CREATE TABLE IF NOT EXISTS portfolio_snapshots (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            family_id INTEGER NOT NULL,
+            snapshot_time TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+            total_value REAL NOT NULL
+        )
+    """)
     
     # Seed default admin if users table is empty
     cursor.execute("SELECT COUNT(*) FROM users")
@@ -1568,3 +1577,84 @@ def get_debt_payments(debt_id: int) -> pd.DataFrame:
     """, conn, params=(debt_id,))
     conn.close()
     return df
+
+# ----------------------------------------------------
+# PORTFOLIO SNAPSHOTS
+# ----------------------------------------------------
+
+def record_portfolio_snapshot(family_id: int, total_value: float) -> bool:
+    conn = get_connection()
+    cursor = conn.cursor()
+    cursor.execute("""
+        INSERT INTO portfolio_snapshots (family_id, total_value, snapshot_time)
+        VALUES (?, ?, CURRENT_TIMESTAMP)
+    """, (int(family_id), float(total_value)))
+    conn.commit()
+    conn.close()
+    return True
+
+def get_portfolio_snapshots_deltas(family_id: int, current_value: float) -> Dict[str, Dict[str, float]]:
+    conn = get_connection()
+    fam_id = int(family_id)
+    
+    # Get all snapshots for the family ordered by time descending
+    df = pd.read_sql_query("""
+        SELECT snapshot_time, total_value 
+        FROM portfolio_snapshots 
+        WHERE family_id = ? 
+        ORDER BY snapshot_time DESC
+    """, conn, params=(fam_id,))
+    conn.close()
+    
+    deltas = {
+        "previous_sync": {"value": 0.0, "percent": 0.0},
+        "weekly": {"value": 0.0, "percent": 0.0},
+        "monthly": {"value": 0.0, "percent": 0.0},
+        "yearly": {"value": 0.0, "percent": 0.0},
+    }
+    
+    if df.empty:
+        return deltas
+        
+    df['snapshot_time'] = pd.to_datetime(df['snapshot_time'])
+    now = datetime.datetime.now()
+    
+    def calculate_delta(past_value: float) -> Dict[str, float]:
+        if past_value == 0:
+            return {"value": current_value, "percent": 100.0 if current_value > 0 else 0.0}
+        diff = current_value - past_value
+        return {"value": diff, "percent": (diff / past_value) * 100.0}
+        
+    # Previous Sync (most recent snapshot before current execution context if it exists, or just the very last one)
+    # The last snapshot might just be the one we JUST took. 
+    # But wait, we should find the one *before* the current sync if possible.
+    # We will just take the first row as previous sync if it's older than 1 minute, otherwise the second row.
+    prev_sync_val = None
+    for _, row in df.iterrows():
+        if (now - row['snapshot_time']).total_seconds() > 60:
+            prev_sync_val = row['total_value']
+            break
+    if prev_sync_val is None and len(df) > 1:
+        prev_sync_val = df.iloc[1]['total_value']
+    
+    if prev_sync_val is not None:
+        deltas["previous_sync"] = calculate_delta(prev_sync_val)
+        
+    # Weekly (closest to 7 days ago, but strictly <= 7 days ago or nearest)
+    target_weekly = now - datetime.timedelta(days=7)
+    target_monthly = now - datetime.timedelta(days=30)
+    target_yearly = now - datetime.timedelta(days=365)
+    
+    def get_closest_value_before(target_date):
+        # Filter for dates older than target_date
+        older_df = df[df['snapshot_time'] <= target_date]
+        if not older_df.empty:
+            return older_df.iloc[0]['total_value']
+        # If no older date exists, take the oldest one we have
+        return df.iloc[-1]['total_value']
+        
+    deltas["weekly"] = calculate_delta(get_closest_value_before(target_weekly))
+    deltas["monthly"] = calculate_delta(get_closest_value_before(target_monthly))
+    deltas["yearly"] = calculate_delta(get_closest_value_before(target_yearly))
+    
+    return deltas

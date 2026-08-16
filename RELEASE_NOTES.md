@@ -9,6 +9,8 @@
 - **Feature**: Added an interactive override field for the inflation rate to let users model "what-if" projection scenarios.
 
 ## Newly Added Requirements
+- Added Portfolio Sync History to track historical portfolio growth over multiple time frames (Since Last Sync, Weekly, Monthly, Yearly).
+- Implemented `portfolio_snapshots` table to automatically record total portfolio valuation when the user syncs live prices.
 - Populated the `sector_segment` database column using Mutual Fund category metadata retrieved from the AMFI lookup tool.
 - Added "Personal Expense Predictor" sub-tab under Inflation & CPI Analytics to project future expenses based on a dynamically calculated personalized inflation rate, weighted by the user's historical category spending.
 - Added a toggle option in the "Investment & Wealth Planner" to explicitly use the "Networth" (Current Portfolio Valuation) from the Active Investments tab or allow the user to manually override it.
