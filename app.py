@@ -2394,8 +2394,12 @@ else:
                     cur_risk = current_user.get("risk_tolerance", "Moderate")
                     new_risk = st.selectbox("Risk Tolerance (Wealth Planner)", risk_opts, index=risk_opts.index(cur_risk) if cur_risk in risk_opts else 1)
                 
+                st.markdown("#### 4. AI & Integrations")
+                new_gemini_key = st.text_input("Gemini API Key (Required for AI Financial Health Report)", value=current_user.get("gemini_api_key", ""), type="password")
+                
                 if st.form_submit_button("💾 Save Profile", type="primary", use_container_width=True):
                     profile_data = {
+                        "gemini_api_key": new_gemini_key,
                         "full_name": new_name,
                         "age": new_age,
                         "sex": new_sex,
