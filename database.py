@@ -1588,14 +1588,14 @@ def record_portfolio_snapshot(family_id: int, total_value: float) -> bool:
     cursor.execute("""
         INSERT INTO portfolio_snapshots (family_id, total_value, snapshot_time)
         VALUES (?, ?, CURRENT_TIMESTAMP)
-    """, (int(family_id), float(total_value)))
+    """, (int(family_id) if family_id else 1, float(total_value)))
     conn.commit()
     conn.close()
     return True
 
 def get_portfolio_snapshots_deltas(family_id: int, current_value: float) -> Dict[str, Dict[str, float]]:
     conn = get_connection()
-    fam_id = int(family_id)
+    fam_id = int(family_id) if family_id else 1
     
     # Get all snapshots for the family ordered by time descending
     df = pd.read_sql_query("""
