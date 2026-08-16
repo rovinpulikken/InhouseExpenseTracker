@@ -347,6 +347,18 @@ def init_db():
         )
     """)
     
+    cursor.execute("""
+        CREATE TABLE IF NOT EXISTS savings_goals (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            family_id INTEGER NOT NULL DEFAULT 1,
+            goal_name TEXT NOT NULL,
+            target_amount REAL NOT NULL,
+            current_saved REAL NOT NULL DEFAULT 0.0,
+            target_date DATE,
+            monthly_contribution REAL NOT NULL DEFAULT 0.0,
+            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+        )
+    """)
     # Seed default admin if users table is empty
     cursor.execute("SELECT COUNT(*) FROM users")
     user_cnt = cursor.fetchone()[0]
@@ -1658,3 +1670,54 @@ def get_portfolio_snapshots_deltas(family_id: int, current_value: float) -> Dict
     deltas["yearly"] = calculate_delta(get_closest_value_before(target_yearly))
     
     return deltas
+
+# ==========================================
+# SAVINGS GOALS FUNCTIONS
+# ==========================================
+
+def add_savings_goal(family_id: int, goal_name: str, target_amount: float, target_date: str, monthly_contribution: float) -> bool:
+    conn = get_connection()
+    cursor = conn.cursor()
+    fam_id = int(family_id) if family_id else 1
+    cursor.execute("""
+        INSERT INTO savings_goals (family_id, goal_name, target_amount, target_date, monthly_contribution)
+        VALUES (?, ?, ?, ?, ?)
+    """, (fam_id, goal_name, float(target_amount), target_date, float(monthly_contribution)))
+    conn.commit()
+    conn.close()
+    return True
+
+def get_savings_goals(family_id: int) -> pd.DataFrame:
+    conn = get_connection()
+    fam_id = int(family_id) if family_id else 1
+    df = pd.read_sql_query("""
+        SELECT * FROM savings_goals 
+        WHERE family_id = ? 
+        ORDER BY created_at ASC
+    """, conn, params=(fam_id,))
+    conn.close()
+    return df
+
+def delete_savings_goal(goal_id: int, family_id: int) -> bool:
+    conn = get_connection()
+    cursor = conn.cursor()
+    fam_id = int(family_id) if family_id else 1
+    cursor.execute("DELETE FROM savings_goals WHERE id = ? AND family_id = ?", (int(goal_id), fam_id))
+    rows_affected = cursor.rowcount
+    conn.commit()
+    conn.close()
+    return rows_affected > 0
+
+def add_goal_contribution(goal_id: int, family_id: int, amount: float) -> bool:
+    conn = get_connection()
+    cursor = conn.cursor()
+    fam_id = int(family_id) if family_id else 1
+    cursor.execute("""
+        UPDATE savings_goals 
+        SET current_saved = current_saved + ?
+        WHERE id = ? AND family_id = ?
+    """, (float(amount), int(goal_id), fam_id))
+    rows_affected = cursor.rowcount
+    conn.commit()
+    conn.close()
+    return rows_affected > 0

@@ -86,8 +86,11 @@ from database import (
     get_debt_payments,
     update_debt,
     delete_debt,
-    record_portfolio_snapshot,
-    get_portfolio_snapshots_deltas
+    get_portfolio_snapshots_deltas,
+    add_savings_goal,
+    get_savings_goals,
+    delete_savings_goal,
+    add_goal_contribution
 )
 from debt_simulator import simulate_debt_payoff
 from cpi_data import (
@@ -1458,6 +1461,56 @@ else:
 
             if monthly_income_input < total_others:
                  st.warning("⚠️ Warning: Your allocated expenses exceed your expected monthly income. Please reduce your category limits.")
+
+            # ------------------------------------------------
+            # 🎯 GOAL-BASED SAVINGS
+            # ------------------------------------------------
+            st.markdown("### 🎯 Goal-Based Savings")
+            st.caption("Track your cash savings against specific life goals (e.g. Child's Education, Downpayment).")
+            
+            savings_goals_df = get_savings_goals(family_id=user_family_id)
+            if not savings_goals_df.empty:
+                for _, goal in savings_goals_df.iterrows():
+                    pct = min(1.0, goal["current_saved"] / goal["target_amount"]) if goal["target_amount"] > 0 else 0.0
+                    st.markdown(f"**{goal['goal_name']}**")
+                    st.progress(pct)
+                    sc1, sc2, sc3 = st.columns([2, 1, 1])
+                    with sc1:
+                        st.caption(f"Saved: {format_inr_short(goal['current_saved'])} / {format_inr_short(goal['target_amount'])} ({int(pct*100)}%)")
+                    with sc2:
+                        if goal["target_date"]:
+                            st.caption(f"Target: {goal['target_date']}")
+                    with sc3:
+                        with st.popover("⚙️ Manage Goal"):
+                            c_amt = st.number_input("Log Contribution", min_value=0.0, step=1000.0, key=f"contrib_{goal['id']}")
+                            if st.button("➕ Add Funds", key=f"btn_add_{goal['id']}"):
+                                if add_goal_contribution(goal['id'], user_family_id, c_amt):
+                                    st.success(f"Added {format_inr(c_amt)} to {goal['goal_name']}")
+                                    st.rerun()
+                            st.markdown("---")
+                            if st.button("🚨 Delete Goal", key=f"btn_del_{goal['id']}"):
+                                if delete_savings_goal(goal['id'], user_family_id):
+                                    st.success("Deleted goal!")
+                                    st.rerun()
+                    st.markdown("<br>", unsafe_allow_html=True)
+            else:
+                st.info("No savings goals active. Create one below!")
+                
+            with st.expander("➕ Create New Savings Goal"):
+                with st.form("new_goal_form"):
+                    g_name = st.text_input("Goal Name (e.g., Child's Education)")
+                    g_target = st.number_input("Target Amount", min_value=0.0, step=10000.0)
+                    g_date = st.date_input("Target Date")
+                    g_contrib = st.number_input("Planned Monthly Contribution (Optional)", min_value=0.0, step=1000.0)
+                    if st.form_submit_button("Create Goal"):
+                        if g_name and g_target > 0:
+                            if add_savings_goal(user_family_id, g_name, g_target, str(g_date), g_contrib):
+                                st.success("Goal created!")
+                                st.rerun()
+                        else:
+                            st.error("Please provide a valid name and target amount.")
+            
+            st.markdown("<hr style='margin: 10px 0; border-color: #334155;'>", unsafe_allow_html=True)
 
             # ------------------------------------------------
             # LIVE BUDGET SUMMARY BAR & SAVE BUTTON

@@ -9,6 +9,7 @@
 - **Feature**: Added an interactive override field for the inflation rate to let users model "what-if" projection scenarios.
 
 ## Newly Added Requirements
+- Added **Goal-Based Savings** tracking under the Budget Planner for creating specific savings targets (e.g. Child's Education) with progress bars and contribution logging.
 - Added **Debt Payoff Simulator** to the "Debt & Liabilities" tab with Snowflake simulation logic for Avalanche and Snowball payoff strategies.
 - Added Portfolio Sync History to track historical portfolio growth over multiple time frames (Since Last Sync, Weekly, Monthly, Yearly).
 - Implemented `portfolio_snapshots` table to automatically record total portfolio valuation when the user syncs live prices.
