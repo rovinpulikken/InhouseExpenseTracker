@@ -89,6 +89,7 @@ from database import (
     record_portfolio_snapshot,
     get_portfolio_snapshots_deltas
 )
+from debt_simulator import simulate_debt_payoff
 from cpi_data import (
     get_cpi_df,
     calculate_cpi_inflation,
@@ -2341,6 +2342,48 @@ else:
                                             st.rerun()
                                         else:
                                             st.error("Failed to delete.")
+
+                st.markdown("---")
+                st.markdown("### 🔮 Debt Payoff Simulator")
+                st.caption("Simulate your payoff timeline and see how much interest you can save.")
+                
+                sim_col1, sim_col2 = st.columns(2)
+                with sim_col1:
+                    strategy = st.selectbox(
+                        "Payoff Strategy",
+                        ["Avalanche (Highest Interest First) - mathematically optimal", 
+                         "Snowball (Lowest Balance First) - psychological wins"]
+                    )
+                with sim_col2:
+                    sim_budget = st.number_input(
+                        "Total Monthly Debt Budget",
+                        value=float(total_monthly_emi),
+                        min_value=float(total_monthly_emi),
+                        step=1000.0,
+                        help="Must be at least the sum of all your minimum EMIs."
+                    )
+                
+                if st.button("Run Simulation 🚀"):
+                    total_months, total_interest, timeline_df = simulate_debt_payoff(debts_df, strategy, sim_budget)
+                    
+                    st.markdown("#### Simulation Results")
+                    r_col1, r_col2, r_col3 = st.columns(3)
+                    r_col1.metric("Months to Debt Free", f"{total_months} months")
+                    r_col2.metric("Total Interest Paid", format_inr_short(total_interest))
+                    
+                    from datetime import datetime
+                    from dateutil.relativedelta import relativedelta
+                    payoff_date = datetime.now() + relativedelta(months=total_months)
+                    r_col3.metric("Payoff Date", payoff_date.strftime("%b %Y"))
+                    
+                    fig = px.area(
+                        timeline_df, 
+                        x="Month", 
+                        y="Total Balance", 
+                        title=f"{strategy.split()[0]} Payoff Trajectory",
+                        color_discrete_sequence=["#ef4444"]
+                    )
+                    st.plotly_chart(fig, use_container_width=True)
 
             else:
                 st.info("No active debts. You are debt-free! 🎉")
