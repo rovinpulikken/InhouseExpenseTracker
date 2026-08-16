@@ -91,8 +91,7 @@ from cpi_data import (
     get_cpi_df,
     calculate_cpi_inflation,
     calculate_personal_inflation_rate,
-    CPI_CATEGORY_INFLATION,
-    get_cpi_rate
+    CPI_CATEGORY_INFLATION
 )
 from ai_advisor import generate_financial_health_report
 from categorizer import auto_categorize_description, auto_categorize_records
