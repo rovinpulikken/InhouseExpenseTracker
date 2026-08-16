@@ -93,7 +93,6 @@ from cpi_data import (
     calculate_personal_inflation_rate,
     CPI_CATEGORY_INFLATION
 )
-from ai_advisor import generate_financial_health_report
 from categorizer import auto_categorize_description, auto_categorize_records
 
 # Page Config
@@ -567,31 +566,6 @@ else:
             
         st.info("👈 Use the **Sidebar Navigation** to manage transactions, view insights, or plan your wealth.")
 
-        st.markdown("---")
-        st.markdown("### 🤖 AI Financial Health & Retirement Summary")
-        st.write("Get a personalized assessment of your financial health, including retirement tracking and saving habits, powered by Gemini AI.")
-        
-        if st.button("Generate AI Report", type="primary", use_container_width=True):
-            if "gemini_api_key" not in current_user or not current_user["gemini_api_key"]:
-                st.warning("⚠️ You must set your Gemini API Key in the Settings tab to use this feature.")
-            else:
-                with st.spinner("Analyzing your financial macro-data..."):
-                    top_cats_dict = top_cats.to_dict() if not df_curr_month.empty else {}
-                    report = generate_financial_health_report(
-                        age=user_age,
-                        total_net_worth=total_active_investments,
-                        total_debt=total_active_debts,
-                        avg_monthly_spend=avg_monthly_spent,
-                        curr_monthly_spend=total_curr_month,
-                        top_categories=top_cats_dict,
-                        api_key=current_user["gemini_api_key"]
-                    )
-                    st.session_state["ai_financial_report"] = report
-                    
-        if "ai_financial_report" in st.session_state:
-            st.markdown("<div class='dashboard-box'>", unsafe_allow_html=True)
-            st.markdown(st.session_state["ai_financial_report"])
-            st.markdown("</div>", unsafe_allow_html=True)
     # ----------------------------------------------------
     # 💸 TRANSACTIONS & ENTRY
     # ----------------------------------------------------
@@ -2394,12 +2368,8 @@ else:
                     cur_risk = current_user.get("risk_tolerance", "Moderate")
                     new_risk = st.selectbox("Risk Tolerance (Wealth Planner)", risk_opts, index=risk_opts.index(cur_risk) if cur_risk in risk_opts else 1)
                 
-                st.markdown("#### 4. AI & Integrations")
-                new_gemini_key = st.text_input("Gemini API Key (Required for AI Financial Health Report)", value=current_user.get("gemini_api_key", ""), type="password")
-                
                 if st.form_submit_button("💾 Save Profile", type="primary", use_container_width=True):
                     profile_data = {
-                        "gemini_api_key": new_gemini_key,
                         "full_name": new_name,
                         "age": new_age,
                         "sex": new_sex,
