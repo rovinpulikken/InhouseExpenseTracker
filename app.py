@@ -86,6 +86,7 @@ from database import (
     get_debt_payments,
     update_debt,
     delete_debt,
+    record_portfolio_snapshot,
     get_portfolio_snapshots_deltas,
     add_savings_goal,
     get_savings_goals,
