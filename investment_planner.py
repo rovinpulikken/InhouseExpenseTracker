@@ -568,6 +568,9 @@ ADVISORY_DISCLAIMER = (
 COUNTRY_UNIVERSE: Dict[str, Dict[str, List[Dict[str, str]]]] = {
     "India": {
         "equity": [
+            {"name": "Reliance Industries Ltd", "type": "Stock", "rationale": "Largest Indian conglomerate with deep moats in energy, retail, and telecom.", "risk": "Moderate"},
+            {"name": "HDFC Bank Ltd", "type": "Stock", "rationale": "Leading private sector bank with consistent growth and strong asset quality.", "risk": "Moderate"},
+            {"name": "Tata Motors Ltd", "type": "Stock", "rationale": "Market leader in the Indian EV transition with strong legacy CV business.", "risk": "High"},
             {"name": "Nifty 50 Index Fund", "type": "MF", "rationale": "Broad large-cap exposure, lowest cost, tracks India's top 50 companies.", "risk": "Moderate"},
             {"name": "Mirae Asset Flexi Cap Fund", "type": "MF", "rationale": "Actively managed across large/mid/small caps, consistently top-rated.", "risk": "Moderate-High"},
             {"name": "Parag Parikh Flexi Cap Fund", "type": "MF", "rationale": "Diversified across India + global equities; defensive moat.", "risk": "Moderate"},
@@ -591,6 +594,9 @@ COUNTRY_UNIVERSE: Dict[str, Dict[str, List[Dict[str, str]]]] = {
     },
     "United States": {
         "equity": [
+            {"name": "Microsoft Corp (MSFT)", "type": "Stock", "rationale": "Enterprise software and cloud computing powerhouse with strong AI integration.", "risk": "Moderate"},
+            {"name": "Apple Inc (AAPL)", "type": "Stock", "rationale": "Consumer tech giant with massive free cash flow and sticky ecosystem.", "risk": "Moderate"},
+            {"name": "NVIDIA Corp (NVDA)", "type": "Stock", "rationale": "Undisputed leader in AI hardware and data center GPUs.", "risk": "High"},
             {"name": "Vanguard S&P 500 ETF (VOO)", "type": "ETF", "rationale": "Cheapest S&P 500 tracker (0.03% expense ratio), essential core holding.", "risk": "Moderate"},
             {"name": "iShares Russell 2000 ETF (IWM)", "type": "ETF", "rationale": "Small-cap diversification for higher growth potential over long horizon.", "risk": "High"},
             {"name": "Invesco QQQ (NASDAQ-100)", "type": "ETF", "rationale": "Top 100 NASDAQ tech giants; high-growth but concentrated sector risk.", "risk": "High"},
