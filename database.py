@@ -135,21 +135,41 @@ def get_connection():
     turso_url, turso_token = get_turso_credentials()
 
     if turso_url and turso_token:
+        # --- Attempt 1: libsql_experimental (native, fastest) ---
         try:
             import libsql_experimental as libsql
             conn = libsql.connect(database=turso_url, auth_token=turso_token)
             return conn
-        except (ImportError, ModuleNotFoundError) as e:
-            _turso_fallback_reason = f"Turso driver not installed: {e}"
+        except (ImportError, ModuleNotFoundError):
+            pass  # driver not installed — try HTTP fallback below
         except Exception as e:
+            # Connection error (auth, network, etc.)
+            _turso_fallback_reason = str(e)
+
+        # --- Attempt 2: libsql_client (HTTP mode, works on Streamlit Cloud) ---
+        if not _turso_fallback_reason:
             try:
                 import libsql_client
                 http_url = turso_url.replace("libsql://", "https://") if turso_url.startswith("libsql://") else turso_url
                 client = libsql_client.create_client_sync(url=http_url, auth_token=turso_token)
                 return LibSQLConnectionWrapper(client)
+            except (ImportError, ModuleNotFoundError) as e:
+                _turso_fallback_reason = f"Turso driver not installed: {e}"
+            except Exception as e:
+                _turso_fallback_reason = str(e)
+        else:
+            # libsql_experimental had a connection error; still try HTTP mode
+            try:
+                import libsql_client
+                http_url = turso_url.replace("libsql://", "https://") if turso_url.startswith("libsql://") else turso_url
+                client = libsql_client.create_client_sync(url=http_url, auth_token=turso_token)
+                _turso_fallback_reason = None  # HTTP succeeded
+                return LibSQLConnectionWrapper(client)
             except Exception as e2:
-                _turso_fallback_reason = f"{e} / {e2}"
-                print(f"Turso connection fallback to SQLite: {_turso_fallback_reason}")
+                _turso_fallback_reason = f"{_turso_fallback_reason} / HTTP fallback: {e2}"
+
+        if _turso_fallback_reason:
+            print(f"Turso connection failed, falling back to SQLite: {_turso_fallback_reason}")
 
     os.makedirs(DB_DIR, exist_ok=True)
     conn = sqlite3.connect(DB_PATH)

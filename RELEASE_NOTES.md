@@ -1,5 +1,9 @@
 # Release Notes
 
+## v1.5.1 (2026-08-17) — Hotfix
+### Fixed
+- **Turso connection fallback bug (critical)**: `get_connection()` was silently falling back to local SQLite on Streamlit Cloud because an `ImportError` on `libsql_experimental` was stored as the failure reason and blocked the `libsql_client` (HTTP mode) fallback from running. Fixed the fallback chain so `ImportError` on `libsql_experimental` is treated as "driver not installed, try next" and `libsql_client` is always attempted before giving up and falling back to SQLite. This caused the Streamlit Cloud deployment to read/write an empty local database instead of the Turso cloud DB, making all user data appear missing.
+
 ## v1.5.0 (2026-08-17)
 ### Added
 - **Smart Investment Advisor (new sub-tab)**: Added a new "💡 Smart Advisor & Tax Planner" 5th sub-tab under Wealth & Planning with three inner tabs:
