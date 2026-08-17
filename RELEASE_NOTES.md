@@ -1,5 +1,10 @@
 # Release Notes
 
+## v1.5.2 (2026-08-17)
+### Added
+- **Full Portfolio Review**: The Smart Advisor now loops through all equity holdings in the portfolio (removed the previous 5-stock limit) to provide live Buy/Hold/Sell trend signals and strength scores for the entire equity portfolio.
+- **Sector & Segment Analysis**: Integrated a portfolio-wide sector breakdown into the Smart Advisor. The Gemini AI engine now analyzes the current macroeconomic environment against the user's specific sector allocation and outputs actionable segment recommendations (which sectors to Buy, Hold, or Sell).
+- **Progress UI Update**: Added a warning to the loading spinner in the Rebalance tab indicating that fetching live signals for all holdings may take 30-45 seconds.
 ## v1.5.1 (2026-08-17) — Hotfix
 ### Fixed
 - **Turso connection fallback bug (critical)**: `get_connection()` was silently falling back to local SQLite on Streamlit Cloud because an `ImportError` on `libsql_experimental` was stored as the failure reason and blocked the `libsql_client` (HTTP mode) fallback from running. Fixed the fallback chain so `ImportError` on `libsql_experimental` is treated as "driver not installed, try next" and `libsql_client` is always attempted before giving up and falling back to SQLite. This caused the Streamlit Cloud deployment to read/write an empty local database instead of the Turso cloud DB, making all user data appear missing.

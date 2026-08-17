@@ -2551,7 +2551,7 @@ else:
                     run_rebal = st.button("🔍 Analyse & Rebalance", type="primary", use_container_width=True, key="run_rebal_btn")
 
                 if run_rebal:
-                    with st.spinner("Fetching live trend signals and computing drift..."):
+                    with st.spinner("Fetching live trend signals for ALL holdings and computing drift (this may take up to 30-45 seconds)..."):
                         rebal_result = generate_rebalance_advice(inv_df, rebal_risk, rebal_country)
 
                     if "error" in rebal_result:
@@ -2628,6 +2628,21 @@ else:
                                     </div>
                                     <div style="color:#38bdf8; font-size:0.87rem; margin:6px 0 4px;">🏛️ {rec.get('instrument','')}</div>
                                     <div style="color:#94a3b8; font-size:0.82rem;">{rec.get('rationale','')}</div>
+                                </div>
+                                """, unsafe_allow_html=True)
+
+                        # Sector Analysis
+                        if rebal_result.get("sector_analysis"):
+                            st.markdown("##### 🏢 Sector & Segment Analysis")
+                            for sec in rebal_result["sector_analysis"]:
+                                action_color = {"Buy": "#10b981", "Sell": "#f59e0b", "Hold": "#64748b"}.get(sec.get("action_type", ""), "#64748b")
+                                st.markdown(f"""
+                                <div style="background:#1e293b; border-radius:8px; border-left:4px solid {action_color}; padding:12px 16px; margin-bottom:8px;">
+                                    <div style="display:flex; justify-content:space-between; align-items:center;">
+                                        <div style="font-weight:600; color:#f1f5f9;">{sec.get('sector','')}</div>
+                                        <span style="background:{action_color}22; color:{action_color}; padding:3px 10px; border-radius:4px; font-size:0.82rem; font-weight:600;">{sec.get('action_type','')}</span>
+                                    </div>
+                                    <div style="color:#94a3b8; font-size:0.82rem; margin-top:6px;">{sec.get('rationale','')}</div>
                                 </div>
                                 """, unsafe_allow_html=True)
 

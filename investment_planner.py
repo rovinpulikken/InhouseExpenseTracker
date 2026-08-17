@@ -771,10 +771,10 @@ def generate_rebalance_advice(
             action, detail = "Hold — On Track", "Within +/-7% of target. No immediate action needed."
         drift_table.append({"Asset Class": cls, "Current %": actual, "Target %": tgt, "Drift %": drift, "Action": action, "Detail": detail})
 
-    # yfinance trend signals for top equity holdings
+    # yfinance trend signals for ALL equity holdings
     trend_signals = []
     equity_hold = holdings_df[holdings_df["broad_class"] == "Equity"]
-    for _, row in equity_hold.head(5).iterrows():
+    for _, row in equity_hold.iterrows():
         ticker_candidate = str(row.get("description", "") or row.get("resolved_name", "")).strip()
         if ticker_candidate and len(ticker_candidate) >= 2:
             yf_ticker = ticker_candidate.upper()
@@ -784,8 +784,13 @@ def generate_rebalance_advice(
             sig["holding_name"] = ticker_candidate
             trend_signals.append(sig)
 
-    # Gemini rebalancing narrative
+    # Sector breakdown
+    sector_alloc = holdings_df.groupby("sector_segment")["current_value"].sum()
+    sector_pct = ((sector_alloc / total_value) * 100.0).round(2).to_dict()
+
+    # Gemini rebalancing & sector narrative
     recommendations = []
+    sector_analysis = []
     try:
         from google import genai
         api_key = os.environ.get("GEMINI_API_KEY")
@@ -802,17 +807,21 @@ def generate_rebalance_advice(
             Risk Profile: {risk_profile}, Country: {country}, Portfolio: Rs{total_value:,.0f}
             Current Allocation: {current_pct}
             Target: {target}
+            Sector Breakdown: {sector_pct}
             Drifts: {[d for d in drift_table if d['Action'] != 'Hold — On Track']}
-            Equity Trend Signals: {trend_signals[:3]}
+            Equity Trend Signals: {trend_signals}
 
-            Recommend specific {country} instruments. JSON: key 'recommendations' = list of
-            {{title, action_type (Buy/Sell/Hold), instrument, rationale}}. Max 5 items.
+            Recommend specific {country} instruments. 
+            Output strictly as JSON with keys:
+            - 'recommendations': list of {{title, action_type (Buy/Sell/Hold), instrument, rationale}}. Max 5 items.
+            - 'sector_analysis': list of {{sector, action_type (Buy/Sell/Hold), rationale}}. Max 4 items based on current macro environment.
             """
             resp = client.models.generate_content(model="gemini-2.5-flash", contents=prompt)
             if resp and resp.text:
                 import json
                 parsed = json.loads(resp.text.replace("```json", "").replace("```", "").strip())
                 recommendations = parsed.get("recommendations", [])
+                sector_analysis = parsed.get("sector_analysis", [])
     except Exception:
         pass
 
@@ -828,7 +837,8 @@ def generate_rebalance_advice(
                 recommendations.append({"title": f"Reduce {row['Asset Class']} exposure", "action_type": "Sell/Switch", "instrument": "Existing overweight holdings", "rationale": row["Detail"]})
 
     return {"current_allocation": current_pct, "target_allocation": target, "total_value": total_value,
-            "drift_table": drift_table, "recommendations": recommendations, "trend_signals": trend_signals, "risk_profile": risk_profile}
+            "drift_table": drift_table, "recommendations": recommendations, "trend_signals": trend_signals, 
+            "sector_analysis": sector_analysis, "risk_profile": risk_profile}
 
 
 def generate_new_money_advice(
