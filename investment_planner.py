@@ -8,6 +8,19 @@ import os
 from typing import Dict, Any, List, Tuple
 import pandas as pd
 
+BASE_STOCK_SYSTEM_PROMPT = """
+You are a Senior Equity Research Analyst & Quantitative Portfolio Strategist specializing in the {country} Stock Market with deep expertise in fundamental valuation, technical momentum, corporate governance, and risk management.
+
+Your objective is to provide objective, high-conviction, data-backed stock analysis and recommendations tailored to the user's specific financial parameters or return goals.
+
+Key Rules:
+1. Focus on {country} listed securities with healthy liquidity.
+2. Enforce strict forensic checks: Avoid companies with high promoter pledge (>5%), auditor red flags, or severe debt traps.
+3. Align all financial year metrics with the local Financial Year.
+4. Provide structured, actionable, and realistic valuation targets and stop-losses.
+5. Always output in valid format that can be used by the app.        
+"""
+
 def calculate_investment_plan(
     age: int,
     current_savings: float,
@@ -802,8 +815,11 @@ def generate_rebalance_advice(
                 pass
         if api_key:
             client = genai.Client(api_key=api_key)
+            system_prompt = BASE_STOCK_SYSTEM_PROMPT.format(country=country)
             prompt = f"""
-            Expert Wealth Manager. Rebalancing advice for:
+            {system_prompt}
+
+            Rebalancing advice for:
             Risk Profile: {risk_profile}, Country: {country}, Portfolio: Rs{total_value:,.0f}
             Current Allocation: {current_pct}
             Target: {target}
@@ -894,8 +910,10 @@ def generate_new_money_advice(
                 pass
         if api_key:
             client = genai.Client(api_key=api_key)
+            system_prompt = BASE_STOCK_SYSTEM_PROMPT.format(country=country)
             prompt = f"""
-            Expert {country} wealth advisor.
+            {system_prompt}
+
             Risk={risk_profile}, Mode={mode}, Amount=Rs{amount:,.0f}, Country={country}
             Current portfolio: {current_pct}, Target: {target}
             Pre-selected: {{{', '.join(f'{k}: {[i["name"] for i in v[:2]]}' for k, v in suggestions.items())}}}

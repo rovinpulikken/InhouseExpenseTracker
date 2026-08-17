@@ -1,5 +1,8 @@
 # Release Notes
 
+## v1.5.3 (2026-08-17)
+### Added
+- **Strict Stock Recommendation Logic**: Injected a highly structured, forensic-focused AI system prompt (`BASE_STOCK_SYSTEM_PROMPT`) into the Smart Advisor's core engine. The AI now acts as a Senior Equity Research Analyst & Quantitative Portfolio Strategist, enforcing strict forensic checks (avoiding high promoter pledge, auditor red flags, debt traps) and providing realistic valuation targets before making any recommendations for rebalancing or new money deployment. The prompt automatically adapts to the user's selected country.
 ## v1.5.2 (2026-08-17)
 ### Added
 - **Full Portfolio Review**: The Smart Advisor now loops through all equity holdings in the portfolio (removed the previous 5-stock limit) to provide live Buy/Hold/Sell trend signals and strength scores for the entire equity portfolio.
