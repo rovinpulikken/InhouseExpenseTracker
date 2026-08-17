@@ -1,5 +1,17 @@
 # Release Notes
 
+## v1.5.0 (2026-08-17)
+### Added
+- **Smart Investment Advisor (new sub-tab)**: Added a new "💡 Smart Advisor & Tax Planner" 5th sub-tab under Wealth & Planning with three inner tabs:
+  - **🔄 Rebalance My Portfolio**: Computes current vs target asset allocation by risk profile (Conservative / Moderate / Aggressive), shows drift table with Buy/Hold/Reduce actions, fetches live yfinance trend signals (20-SMA vs 50-SMA Golden/Death Cross, 200-SMA position, 30-day momentum) for equity holdings, and generates Gemini AI-powered rebalancing recommendations with specific fund names.
+  - **💰 Deploy New Money**: Accepts a lump-sum or SIP amount and generates categorised instrument suggestions (Equity, Debt, Gold, Tax-Saving) personalised by risk profile and country (India / US / UAE / UK / SG / Other), with Gemini AI narrative summary. Country selection is editable inline and synced to user profile.
+  - **🧾 Income & Tax Planner**: Full income source manager (add/delete with frequency normalisation to monthly equivalent), income breakdown bar chart, and a country-aware tax liability calculator supporting India Old/New Regime (FY 2024-25 slabs, 87A rebate, 80C auto-detection from holdings, LTCG 12.5% check), US Single Filer (2024 brackets), and UAE/No-Tax countries. Surfaces personalised tax-saving opportunities.
+- **Income Sources DB Table**: New `income_sources` table auto-migrated in `init_db()`. CRUD functions: `add_income_source`, `get_income_sources_df`, `delete_income_source`, `update_income_source`. Supports family/private visibility scope.
+- **Advisory Disclaimer Banner**: Prominent amber warning on the new advisor tab clarifying all recommendations are informational only based on technical indicators.
+- **`fetch_stock_trend_signal()`**: New function in `investment_planner.py` using yfinance to compute SMA crossover, long-term trend, and 30-day momentum signals. Returns signal label (Strong Buy / Buy / Hold / Reduce / Caution) with strength score 0–100.
+- **`generate_rebalance_advice()`**, **`generate_new_money_advice()`**, **`compute_tax_liability()`**: Three new advisory engine functions with Gemini AI primary and rule-based fallback.
+- **Country-editable inline**: Country of residence can now be updated directly from within the Advisor tab (synced to user profile) instead of only from Settings.
+
 ## v1.4.1 (2026-08-17)
 ### Added
 - **Turso DB Health Check**: Added `check_turso_connection()` in `database.py` that probes the remote Turso database with a live `SELECT 1` query at startup (once per session).

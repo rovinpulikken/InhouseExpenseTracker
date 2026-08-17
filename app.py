@@ -1297,11 +1297,12 @@ else:
         with wp_tab1:
             st.subheader(f"🎯 Budgeting, Investments & Active Portfolio ({selected_fy})")
             
-        subtab_budget, subtab_invest, subtab_holdings, subtab_debts = st.tabs([
+        subtab_budget, subtab_invest, subtab_holdings, subtab_debts, subtab_advisor = st.tabs([
             "🎯 Category Budget Planner & Performance",
             "📈 Investment & Wealth Portfolio Planner",
             "💼 Active Investment Portfolio & Holdings Tracker",
-            "🏦 Debt & Liabilities Management"
+            "🏦 Debt & Liabilities Management",
+            "💡 Smart Advisor & Tax Planner"
         ])
 
         target_fy_clean = selected_fy if selected_fy != "All FYs" else (all_fys[0] if all_fys else "FY 2024-25")
@@ -2482,6 +2483,400 @@ else:
 
             else:
                 st.info("No active debts. You are debt-free! 🎉")
+
+        # ============================================================
+        # SUB-TAB 5: 💡 SMART ADVISOR & TAX PLANNER
+        # ============================================================
+        with subtab_advisor:
+            from investment_planner import (
+                generate_rebalance_advice, generate_new_money_advice,
+                compute_tax_liability, ADVISORY_DISCLAIMER
+            )
+            from database import (
+                add_income_source, get_income_sources_df,
+                delete_income_source, INCOME_TYPES, FREQUENCY_OPTIONS
+            )
+
+            st.markdown("### 💡 Smart Investment Advisor & Tax Planner")
+            st.caption("AI-powered portfolio rebalancing, new money deployment suggestions, and country-aware tax planning — all in one place.")
+
+            # Advisory disclaimer banner
+            st.markdown(f"""
+            <div style="background: linear-gradient(135deg, #1e293b, #0f172a); border: 1px solid #f59e0b;
+                        border-left: 4px solid #f59e0b; border-radius: 8px; padding: 12px 16px; margin-bottom: 16px;">
+                <div style="color: #fbbf24; font-size: 0.85rem; font-weight: 600;">⚠️ Advisory Notice</div>
+                <div style="color: #94a3b8; font-size: 0.82rem; margin-top: 4px;">
+                    All recommendations are for informational purposes only. Trend signals use historical
+                    SMA crossovers &amp; momentum. Consult a SEBI-registered advisor before investing.
+                </div>
+            </div>
+            """, unsafe_allow_html=True)
+
+            adv_tab1, adv_tab2, adv_tab3 = st.tabs([
+                "🔄 Rebalance My Portfolio",
+                "💰 Deploy New Money",
+                "🧾 Income & Tax Planner"
+            ])
+
+            # --------------------------------
+            # INNER TAB 1: REBALANCE
+            # --------------------------------
+            with adv_tab1:
+                st.markdown("#### 🔄 Portfolio Rebalance Advisor")
+                st.caption("Compare your current allocation vs your target, spot drift, and get specific rebalancing actions.")
+
+                rc1, rc2, rc3 = st.columns([1, 1.5, 1.5])
+                with rc1:
+                    rebal_risk = st.selectbox(
+                        "Risk Profile", ["Conservative", "Moderate", "Aggressive"],
+                        index=["Conservative", "Moderate", "Aggressive"].index(
+                            current_user.get("risk_tolerance", "Moderate") if current_user.get("risk_tolerance") in ["Conservative", "Moderate", "Aggressive"] else "Moderate"
+                        ), key="rebal_risk_sel"
+                    )
+                with rc2:
+                    country_opts = ["India", "United States", "UAE", "United Kingdom", "Singapore", "Other"]
+                    cur_country = current_user.get("country", "India")
+                    rebal_country = st.selectbox(
+                        "Country of Residence", country_opts,
+                        index=country_opts.index(cur_country) if cur_country in country_opts else 0,
+                        key="rebal_country_sel",
+                        help="Your country determines which specific funds & instruments are suggested."
+                    )
+                    if rebal_country != cur_country:
+                        from database import update_user_profile
+                        update_user_profile(current_user["username"], country=rebal_country)
+                        st.session_state["user"]["country"] = rebal_country
+                with rc3:
+                    st.write("")
+                    run_rebal = st.button("🔍 Analyse & Rebalance", type="primary", use_container_width=True, key="run_rebal_btn")
+
+                if run_rebal:
+                    with st.spinner("Fetching live trend signals and computing drift..."):
+                        rebal_result = generate_rebalance_advice(inv_df, rebal_risk, rebal_country)
+
+                    if "error" in rebal_result:
+                        st.warning(f"⚠️ {rebal_result['error']}")
+                    else:
+                        st.success(f"✅ Analysis complete for portfolio of **{format_inr(rebal_result['total_value'])}**")
+
+                        # Allocation Comparison Charts
+                        alloc_c1, alloc_c2 = st.columns(2)
+                        with alloc_c1:
+                            st.markdown("##### 📊 Current Allocation")
+                            curr_pie = pd.DataFrame(list(rebal_result["current_allocation"].items()), columns=["Asset", "%"])
+                            fig_curr = px.pie(curr_pie, names="Asset", values="%", hole=0.4,
+                                             color_discrete_sequence=px.colors.qualitative.Set3)
+                            fig_curr.update_layout(margin=dict(l=0,r=0,t=10,b=10), height=240, showlegend=True)
+                            st.plotly_chart(fig_curr, use_container_width=True)
+                        with alloc_c2:
+                            st.markdown("##### 🎯 Target Allocation")
+                            tgt_pie = pd.DataFrame(list(rebal_result["target_allocation"].items()), columns=["Asset", "%"])
+                            fig_tgt = px.pie(tgt_pie, names="Asset", values="%", hole=0.4,
+                                            color_discrete_sequence=px.colors.qualitative.Pastel)
+                            fig_tgt.update_layout(margin=dict(l=0,r=0,t=10,b=10), height=240, showlegend=True)
+                            st.plotly_chart(fig_tgt, use_container_width=True)
+
+                        # Drift Table
+                        st.markdown("##### 📋 Allocation Drift & Actions")
+                        drift_df = pd.DataFrame(rebal_result["drift_table"])
+                        if not drift_df.empty:
+                            def drift_row_style(row):
+                                if "Reduce" in str(row.get("Action", "")):
+                                    return ["background-color: rgba(239,68,68,0.15)"] * len(row)
+                                elif "Buy" in str(row.get("Action", "")):
+                                    return ["background-color: rgba(16,185,129,0.15)"] * len(row)
+                                return [""] * len(row)
+                            st.dataframe(
+                                drift_df[["Asset Class", "Current %", "Target %", "Drift %", "Action"]],
+                                use_container_width=True, hide_index=True
+                            )
+
+                        # Trend Signals for Equity Holdings
+                        if rebal_result.get("trend_signals"):
+                            st.markdown("##### 📈 Live Trend Signals (Equity Holdings)")
+                            for sig in rebal_result["trend_signals"]:
+                                signal_color = {"Strong Buy": "#10b981", "Buy": "#34d399", "Hold": "#94a3b8", "Reduce": "#f59e0b", "Caution": "#ef4444"}.get(sig.get("signal", ""), "#94a3b8")
+                                sig_col1, sig_col2, sig_col3, sig_col4 = st.columns([2, 1.5, 1, 3])
+                                with sig_col1:
+                                    st.markdown(f"**{sig.get('holding_name', sig.get('ticker', '?'))}**")
+                                    st.caption(f"Ticker: `{sig.get('ticker', 'N/A')}`")
+                                with sig_col2:
+                                    price = sig.get("current_price")
+                                    st.metric("Current Price", f"₹{price:,.2f}" if price else "N/A",
+                                              delta=f"{sig.get('momentum_pct', 0):+.1f}% (30d)" if sig.get("momentum_pct") is not None else None)
+                                with sig_col3:
+                                    st.markdown(f"""<div style="background:{signal_color}22; border:1px solid {signal_color};
+                                        border-radius:6px; padding:8px 12px; text-align:center;
+                                        font-weight:700; color:{signal_color}; font-size:0.9rem;">
+                                        {sig.get('signal', 'N/A')}<br>
+                                        <span style="font-size:0.75rem; font-weight:400;">{sig.get('strength_score', 50)}/100</span>
+                                        </div>""", unsafe_allow_html=True)
+                                with sig_col4:
+                                    st.caption(sig.get("details", ""))
+                                st.markdown("<hr style='margin:6px 0; border-color:#334155;'>", unsafe_allow_html=True)
+
+                        # Recommendations
+                        if rebal_result.get("recommendations"):
+                            st.markdown("##### 🤖 AI Rebalancing Recommendations")
+                            for rec in rebal_result["recommendations"]:
+                                action_color = {"Buy": "#10b981", "Sell/Switch": "#f59e0b", "Hold": "#64748b"}.get(rec.get("action_type", ""), "#64748b")
+                                st.markdown(f"""
+                                <div style="background:#1e293b; border-radius:8px; border-left:4px solid {action_color}; padding:12px 16px; margin-bottom:8px;">
+                                    <div style="display:flex; justify-content:space-between; align-items:center;">
+                                        <div style="font-weight:600; color:#f1f5f9;">{rec.get('title','')}</div>
+                                        <span style="background:{action_color}22; color:{action_color}; padding:3px 10px; border-radius:4px; font-size:0.82rem; font-weight:600;">{rec.get('action_type','')}</span>
+                                    </div>
+                                    <div style="color:#38bdf8; font-size:0.87rem; margin:6px 0 4px;">🏛️ {rec.get('instrument','')}</div>
+                                    <div style="color:#94a3b8; font-size:0.82rem;">{rec.get('rationale','')}</div>
+                                </div>
+                                """, unsafe_allow_html=True)
+
+            # --------------------------------
+            # INNER TAB 2: DEPLOY NEW MONEY
+            # --------------------------------
+            with adv_tab2:
+                st.markdown("#### 💰 New Money Investment Advisor")
+                st.caption("Tell us how much you have to invest and we'll suggest the best instruments based on your risk profile and country.")
+
+                nm_c1, nm_c2, nm_c3, nm_c4 = st.columns([1.5, 1.2, 1.2, 1.2])
+                with nm_c1:
+                    nm_amount = st.number_input("💵 Amount to Invest (₹)", min_value=1000.0, value=50000.0, step=5000.0, key="nm_amount")
+                with nm_c2:
+                    nm_mode = st.selectbox("Investment Mode", ["Lump Sum", "SIP (Monthly)"], key="nm_mode")
+                with nm_c3:
+                    nm_risk = st.selectbox("Risk Profile", ["Conservative", "Moderate", "Aggressive"],
+                        index=["Conservative", "Moderate", "Aggressive"].index(
+                            current_user.get("risk_tolerance", "Moderate") if current_user.get("risk_tolerance") in ["Conservative", "Moderate", "Aggressive"] else "Moderate"
+                        ), key="nm_risk_sel"
+                    )
+                with nm_c4:
+                    country_opts2 = ["India", "United States", "UAE", "United Kingdom", "Singapore", "Other"]
+                    cur_country2 = st.session_state.get("user", {}).get("country", "India")
+                    nm_country = st.selectbox("Country", country_opts2,
+                        index=country_opts2.index(cur_country2) if cur_country2 in country_opts2 else 0,
+                        key="nm_country_sel"
+                    )
+                    if nm_country != cur_country2:
+                        from database import update_user_profile
+                        update_user_profile(current_user["username"], country=nm_country)
+                        st.session_state["user"]["country"] = nm_country
+
+                if st.button("💡 Get Investment Suggestions", type="primary", use_container_width=True, key="nm_suggest_btn"):
+                    with st.spinner("Generating personalised suggestions..."):
+                        mode_str = "SIP" if "SIP" in nm_mode else "Lump Sum"
+                        nm_result = generate_new_money_advice(inv_df, nm_risk, nm_amount, mode_str, nm_country)
+
+                    st.success("🎉 Suggestions Ready!")
+                    st.info(nm_result.get("summary", ""))
+
+                    st.markdown("---")
+                    st.markdown("##### 🗂️ Instrument Suggestions by Asset Class")
+
+                    CLASS_ICONS = {"equity": "🚀", "debt": "🛡️", "gold": "🪙", "tax_saving": "🏛️"}
+                    CLASS_COLORS = {"equity": "#38bdf8", "debt": "#34d399", "gold": "#fbbf24", "tax_saving": "#a78bfa"}
+
+                    for cls_key, instruments in nm_result.get("suggestions", {}).items():
+                        if not instruments:
+                            continue
+                        icon = CLASS_ICONS.get(cls_key, "📌")
+                        color = CLASS_COLORS.get(cls_key, "#94a3b8")
+                        alloc_amt = nm_result.get("allocation_split", {}).get(cls_key.capitalize(), 0)
+                        st.markdown(f"""
+                        <div style="display:flex; align-items:center; gap:10px; margin: 14px 0 6px;">
+                            <span style="font-size:1.2rem;">{icon}</span>
+                            <span style="font-size:1rem; font-weight:700; color:{color};">{cls_key.replace('_', ' ').title()}</span>
+                            <span style="background:{color}22; color:{color}; padding:2px 10px; border-radius:12px; font-size:0.82rem;">
+                                Suggested: {'₹'+f'{alloc_amt:,.0f}' if alloc_amt else 'N/A'}
+                            </span>
+                        </div>
+                        """, unsafe_allow_html=True)
+                        for instr in instruments:
+                            risk_color = {"Low": "#34d399", "Very Low": "#10b981", "Moderate": "#fbbf24", "Moderate-High": "#f97316", "High": "#ef4444"}.get(instr.get("risk", ""), "#94a3b8")
+                            st.markdown(f"""
+                            <div style="background:#1e293b; border-radius:8px; border-left:3px solid {color}; padding:10px 14px; margin-bottom:6px; display:flex; justify-content:space-between; align-items:flex-start; flex-wrap:wrap; gap:8px;">
+                                <div style="flex:1; min-width:200px;">
+                                    <div style="font-weight:600; color:#f1f5f9; font-size:0.92rem;">{instr.get('name','')}</div>
+                                    <div style="color:#64748b; font-size:0.78rem; margin-top:2px;">{instr.get('type','')} &nbsp;•&nbsp;
+                                        <span style="color:{risk_color};">Risk: {instr.get('risk','N/A')}</span>
+                                    </div>
+                                    <div style="color:#94a3b8; font-size:0.82rem; margin-top:6px;">{instr.get('rationale','')}</div>
+                                </div>
+                                <div style="text-align:right; min-width:130px;">
+                                    <div style="font-weight:700; color:{color}; font-size:0.92rem;">{instr.get('suggested_amount','')}</div>
+                                </div>
+                            </div>
+                            """, unsafe_allow_html=True)
+
+            # --------------------------------
+            # INNER TAB 3: INCOME & TAX PLANNER
+            # --------------------------------
+            with adv_tab3:
+                st.markdown("#### 🧾 Income Manager & Tax Planner")
+                st.caption("Log all income sources, compute your annual tax liability, and discover personalized tax-saving opportunities.")
+
+                # --- INCOME SOURCES SECTION ---
+                st.markdown("##### 💵 Income Sources")
+                income_df = get_income_sources_df(
+                    username=current_user["username"],
+                    family_id=user_family_id,
+                    view_mode=view_mode
+                )
+
+                total_monthly_income = float(income_df["monthly_equivalent"].sum()) if not income_df.empty else 0.0
+                total_annual_income = total_monthly_income * 12.0
+
+                if not income_df.empty:
+                    ki1, ki2, ki3 = st.columns(3)
+                    ki1.metric("📅 Total Monthly Income", format_inr(total_monthly_income))
+                    ki2.metric("📆 Total Annual Income", format_inr(total_annual_income))
+                    ki3.metric("🔢 Income Sources", str(len(income_df)))
+
+                    # Income breakdown bar chart
+                    if len(income_df) > 1:
+                        fig_inc = px.bar(
+                            income_df.sort_values("monthly_equivalent", ascending=True),
+                            x="monthly_equivalent", y="source_name", orientation="h",
+                            color="income_type",
+                            labels={"monthly_equivalent": "Monthly Equivalent (₹)", "source_name": "Source"},
+                            title="Income Sources Breakdown (Monthly Equivalent)",
+                            height=max(200, len(income_df) * 40)
+                        )
+                        fig_inc.update_layout(paper_bgcolor="#1e293b", plot_bgcolor="#1e293b", margin=dict(l=20,r=20,t=40,b=20))
+                        st.plotly_chart(fig_inc, use_container_width=True)
+
+                    # Income sources table with delete buttons
+                    st.markdown("**Your Income Sources:**")
+                    for _, irow in income_df.iterrows():
+                        ic1, ic2, ic3, ic4, ic5 = st.columns([2.5, 1.5, 1.2, 1.2, 0.8])
+                        with ic1:
+                            st.markdown(f"**{irow['source_name']}**")
+                            st.caption(f"{irow['income_type']}")
+                        with ic2:
+                            st.markdown(f"**{format_inr(float(irow['amount']))}** {irow['frequency']}")
+                        with ic3:
+                            st.caption(f"Monthly: {format_inr(float(irow['monthly_equivalent']))}")
+                        with ic4:
+                            st.caption(f"Annual: {format_inr(float(irow['monthly_equivalent']) * 12)}")
+                        with ic5:
+                            if st.button("🗑️", key=f"del_inc_{irow['id']}", help="Delete this income source"):
+                                if delete_income_source(int(irow["id"]), user_family_id):
+                                    st.success("Deleted!")
+                                    st.rerun()
+                        st.markdown("<hr style='margin:4px 0; border-color:#1e293b;'>", unsafe_allow_html=True)
+                else:
+                    st.info("No income sources yet. Add your first one below!")
+
+                # Add income source form
+                with st.expander("➕ Add New Income Source"):
+                    with st.form("add_income_form"):
+                        ai1, ai2, ai3 = st.columns(3)
+                        with ai1:
+                            i_name = st.text_input("Source Name", placeholder="e.g. Primary Salary, Rental - Flat B")
+                            i_type = st.selectbox("Income Type", INCOME_TYPES)
+                        with ai2:
+                            i_amount = st.number_input("Amount (₹)", min_value=0.0, step=1000.0)
+                            i_freq = st.selectbox("Frequency", FREQUENCY_OPTIONS)
+                        with ai3:
+                            i_from = st.date_input("Effective From", value=datetime.date.today())
+                            i_notes = st.text_input("Notes (Optional)", placeholder="e.g. Includes bonus")
+
+                        if st.form_submit_button("💾 Add Income Source", type="primary"):
+                            if i_name and i_amount > 0:
+                                new_inc_id = add_income_source(
+                                    username=current_user["username"],
+                                    family_id=user_family_id,
+                                    source_name=i_name,
+                                    income_type=i_type,
+                                    amount=i_amount,
+                                    frequency=i_freq,
+                                    effective_from=str(i_from),
+                                    notes=i_notes
+                                )
+                                if new_inc_id:
+                                    st.success(f"✅ Added income source: {i_name}")
+                                    st.rerun()
+                            else:
+                                st.error("Please provide a source name and amount.")
+
+                # --- TAX PLANNER SECTION ---
+                st.markdown("---")
+                st.markdown("##### 🏛️ Tax Liability Calculator")
+
+                tax_c1, tax_c2, tax_c3 = st.columns([1.5, 1.5, 1])
+                with tax_c1:
+                    tax_country_opts = ["India", "United States", "UAE", "United Kingdom", "Singapore", "Other"]
+                    tax_cur_country = st.session_state.get("user", {}).get("country", "India")
+                    tax_country = st.selectbox(
+                        "🌍 Country of Tax Residence", tax_country_opts,
+                        index=tax_country_opts.index(tax_cur_country) if tax_cur_country in tax_country_opts else 0,
+                        key="tax_country_sel"
+                    )
+                    if tax_country != tax_cur_country:
+                        from database import update_user_profile
+                        update_user_profile(current_user["username"], country=tax_country)
+                        st.session_state["user"]["country"] = tax_country
+
+                with tax_c2:
+                    if tax_country == "India":
+                        tax_regime = st.selectbox("📋 Tax Regime", ["New Regime", "Old Regime"], key="tax_regime_sel",
+                                                  help="New Regime (2024): Higher standard deduction of ₹75,000, simplified slabs, no 80C. Old Regime: ₹50,000 std deduction + 80C/80D deductions.")
+                    else:
+                        tax_regime = "N/A"
+                        st.info(f"Tax rules auto-applied for {tax_country}.")
+
+                with tax_c3:
+                    st.write("")
+                    run_tax = st.button("🧮 Calculate Tax Liability", type="primary", use_container_width=True, key="run_tax_btn")
+
+                if run_tax:
+                    if income_df.empty:
+                        st.warning("⚠️ No income sources found. Please add at least one income source above first.")
+                    else:
+                        with st.spinner("Computing tax liability..."):
+                            tax_result = compute_tax_liability(income_df, inv_df, tax_country, tax_regime)
+
+                        # Main Tax KPIs
+                        t1, t2, t3, t4 = st.columns(4)
+                        t1.metric("💰 Gross Annual Income", format_inr(tax_result["gross_annual_income"]))
+                        t2.metric("📊 Taxable Income", format_inr(tax_result.get("taxable_income", 0)))
+                        t3.metric("🏛️ Est. Annual Tax", format_inr(tax_result["estimated_tax"]),
+                                  delta=f"-{format_inr(tax_result.get('eighty_c_deduction', 0))} 80C Deduction" if tax_result.get("eighty_c_deduction") else None,
+                                  delta_color="off")
+                        t4.metric("📈 Effective Tax Rate", f"{tax_result['effective_rate_pct']:.1f}%")
+
+                        # India regime comparison
+                        if tax_country == "India":
+                            st.markdown(f"""
+                            <div style="background: linear-gradient(135deg, #1e293b, #0f172a); border-radius:10px; border:1px solid #334155; padding:14px 18px; margin:12px 0;">
+                                <div style="font-weight:700; color:#f1f5f9; margin-bottom:8px;">📋 Tax Regime: {tax_regime}</div>
+                                <div style="display:grid; grid-template-columns:1fr 1fr 1fr; gap:12px;">
+                                    <div><div style="color:#94a3b8; font-size:0.8rem;">Gross Income</div><div style="color:#38bdf8; font-weight:700;">{format_inr(tax_result['gross_annual_income'])}</div></div>
+                                    <div><div style="color:#94a3b8; font-size:0.8rem;">80C Deductions</div><div style="color:#34d399; font-weight:700;">{format_inr(tax_result.get('eighty_c_deduction', 0))}</div></div>
+                                    <div><div style="color:#94a3b8; font-size:0.8rem;">Taxable Income</div><div style="color:#fbbf24; font-weight:700;">{format_inr(tax_result['taxable_income'])}</div></div>
+                                </div>
+                            </div>
+                            """, unsafe_allow_html=True)
+
+                        # Income breakdown
+                        if tax_result.get("income_breakdown"):
+                            st.markdown("**📊 Income Breakdown:**")
+                            inc_bd_df = pd.DataFrame(tax_result["income_breakdown"])
+                            if not inc_bd_df.empty:
+                                inc_bd_df["annual"] = inc_bd_df["annual"].apply(format_inr)
+                                st.dataframe(inc_bd_df.rename(columns={"source": "Source", "type": "Type", "annual": "Annual Amount"}),
+                                             use_container_width=True, hide_index=True)
+
+                        # Savings opportunities
+                        if tax_result.get("savings_opportunities"):
+                            st.markdown("#### 💡 Tax Saving Opportunities")
+                            for opp in tax_result["savings_opportunities"]:
+                                st.markdown(f"""
+                                <div style="background:#1e293b; border-radius:8px; border-left:4px solid #a78bfa;
+                                            padding:12px 16px; margin-bottom:8px;">
+                                    <div style="font-weight:600; color:#a78bfa; font-size:0.9rem;">🏛️ {opp.get('opportunity','')}</div>
+                                    <div style="color:#94a3b8; font-size:0.83rem; margin-top:4px;">{opp.get('detail','')}</div>
+                                </div>
+                                """, unsafe_allow_html=True)
 
     # ----------------------------------------------------
     # ⚙️ SETTINGS & ADMIN

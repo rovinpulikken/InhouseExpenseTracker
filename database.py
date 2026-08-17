@@ -411,6 +411,24 @@ def init_db():
             created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
         )
     """)
+
+    # 9. Income Sources Table
+    cursor.execute("""
+        CREATE TABLE IF NOT EXISTS income_sources (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            username TEXT NOT NULL,
+            family_id INTEGER DEFAULT 1,
+            source_name TEXT NOT NULL,
+            income_type TEXT NOT NULL DEFAULT 'Salary',
+            amount REAL NOT NULL DEFAULT 0.0,
+            frequency TEXT NOT NULL DEFAULT 'Monthly',
+            effective_from DATE,
+            notes TEXT DEFAULT '',
+            visibility TEXT DEFAULT 'Family',
+            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+        )
+    """)
+
     # Seed default admin if users table is empty
     cursor.execute("SELECT COUNT(*) FROM users")
     user_cnt = cursor.fetchone()[0]
@@ -1722,6 +1740,139 @@ def get_portfolio_snapshots_deltas(family_id: int, current_value: float) -> Dict
     deltas["yearly"] = calculate_delta(get_closest_value_before(target_yearly))
     
     return deltas
+
+# ----------------------------------------------------
+# INCOME SOURCES CRUD
+# ----------------------------------------------------
+
+INCOME_TYPES = [
+    "Salary / Regular Employment",
+    "Business / Self-Employment",
+    "Freelance / Consulting",
+    "Rental Income",
+    "Dividends / Investment Income",
+    "Pension / Annuity",
+    "Capital Gains",
+    "Agricultural Income",
+    "Gifts / Inheritance",
+    "Other"
+]
+
+FREQUENCY_OPTIONS = ["Monthly", "Quarterly", "Half-Yearly", "Annual", "One-Time"]
+
+def _monthly_equivalent(amount: float, frequency: str) -> float:
+    """Normalise any income frequency to a monthly equivalent."""
+    freq_map = {
+        "Monthly": 1.0,
+        "Quarterly": 3.0,
+        "Half-Yearly": 6.0,
+        "Annual": 12.0,
+        "One-Time": 12.0  # spread over a year for planning purposes
+    }
+    divisor = freq_map.get(frequency, 1.0)
+    return round(amount / divisor, 2)
+
+def add_income_source(
+    username: str,
+    family_id: int,
+    source_name: str,
+    income_type: str,
+    amount: float,
+    frequency: str = "Monthly",
+    effective_from: Optional[str] = None,
+    notes: str = "",
+    visibility: str = "Family"
+) -> int:
+    """Insert a new income source row. Returns the new row id."""
+    conn = get_connection()
+    cursor = conn.cursor()
+    cursor.execute("""
+        INSERT INTO income_sources
+            (username, family_id, source_name, income_type, amount, frequency, effective_from, notes, visibility)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+    """, (username, family_id, source_name, income_type, float(amount),
+           frequency, effective_from, notes, visibility))
+    conn.commit()
+    new_id = cursor.lastrowid or 0
+    conn.close()
+    return int(new_id)
+
+def get_income_sources_df(
+    username: str,
+    family_id: Optional[int] = None,
+    view_mode: str = "Family"
+) -> pd.DataFrame:
+    """Fetch income sources as a DataFrame."""
+    conn = get_connection()
+    cursor = conn.cursor()
+    if view_mode == "Family" and family_id is not None:
+        cursor.execute("""
+            SELECT id, username, family_id, source_name, income_type, amount,
+                   frequency, effective_from, notes, visibility, created_at
+            FROM income_sources
+            WHERE family_id = ?
+            ORDER BY created_at DESC
+        """, (family_id,))
+    elif view_mode == "Private":
+        cursor.execute("""
+            SELECT id, username, family_id, source_name, income_type, amount,
+                   frequency, effective_from, notes, visibility, created_at
+            FROM income_sources
+            WHERE username = ?
+            ORDER BY created_at DESC
+        """, (username,))
+    else:  # All
+        cursor.execute("""
+            SELECT id, username, family_id, source_name, income_type, amount,
+                   frequency, effective_from, notes, visibility, created_at
+            FROM income_sources
+            WHERE family_id = ? OR username = ?
+            ORDER BY created_at DESC
+        """, (family_id, username))
+
+    rows = cursor.fetchall()
+    cols = ["id", "username", "family_id", "source_name", "income_type", "amount",
+            "frequency", "effective_from", "notes", "visibility", "created_at"]
+    conn.close()
+    if not rows:
+        return pd.DataFrame(columns=cols)
+    df = pd.DataFrame([dict(zip(cols, r)) for r in rows])
+    df["monthly_equivalent"] = df.apply(
+        lambda r: _monthly_equivalent(float(r["amount"]), r["frequency"]), axis=1
+    )
+    return df
+
+def delete_income_source(income_id: int, family_id: int) -> bool:
+    """Delete an income source by id."""
+    try:
+        conn = get_connection()
+        cursor = conn.cursor()
+        cursor.execute("DELETE FROM income_sources WHERE id = ? AND family_id = ?",
+                       (income_id, family_id))
+        conn.commit()
+        conn.close()
+        return True
+    except Exception:
+        return False
+
+def update_income_source(income_id: int, **kwargs) -> bool:
+    """Update selected fields on an income source row."""
+    allowed = {"source_name", "income_type", "amount", "frequency",
+               "effective_from", "notes", "visibility"}
+    fields = {k: v for k, v in kwargs.items() if k in allowed}
+    if not fields:
+        return False
+    try:
+        conn = get_connection()
+        cursor = conn.cursor()
+        set_clause = ", ".join(f"{k} = ?" for k in fields)
+        values = list(fields.values()) + [income_id]
+        cursor.execute(f"UPDATE income_sources SET {set_clause} WHERE id = ?", values)
+        conn.commit()
+        conn.close()
+        return True
+    except Exception:
+        return False
 
 # ==========================================
 # SAVINGS GOALS FUNCTIONS

@@ -538,3 +538,489 @@ def generate_ai_retirement_advisory(retirement_plan: Dict[str, Any], holdings_df
             "Maximize your EPF and PPF contributions as they provide tax-free compounding."
         ]
     }
+
+
+# ============================================================
+# SMART INVESTMENT ADVISOR — NEW FUNCTIONS
+# ============================================================
+
+ADVISORY_DISCLAIMER = (
+    "\u26a0\ufe0f **Advisory Disclaimer**: All recommendations are generated for informational purposes only "
+    "and do not constitute financial advice. Trend signals are based on historical price data and "
+    "technical indicators (SMA crossovers, momentum). Past performance is not a guarantee of "
+    "future returns. Please consult a SEBI-registered financial advisor before making investment decisions."
+)
+
+# Country-specific curated instrument universe
+COUNTRY_UNIVERSE: Dict[str, Dict[str, List[Dict[str, str]]]] = {
+    "India": {
+        "equity": [
+            {"name": "Nifty 50 Index Fund", "type": "MF", "rationale": "Broad large-cap exposure, lowest cost, tracks India's top 50 companies.", "risk": "Moderate"},
+            {"name": "Mirae Asset Flexi Cap Fund", "type": "MF", "rationale": "Actively managed across large/mid/small caps, consistently top-rated.", "risk": "Moderate-High"},
+            {"name": "Parag Parikh Flexi Cap Fund", "type": "MF", "rationale": "Diversified across India + global equities; defensive moat.", "risk": "Moderate"},
+            {"name": "HDFC Mid Cap Opportunities Fund", "type": "MF", "rationale": "Strong mid-cap exposure for aggressive investors with 5+ yr horizon.", "risk": "High"},
+            {"name": "Motilal Oswal Nasdaq 100 FOF", "type": "MF", "rationale": "US tech exposure via Indian MF wrapper; USD hedging opportunity.", "risk": "High"},
+        ],
+        "debt": [
+            {"name": "SBI Liquid Fund", "type": "MF", "rationale": "Safest parking for short-term funds, near-instant redemption, ~7% return.", "risk": "Low"},
+            {"name": "ICICI Pru Corporate Bond Fund", "type": "MF", "rationale": "AA+ rated corporate bonds, 2-3 yr horizon, better than FD post-tax.", "risk": "Low-Moderate"},
+            {"name": "Public Provident Fund (PPF)", "type": "Govt", "rationale": "Tax-free 7.1% return, backed by GoI, 15-yr lock-in. Best for 80C.", "risk": "Very Low"},
+            {"name": "EPF Voluntary Contribution (VPF)", "type": "Govt", "rationale": "8.15% tax-free return, 80C eligible — highest risk-free return in India.", "risk": "Very Low"},
+        ],
+        "gold": [
+            {"name": "Sovereign Gold Bond (SGB)", "type": "Govt", "rationale": "2.5% annual interest + gold price appreciation + capital gains exemption on maturity.", "risk": "Low-Moderate"},
+            {"name": "Nippon India Gold ETF", "type": "ETF", "rationale": "Liquid real-time gold exposure without physical storage risk.", "risk": "Moderate"},
+        ],
+        "tax_saving": [
+            {"name": "Mirae Asset ELSS Tax Saver", "type": "ELSS", "rationale": "80C deduction up to Rs1.5L, lowest 3-yr lock-in, equity upside.", "risk": "Moderate-High"},
+            {"name": "Axis Long Term Equity (ELSS)", "type": "ELSS", "rationale": "Consistent long-term performer, 80C eligible.", "risk": "Moderate-High"},
+        ]
+    },
+    "United States": {
+        "equity": [
+            {"name": "Vanguard S&P 500 ETF (VOO)", "type": "ETF", "rationale": "Cheapest S&P 500 tracker (0.03% expense ratio), essential core holding.", "risk": "Moderate"},
+            {"name": "iShares Russell 2000 ETF (IWM)", "type": "ETF", "rationale": "Small-cap diversification for higher growth potential over long horizon.", "risk": "High"},
+            {"name": "Invesco QQQ (NASDAQ-100)", "type": "ETF", "rationale": "Top 100 NASDAQ tech giants; high-growth but concentrated sector risk.", "risk": "High"},
+        ],
+        "debt": [
+            {"name": "Vanguard Total Bond Market ETF (BND)", "type": "ETF", "rationale": "Diversified US bond exposure, stability ballast for equity-heavy portfolios.", "risk": "Low"},
+            {"name": "iShares TIPS Bond ETF (TIP)", "type": "ETF", "rationale": "Inflation-protected US Treasury bonds.", "risk": "Low"},
+        ],
+        "gold": [
+            {"name": "SPDR Gold MiniShares ETF (GLDM)", "type": "ETF", "rationale": "Low-cost physical gold backed ETF, effective inflation hedge.", "risk": "Moderate"},
+        ],
+        "tax_saving": [
+            {"name": "Maximize 401(k) Contributions", "type": "Tax-Advantaged", "rationale": "Pre-tax contributions reduce W2 taxable income. $23,000 annual limit (2024).", "risk": "N/A"},
+            {"name": "Roth IRA Contribution", "type": "Tax-Advantaged", "rationale": "After-tax contributions grow tax-free. $7,000 limit (2024).", "risk": "N/A"},
+        ]
+    },
+    "UAE": {
+        "equity": [
+            {"name": "iShares MSCI World ETF (IWDA)", "type": "ETF", "rationale": "Diversified global equity across 23 developed markets.", "risk": "Moderate"},
+            {"name": "Vanguard FTSE All-World ETF (VWRA)", "type": "ETF", "rationale": "Most comprehensive global equity ETF for UAE-based investors.", "risk": "Moderate"},
+        ],
+        "debt": [
+            {"name": "iShares Global Aggregate Bond ETF (AGGG)", "type": "ETF", "rationale": "Global investment-grade bonds; stability buffer.", "risk": "Low"},
+        ],
+        "gold": [
+            {"name": "SPDR Gold Shares (GLD)", "type": "ETF", "rationale": "Standard international gold ETF; accessible from UAE.", "risk": "Moderate"},
+        ],
+        "tax_saving": [
+            {"name": "No Income Tax in UAE", "type": "Info", "rationale": "UAE has no personal income tax. Focus on NPS/PPF if NRI and plan DTAA implications.", "risk": "N/A"},
+        ]
+    }
+}
+
+# Target allocation by risk profile (% of total portfolio)
+TARGET_ALLOCATION: Dict[str, Dict[str, float]] = {
+    "Conservative": {"Equity": 30.0, "Debt": 55.0, "Gold": 10.0, "Other/Cash": 5.0},
+    "Moderate":     {"Equity": 55.0, "Debt": 30.0, "Gold": 10.0, "Other/Cash": 5.0},
+    "Aggressive":   {"Equity": 75.0, "Debt": 15.0, "Gold":  5.0, "Other/Cash": 5.0},
+}
+
+ASSET_CLASS_MAP = {
+    "Equity (Stocks)": "Equity",
+    "Mutual funds": "Equity",
+    "Structured funds": "Equity",
+    "Gold / Sovereign Gold Bonds (SGB)": "Gold",
+    "EPF": "Debt",
+    "PPF": "Debt",
+    "NSC (National Savings Certificate)": "Debt",
+    "KVP (Kisan Vikas Patra)": "Debt",
+    "Fixed Deposits / Recurring Deposits": "Debt",
+    "Startup investments": "Other/Cash",
+    "Real Estate": "Other/Cash",
+}
+
+
+def _map_asset_class(investment_type: str) -> str:
+    for key, cls in ASSET_CLASS_MAP.items():
+        if key.lower() in investment_type.lower():
+            return cls
+    return "Other/Cash"
+
+
+def _pct_to_inr(pct: float, total: float) -> str:
+    val = (pct / 100.0) * total
+    if val >= 10000000:
+        return f"Rs{val/10000000:.2f} Cr"
+    elif val >= 100000:
+        return f"Rs{val/100000:.2f} L"
+    return f"Rs{val:,.0f}"
+
+
+def fetch_stock_trend_signal(ticker: str, days: int = 210) -> Dict[str, Any]:
+    """
+    Fetches price history from yfinance and computes SMA crossover + momentum signals.
+    - 20-SMA vs 50-SMA: Golden Cross = bullish, Death Cross = bearish
+    - Price vs 200-SMA: long-term trend confirmation
+    - 30-day momentum: recent price change %
+    Returns: signal (Strong Buy/Buy/Hold/Reduce/Caution), strength_score (0-100), details.
+    """
+    try:
+        import yfinance as yf
+        from datetime import datetime, timedelta
+        end = datetime.now()
+        start = end - timedelta(days=max(days, 210))
+        data = yf.download(ticker, start=start.strftime("%Y-%m-%d"),
+                           end=end.strftime("%Y-%m-%d"), progress=False)
+        if data.empty or len(data) < 20:
+            return {"signal": "Insufficient Data", "strength_score": 50,
+                    "details": f"Not enough price history for {ticker}.", "ticker": ticker,
+                    "current_price": None, "momentum_pct": None}
+
+        close = data["Close"].squeeze()
+        current_price = float(close.iloc[-1])
+        sma20 = float(close.rolling(20).mean().iloc[-1]) if len(close) >= 20 else None
+        sma50 = float(close.rolling(50).mean().iloc[-1]) if len(close) >= 50 else None
+        sma200 = float(close.rolling(200).mean().iloc[-1]) if len(close) >= 200 else None
+        price_30d_ago = float(close.iloc[-30]) if len(close) >= 30 else float(close.iloc[0])
+        momentum_pct = ((current_price - price_30d_ago) / price_30d_ago) * 100.0 if price_30d_ago > 0 else 0.0
+
+        score = 50
+        signals = []
+
+        if sma20 and sma50:
+            if sma20 > sma50:
+                score += 20
+                signals.append(f"Golden Cross: 20-SMA ({sma20:.1f}) > 50-SMA ({sma50:.1f})")
+            else:
+                score -= 20
+                signals.append(f"Death Cross: 20-SMA ({sma20:.1f}) < 50-SMA ({sma50:.1f})")
+
+        if sma200:
+            if current_price > sma200:
+                score += 15
+                signals.append(f"Above 200-SMA ({sma200:.1f}) — long-term uptrend")
+            else:
+                score -= 15
+                signals.append(f"Below 200-SMA ({sma200:.1f}) — long-term downtrend")
+
+        if momentum_pct > 5:
+            score += 15
+            signals.append(f"Strong 30d momentum: +{momentum_pct:.1f}%")
+        elif momentum_pct > 0:
+            score += 5
+            signals.append(f"Positive 30d momentum: +{momentum_pct:.1f}%")
+        elif momentum_pct < -5:
+            score -= 15
+            signals.append(f"Negative 30d momentum: {momentum_pct:.1f}%")
+        else:
+            score -= 5
+            signals.append(f"Slightly negative momentum: {momentum_pct:.1f}%")
+
+        score = max(0, min(100, score))
+        if score >= 70:   signal_label = "Strong Buy"
+        elif score >= 55: signal_label = "Buy"
+        elif score >= 40: signal_label = "Hold"
+        elif score >= 25: signal_label = "Reduce"
+        else:             signal_label = "Caution"
+
+        return {
+            "ticker": ticker,
+            "current_price": round(current_price, 2),
+            "signal": signal_label,
+            "strength_score": score,
+            "momentum_pct": round(momentum_pct, 2),
+            "sma20": round(sma20, 2) if sma20 else None,
+            "sma50": round(sma50, 2) if sma50 else None,
+            "sma200": round(sma200, 2) if sma200 else None,
+            "details": " | ".join(signals)
+        }
+    except Exception as e:
+        return {"signal": "Error", "strength_score": 50, "details": str(e),
+                "ticker": ticker, "current_price": None, "momentum_pct": None}
+
+
+def generate_rebalance_advice(
+    holdings_df: Any,
+    risk_profile: str = "Moderate",
+    country: str = "India"
+) -> Dict[str, Any]:
+    """
+    Computes current vs target allocation, drift table, yfinance trend signals for
+    equity holdings, and Gemini-powered rebalancing recommendations.
+    """
+    if holdings_df is None or holdings_df.empty:
+        return {"error": "No holdings found. Add your investments first.",
+                "current_allocation": {}, "target_allocation": TARGET_ALLOCATION.get(risk_profile, TARGET_ALLOCATION["Moderate"]),
+                "drift_table": [], "recommendations": [], "trend_signals": []}
+
+    holdings_df = holdings_df.copy()
+    holdings_df["broad_class"] = holdings_df["investment_type"].apply(_map_asset_class)
+    total_value = float(holdings_df["current_value"].sum())
+    if total_value <= 0:
+        return {"error": "Portfolio value is zero. Please update current values.",
+                "current_allocation": {}, "target_allocation": {}, "drift_table": [], "recommendations": [], "trend_signals": []}
+
+    current_alloc = holdings_df.groupby("broad_class")["current_value"].sum()
+    current_pct = ((current_alloc / total_value) * 100.0).round(2).to_dict()
+    target = TARGET_ALLOCATION.get(risk_profile, TARGET_ALLOCATION["Moderate"])
+    all_classes = set(current_pct.keys()) | set(target.keys())
+
+    drift_table = []
+    for cls in sorted(all_classes):
+        actual = current_pct.get(cls, 0.0)
+        tgt = target.get(cls, 0.0)
+        drift = round(actual - tgt, 2)
+        if drift > 7:
+            action, detail = "Reduce — Overweight", f"Move ~{drift:.0f}% ({_pct_to_inr(drift, total_value)}) from {cls} to underweight classes."
+        elif drift < -7:
+            action, detail = "Buy — Underweight", f"Deploy ~{abs(drift):.0f}% ({_pct_to_inr(abs(drift), total_value)}) more into {cls}."
+        else:
+            action, detail = "Hold — On Track", "Within +/-7% of target. No immediate action needed."
+        drift_table.append({"Asset Class": cls, "Current %": actual, "Target %": tgt, "Drift %": drift, "Action": action, "Detail": detail})
+
+    # yfinance trend signals for top equity holdings
+    trend_signals = []
+    equity_hold = holdings_df[holdings_df["broad_class"] == "Equity"]
+    for _, row in equity_hold.head(5).iterrows():
+        ticker_candidate = str(row.get("description", "") or row.get("resolved_name", "")).strip()
+        if ticker_candidate and len(ticker_candidate) >= 2:
+            yf_ticker = ticker_candidate.upper()
+            if country == "India" and "." not in yf_ticker:
+                yf_ticker += ".NS"
+            sig = fetch_stock_trend_signal(yf_ticker)
+            sig["holding_name"] = ticker_candidate
+            trend_signals.append(sig)
+
+    # Gemini rebalancing narrative
+    recommendations = []
+    try:
+        from google import genai
+        api_key = os.environ.get("GEMINI_API_KEY")
+        if not api_key:
+            try:
+                import streamlit as st
+                api_key = st.secrets.get("GEMINI_API_KEY")
+            except Exception:
+                pass
+        if api_key:
+            client = genai.Client(api_key=api_key)
+            prompt = f"""
+            Expert Wealth Manager. Rebalancing advice for:
+            Risk Profile: {risk_profile}, Country: {country}, Portfolio: Rs{total_value:,.0f}
+            Current Allocation: {current_pct}
+            Target: {target}
+            Drifts: {[d for d in drift_table if d['Action'] != 'Hold — On Track']}
+            Equity Trend Signals: {trend_signals[:3]}
+
+            Recommend specific {country} instruments. JSON: key 'recommendations' = list of
+            {{title, action_type (Buy/Sell/Hold), instrument, rationale}}. Max 5 items.
+            """
+            resp = client.models.generate_content(model="gemini-2.5-flash", contents=prompt)
+            if resp and resp.text:
+                import json
+                parsed = json.loads(resp.text.replace("```json", "").replace("```", "").strip())
+                recommendations = parsed.get("recommendations", [])
+    except Exception:
+        pass
+
+    if not recommendations:
+        universe = COUNTRY_UNIVERSE.get(country, COUNTRY_UNIVERSE["India"])
+        for row in drift_table:
+            if "Buy" in row["Action"]:
+                key = row["Asset Class"].lower()
+                instruments = universe.get(key, [])
+                instr_name = instruments[0]["name"] if instruments else f"{row['Asset Class']} Fund"
+                recommendations.append({"title": f"Increase {row['Asset Class']}", "action_type": "Buy", "instrument": instr_name, "rationale": row["Detail"]})
+            elif "Reduce" in row["Action"]:
+                recommendations.append({"title": f"Reduce {row['Asset Class']} exposure", "action_type": "Sell/Switch", "instrument": "Existing overweight holdings", "rationale": row["Detail"]})
+
+    return {"current_allocation": current_pct, "target_allocation": target, "total_value": total_value,
+            "drift_table": drift_table, "recommendations": recommendations, "trend_signals": trend_signals, "risk_profile": risk_profile}
+
+
+def generate_new_money_advice(
+    holdings_df: Any,
+    risk_profile: str = "Moderate",
+    amount: float = 50000.0,
+    mode: str = "Lump Sum",
+    country: str = "India"
+) -> Dict[str, Any]:
+    """
+    Recommends specific instruments for deploying new money (lump-sum or SIP)
+    based on risk profile, existing allocation gaps, and country.
+    """
+    universe = COUNTRY_UNIVERSE.get(country, COUNTRY_UNIVERSE["India"])
+    target = TARGET_ALLOCATION.get(risk_profile, TARGET_ALLOCATION["Moderate"])
+
+    current_pct: Dict[str, float] = {}
+    if holdings_df is not None and not holdings_df.empty:
+        hdf = holdings_df.copy()
+        hdf["broad_class"] = hdf["investment_type"].apply(_map_asset_class)
+        total = float(hdf["current_value"].sum())
+        if total > 0:
+            current_pct = ((hdf.groupby("broad_class")["current_value"].sum() / total) * 100.0).round(2).to_dict()
+
+    splits: Dict[str, float] = {}
+    for cls, tgt_pct in target.items():
+        gap = max(0.0, tgt_pct - current_pct.get(cls, 0.0))
+        splits[cls] = gap
+    total_gap = sum(splits.values()) or 1.0
+    alloc = {cls: round((gap / total_gap) * amount, 2) for cls, gap in splits.items()}
+
+    suggestions: Dict[str, List[Dict]] = {}
+    for cls, instruments in universe.items():
+        label = cls.capitalize()
+        cls_amount = alloc.get(label, amount * 0.5)
+        n = max(1, len(instruments[:3]))
+        suggestions[cls] = []
+        for instr in instruments[:3]:
+            entry = dict(instr)
+            per_instr = round(cls_amount / n, 2)
+            entry["suggested_amount"] = f"Rs{per_instr:,.0f} / month" if mode == "SIP" else f"Rs{per_instr:,.0f} one-time"
+            suggestions[cls].append(entry)
+
+    summary = f"For a {risk_profile} investor in {country}: deploy {mode} of Rs{amount:,.0f} across the suggested instruments below."
+    try:
+        from google import genai
+        api_key = os.environ.get("GEMINI_API_KEY")
+        if not api_key:
+            try:
+                import streamlit as st
+                api_key = st.secrets.get("GEMINI_API_KEY")
+            except Exception:
+                pass
+        if api_key:
+            client = genai.Client(api_key=api_key)
+            prompt = f"""
+            Expert {country} wealth advisor.
+            Risk={risk_profile}, Mode={mode}, Amount=Rs{amount:,.0f}, Country={country}
+            Current portfolio: {current_pct}, Target: {target}
+            Pre-selected: {{{', '.join(f'{k}: {[i["name"] for i in v[:2]]}' for k, v in suggestions.items())}}}
+
+            Enhance rationale for current {country} market environment.
+            JSON: key 'summary' (string) only. Keep instruments same.
+            """
+            resp = client.models.generate_content(model="gemini-2.5-flash", contents=prompt)
+            if resp and resp.text:
+                import json
+                parsed = json.loads(resp.text.replace("```json", "").replace("```", "").strip())
+                summary = parsed.get("summary", summary)
+    except Exception:
+        pass
+
+    return {"mode": mode, "amount": amount, "country": country, "risk_profile": risk_profile,
+            "allocation_split": alloc, "suggestions": suggestions, "summary": summary}
+
+
+def _india_new_regime_tax(gross: float) -> float:
+    """India New Regime FY 2024-25 with Rs75,000 standard deduction + 4% cess."""
+    taxable = max(0.0, gross - 75000.0)
+    slabs = [(300000, 0.0), (400000, 0.05), (300000, 0.10), (300000, 0.15), (300000, 0.20), (float("inf"), 0.30)]
+    tax = 0.0; remaining = taxable
+    for lim, rate in slabs:
+        chunk = min(remaining, lim); tax += chunk * rate; remaining -= chunk
+        if remaining <= 0: break
+    if taxable <= 700000: tax = 0.0  # 87A rebate
+    return round(tax * 1.04, 2)
+
+
+def _india_old_regime_tax(gross: float, eighty_c: float, std_ded: float) -> float:
+    """India Old Regime FY 2024-25 with 4% cess."""
+    taxable = max(0.0, gross - std_ded - eighty_c)
+    slabs = [(250000, 0.0), (250000, 0.05), (250000, 0.20), (float("inf"), 0.30)]
+    tax = 0.0; remaining = taxable
+    for lim, rate in slabs:
+        chunk = min(remaining, lim); tax += chunk * rate; remaining -= chunk
+        if remaining <= 0: break
+    return round(tax * 1.04, 2)
+
+
+def compute_tax_liability(
+    income_sources_df: Any,
+    holdings_df: Any,
+    country: str = "India",
+    tax_regime: str = "New Regime"
+) -> Dict[str, Any]:
+    """
+    Computes estimated annual tax liability from income sources + investment holdings.
+    Supports India (Old/New Regime), United States, UAE (no tax), and Other.
+    Returns gross income, taxable income, estimated tax, effective rate, and savings opportunities.
+    """
+    gross_annual = 0.0
+    income_breakdown: List[Dict[str, Any]] = []
+    if income_sources_df is not None and not income_sources_df.empty:
+        for _, row in income_sources_df.iterrows():
+            monthly_eq = float(row.get("monthly_equivalent", 0.0))
+            annual_eq = monthly_eq * 12.0
+            gross_annual += annual_eq
+            income_breakdown.append({"source": row["source_name"], "type": row["income_type"], "annual": round(annual_eq, 2)})
+
+    if country == "India":
+        eighty_c_types = {"PPF", "EPF", "NSC", "KVP"}
+        eighty_c_invested = 0.0
+        if holdings_df is not None and not holdings_df.empty:
+            for _, row in holdings_df.iterrows():
+                itype = str(row.get("investment_type", ""))
+                invested = float(row.get("investment_amount", 0.0))
+                if any(t in itype for t in eighty_c_types) or "elss" in itype.lower():
+                    eighty_c_invested += invested
+        eighty_c_deduction = min(150000.0, eighty_c_invested)
+        std_ded = 50000.0
+        savings_opportunities: List[Dict[str, str]] = []
+
+        if tax_regime == "Old Regime":
+            taxable_income = max(0.0, gross_annual - std_ded - eighty_c_deduction)
+            total_tax = _india_old_regime_tax(gross_annual, eighty_c_deduction, std_ded)
+            if eighty_c_deduction < 150000:
+                gap = 150000 - eighty_c_deduction
+                savings_opportunities.append({"opportunity": "Maximize 80C", "detail": f"Invest Rs{gap:,.0f} more in PPF/ELSS/VPF to save up to Rs{gap*0.30:,.0f} in tax."})
+            new_tax = _india_new_regime_tax(gross_annual)
+            if new_tax < total_tax:
+                savings_opportunities.append({"opportunity": "Switch to New Regime", "detail": f"New Regime: Rs{new_tax:,.0f} vs Old: Rs{total_tax:,.0f}. Saving: Rs{total_tax-new_tax:,.0f}."})
+        else:
+            taxable_income = max(0.0, gross_annual - 75000.0)
+            total_tax = _india_new_regime_tax(gross_annual)
+            old_tax = _india_old_regime_tax(gross_annual, eighty_c_deduction, std_ded)
+            if old_tax < total_tax and eighty_c_deduction > 0:
+                savings_opportunities.append({"opportunity": "Consider Old Regime", "detail": f"With Rs{eighty_c_deduction:,.0f} in 80C, Old Regime: Rs{old_tax:,.0f} saves Rs{total_tax-old_tax:,.0f}."})
+            savings_opportunities.append({"opportunity": "NPS 80CCD(1B)", "detail": "Invest up to Rs50,000 in NPS for extra deduction applicable even in New Regime (employer route)."})
+
+        # LTCG check
+        equity_gain = 0.0
+        if holdings_df is not None and not holdings_df.empty:
+            for _, row in holdings_df.iterrows():
+                if _map_asset_class(str(row.get("investment_type", ""))) == "Equity":
+                    gain = float(row.get("current_value", 0)) - float(row.get("investment_amount", 0))
+                    yr = int(row.get("year_invested", 2024))
+                    if gain > 0 and (2025 - yr) >= 1:
+                        equity_gain += gain
+        if equity_gain > 125000:
+            ltcg_tax = (equity_gain - 125000) * 0.125
+            savings_opportunities.append({"opportunity": "LTCG Tax Harvesting", "detail": f"Equity LTCG: Rs{equity_gain:,.0f}. Rs1.25L exempt; estimated LTCG tax: Rs{ltcg_tax:,.0f}. Harvest losses to offset."})
+
+        eff_rate = round((total_tax / gross_annual) * 100, 2) if gross_annual > 0 else 0.0
+        return {"country": "India", "tax_regime": tax_regime, "gross_annual_income": round(gross_annual, 2),
+                "taxable_income": round(taxable_income, 2), "eighty_c_deduction": round(eighty_c_deduction, 2),
+                "estimated_tax": round(total_tax, 2), "effective_rate_pct": eff_rate,
+                "income_breakdown": income_breakdown, "savings_opportunities": savings_opportunities}
+
+    elif country == "United States":
+        taxable = max(0.0, gross_annual - 14600.0)
+        brackets = [(11600, 0.10), (33550, 0.12), (50550, 0.22), (96950, 0.24), (206700, 0.32), (243725, 0.35), (float("inf"), 0.37)]
+        tax = 0.0; remaining = taxable
+        for lim, rate in brackets:
+            chunk = min(remaining, lim); tax += chunk * rate; remaining -= chunk
+            if remaining <= 0: break
+        eff_rate = round((tax / gross_annual) * 100, 2) if gross_annual > 0 else 0.0
+        return {"country": "United States", "tax_regime": "Single Filer (2024)",
+                "gross_annual_income": round(gross_annual, 2), "taxable_income": round(taxable, 2),
+                "estimated_tax": round(tax, 2), "effective_rate_pct": eff_rate,
+                "income_breakdown": income_breakdown,
+                "savings_opportunities": [
+                    {"opportunity": "Maximize 401(k)", "detail": "Contribute $23,000 pre-tax to reduce taxable income immediately."},
+                    {"opportunity": "Roth IRA", "detail": "$7,000 after-tax contribution grows completely tax-free."},
+                    {"opportunity": "HSA (HDHP users)", "detail": "$4,150 individual / $8,300 family — triple tax benefit."}
+                ]}
+    else:
+        return {"country": country, "tax_regime": "No Personal Income Tax",
+                "gross_annual_income": round(gross_annual, 2), "taxable_income": 0.0,
+                "estimated_tax": 0.0, "effective_rate_pct": 0.0,
+                "income_breakdown": income_breakdown,
+                "savings_opportunities": [
+                    {"opportunity": "No Income Tax", "detail": f"{country} has no personal income tax. Focus on maximizing investment returns."},
+                    {"opportunity": "NRI India Tax (if applicable)", "detail": "Indian-sourced income (rent, FDs, dividends) may still be taxable in India. Verify DTAA implications."},
+                    {"opportunity": "Corporate Structure", "detail": "Consider UAE Free Zone entity to efficiently manage business income."}
+                ]}
