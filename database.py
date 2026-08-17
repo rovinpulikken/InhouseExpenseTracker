@@ -126,27 +126,79 @@ def get_db_type() -> str:
                 return "Local SQLite Database (Turso driver missing)"
     return "Local SQLite Database"
 
+# Stores the last Turso connection failure reason (set by get_connection)
+_turso_fallback_reason: Optional[str] = None
+
 def get_connection():
+    global _turso_fallback_reason
+    _turso_fallback_reason = None
     turso_url, turso_token = get_turso_credentials()
-    
+
     if turso_url and turso_token:
         try:
             import libsql_experimental as libsql
             conn = libsql.connect(database=turso_url, auth_token=turso_token)
             return conn
-        except (ImportError, ModuleNotFoundError, Exception) as e:
+        except (ImportError, ModuleNotFoundError) as e:
+            _turso_fallback_reason = f"Turso driver not installed: {e}"
+        except Exception as e:
             try:
                 import libsql_client
                 http_url = turso_url.replace("libsql://", "https://") if turso_url.startswith("libsql://") else turso_url
                 client = libsql_client.create_client_sync(url=http_url, auth_token=turso_token)
                 return LibSQLConnectionWrapper(client)
             except Exception as e2:
-                print(f"Turso connection fallback to SQLite: {e} / {e2}")
-            
+                _turso_fallback_reason = f"{e} / {e2}"
+                print(f"Turso connection fallback to SQLite: {_turso_fallback_reason}")
+
     os.makedirs(DB_DIR, exist_ok=True)
     conn = sqlite3.connect(DB_PATH)
     conn.row_factory = sqlite3.Row
     return conn
+
+def check_turso_connection() -> Tuple[bool, Optional[str]]:
+    """
+    Probe the Turso remote database with a lightweight query.
+
+    Returns:
+        (True, None)           — Turso is reachable and responding.
+        (False, reason: str)   — Turso is NOT reachable; reason explains why.
+                                 Returns (False, None) when Turso is not configured
+                                 (i.e. app intentionally uses local SQLite).
+    """
+    turso_url, turso_token = get_turso_credentials()
+    if not turso_url or not turso_token:
+        # Not configured — this is intentional, not an error
+        return False, None
+
+    # Try libsql_experimental first
+    try:
+        import libsql_experimental as libsql
+        conn = libsql.connect(database=turso_url, auth_token=turso_token)
+        conn.execute("SELECT 1")
+        try:
+            conn.close()
+        except Exception:
+            pass
+        return True, None
+    except (ImportError, ModuleNotFoundError):
+        pass  # fall through to libsql_client
+    except Exception as e:
+        return False, str(e)
+
+    # Fall back to libsql_client (HTTP mode)
+    try:
+        import libsql_client
+        http_url = turso_url.replace("libsql://", "https://") if turso_url.startswith("libsql://") else turso_url
+        client = libsql_client.create_client_sync(url=http_url, auth_token=turso_token)
+        wrapper = LibSQLConnectionWrapper(client)
+        wrapper.execute("SELECT 1")
+        wrapper.close()
+        return True, None
+    except (ImportError, ModuleNotFoundError) as e:
+        return False, f"Turso driver not installed ({e}). App is running on local SQLite."
+    except Exception as e:
+        return False, str(e)
 
 # ----------------------------------------------------
 # PASSWORD HASHING HELPERS

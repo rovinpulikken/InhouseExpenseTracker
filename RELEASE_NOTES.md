@@ -1,5 +1,15 @@
 # Release Notes
 
+## v1.4.1 (2026-08-17)
+### Added
+- **Turso DB Health Check**: Added `check_turso_connection()` in `database.py` that probes the remote Turso database with a live `SELECT 1` query at startup (once per session).
+- **Connection Warning Banner**: If Turso credentials are configured but the remote database is unreachable, a prominent red warning banner is shown at the top of the app on every page. The banner details the exact failure reason and informs the user that the app has fallen back to local SQLite (data will not sync to the cloud).
+
+### Fixed
+- **`get_connection()` exception handling**: Separated `ImportError`/`ModuleNotFoundError` from generic `Exception` so driver-missing errors are distinguished from network/auth failures.
+- **Fallback reason capture**: `get_connection()` now records the failure reason in `_turso_fallback_reason` module variable instead of silently printing to stdout.
+- **Import hygiene**: `check_turso_connection` is now properly exported from `database.py` and imported in `app.py`.
+
 ## v1.4.0 (2026-08-12)
 - **Feature**: Added a "Find & Remove Duplicate Holdings" tool in the Active Investments tab! Users can now scan their portfolio for exact duplicates and safely delete the redundancies in one click.
 - **Feature**: Added automatic AMFI code resolution for Mutual Funds! When importing investments from statements (like Anand Rathi) that only list numeric codes, the system now automatically fetches and saves the official human-readable fund name.

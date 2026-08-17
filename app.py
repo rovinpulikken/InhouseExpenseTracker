@@ -70,6 +70,7 @@ from database import (
     get_all_users,
     delete_user,
     get_db_type,
+    check_turso_connection,
     insert_investment,
     get_user_investments_df,
     update_investments_df,
@@ -216,6 +217,46 @@ st.markdown("""
 # Initialize Database & Seed Data
 init_db()
 seed_sample_data_if_empty()
+
+# ----------------------------------------------------
+# TURSO REMOTE DB CONNECTION CHECK (once per session)
+# ----------------------------------------------------
+if "_turso_status_checked" not in st.session_state:
+    _turso_ok, _turso_err = check_turso_connection()
+    st.session_state["_turso_status_checked"] = True
+    st.session_state["_turso_ok"] = _turso_ok
+    st.session_state["_turso_err"] = _turso_err
+
+if not st.session_state.get("_turso_ok") and st.session_state.get("_turso_err"):
+    _err_detail = st.session_state["_turso_err"]
+    st.markdown(f"""
+    <div style="
+        background: linear-gradient(135deg, #450a0a 0%, #7f1d1d 100%);
+        border: 1px solid #dc2626;
+        border-left: 5px solid #ef4444;
+        border-radius: 10px;
+        padding: 14px 18px;
+        margin-bottom: 16px;
+        display: flex;
+        align-items: flex-start;
+        gap: 12px;
+    ">
+        <span style="font-size: 1.5rem; line-height: 1;">⚠️</span>
+        <div>
+            <div style="font-weight: 700; color: #fca5a5; font-size: 0.95rem; margin-bottom: 3px;">
+                Turso Remote Database Unreachable
+            </div>
+            <div style="color: #fecaca; font-size: 0.85rem; line-height: 1.5;">
+                The app could not connect to the Turso cloud database and has fallen back to
+                <strong>local SQLite</strong>. Data entered now will <em>not</em> be synced to the cloud.
+            </div>
+            <div style="margin-top: 6px; background: rgba(0,0,0,0.3); border-radius: 6px; padding: 6px 10px;
+                        font-family: monospace; font-size: 0.78rem; color: #fda4af; word-break: break-all;">
+                {_err_detail}
+            </div>
+        </div>
+    </div>
+    """, unsafe_allow_html=True)
 
 # ----------------------------------------------------
 # USER AUTHENTICATION SCREEN
