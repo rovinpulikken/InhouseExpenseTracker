@@ -279,12 +279,28 @@ Example Output:
 ]
 """
 
-    response = client.models.generate_content(
-        model='gemini-3.6-flash',
-        contents=[
+    # For text-based formats, convert to string for better results
+    if mime_type in ('text/csv', 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet', 'application/vnd.ms-excel'):
+        import io
+        import pandas as pd
+        try:
+            if 'csv' in mime_type:
+                df = pd.read_csv(io.BytesIO(file_bytes))
+            else:
+                df = pd.read_excel(io.BytesIO(file_bytes))
+            file_text = df.to_string()
+        except Exception:
+            file_text = file_bytes.decode('utf-8', errors='ignore')
+        contents_payload = [system_prompt, file_text]
+    else:
+        contents_payload = [
             types.Part.from_bytes(data=file_bytes, mime_type=mime_type),
             system_prompt
         ]
+
+    response = client.models.generate_content(
+        model='gemini-3.6-flash',
+        contents=contents_payload
     )
     
     raw_text = response.text.strip()
@@ -402,12 +418,28 @@ Example Output:
 ]
 """
 
-    response = client.models.generate_content(
-        model='gemini-3.6-flash',
-        contents=[
+    # For text-based formats, convert to string for better results
+    if mime_type in ('text/csv', 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet', 'application/vnd.ms-excel'):
+        import io
+        import pandas as pd
+        try:
+            if 'csv' in mime_type:
+                df = pd.read_csv(io.BytesIO(file_bytes))
+            else:
+                df = pd.read_excel(io.BytesIO(file_bytes))
+            file_text = df.to_string()
+        except Exception:
+            file_text = file_bytes.decode('utf-8', errors='ignore')
+        contents_payload = [system_prompt, file_text]
+    else:
+        contents_payload = [
             types.Part.from_bytes(data=file_bytes, mime_type=mime_type),
             system_prompt
         ]
+
+    response = client.models.generate_content(
+        model='gemini-3.6-flash',
+        contents=contents_payload
     )
     
     raw_text = response.text.strip()
