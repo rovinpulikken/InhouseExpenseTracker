@@ -817,14 +817,32 @@ def generate_rebalance_advice(
         if ticker_candidate and len(ticker_candidate) >= 2:
             is_mf = "mutual fund" in inv_type or "mf" in inv_type or ticker_candidate.isdigit()
             if is_mf:
+                ret_pct = float(row.get("returns_pct", 0.0))
+                
+                if ret_pct > 15:
+                    sig_text, score = "Strong Hold", 85
+                    detail = f"Excellent portfolio return (+{ret_pct:.1f}%). Highly recommended to hold."
+                elif ret_pct > 5:
+                    sig_text, score = "Hold", 65
+                    detail = f"Steady portfolio return (+{ret_pct:.1f}%). Good core holding."
+                elif ret_pct > 0:
+                    sig_text, score = "Hold", 55
+                    detail = f"Positive portfolio return (+{ret_pct:.1f}%). Monitor performance."
+                elif ret_pct > -5:
+                    sig_text, score = "Caution", 40
+                    detail = f"Slightly negative return ({ret_pct:.1f}%). Evaluate fund fundamentals."
+                else:
+                    sig_text, score = "Reduce / Review", 25
+                    detail = f"Poor portfolio return ({ret_pct:.1f}%). Consider reallocating to better funds."
+
                 sig = {
                     "holding_name": display_name,
                     "ticker": "Mutual Fund" if ticker_candidate.isdigit() else ticker_candidate,
                     "current_price": portfolio_price,
-                    "signal": "See AI Advice",
-                    "strength_score": 50,
-                    "momentum_pct": None,
-                    "details": "Technical signals not available for MFs via Yahoo Finance. Relying on AI fundamental review."
+                    "signal": sig_text,
+                    "strength_score": score,
+                    "momentum_pct": ret_pct,
+                    "details": f"Personal Return: {detail}"
                 }
                 trend_signals.append(sig)
             else:
