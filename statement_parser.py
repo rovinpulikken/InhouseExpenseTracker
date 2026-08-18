@@ -291,11 +291,17 @@ Example Output:
             file_text = df.to_string()
         except Exception:
             file_text = file_bytes.decode('utf-8', errors='ignore')
-        contents_payload = [system_prompt, file_text]
+        contents_payload = [system_prompt + "\n\n" + file_text]
     else:
+        # Binary files (PDF, images) must be wrapped in a Content object
         contents_payload = [
-            types.Part.from_bytes(data=file_bytes, mime_type=mime_type),
-            system_prompt
+            types.Content(
+                role='user',
+                parts=[
+                    types.Part.from_bytes(data=file_bytes, mime_type=mime_type),
+                    types.Part.from_text(text=system_prompt)
+                ]
+            )
         ]
 
     response = client.models.generate_content(
@@ -430,11 +436,17 @@ Example Output:
             file_text = df.to_string()
         except Exception:
             file_text = file_bytes.decode('utf-8', errors='ignore')
-        contents_payload = [system_prompt, file_text]
+        contents_payload = [system_prompt + "\n\n" + file_text]
     else:
+        # Binary files (PDF, images) must be wrapped in a Content object
         contents_payload = [
-            types.Part.from_bytes(data=file_bytes, mime_type=mime_type),
-            system_prompt
+            types.Content(
+                role='user',
+                parts=[
+                    types.Part.from_bytes(data=file_bytes, mime_type=mime_type),
+                    types.Part.from_text(text=system_prompt)
+                ]
+            )
         ]
 
     response = client.models.generate_content(
