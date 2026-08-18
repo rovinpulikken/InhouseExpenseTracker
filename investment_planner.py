@@ -816,44 +816,62 @@ def generate_rebalance_advice(
 
         if ticker_candidate and len(ticker_candidate) >= 2:
             is_mf = "mutual fund" in inv_type or "mf" in inv_type or ticker_candidate.isdigit()
-            if is_mf:
-                ret_pct = float(row.get("returns_pct", 0.0))
-                
-                if ret_pct > 15:
-                    sig_text, score = "Strong Hold", 85
-                    detail = f"Excellent portfolio return (+{ret_pct:.1f}%). Highly recommended to hold."
-                elif ret_pct > 5:
-                    sig_text, score = "Hold", 65
-                    detail = f"Steady portfolio return (+{ret_pct:.1f}%). Good core holding."
-                elif ret_pct > 0:
-                    sig_text, score = "Hold", 55
-                    detail = f"Positive portfolio return (+{ret_pct:.1f}%). Monitor performance."
-                elif ret_pct > -5:
-                    sig_text, score = "Caution", 40
-                    detail = f"Slightly negative return ({ret_pct:.1f}%). Evaluate fund fundamentals."
-                else:
-                    sig_text, score = "Reduce / Review", 25
-                    detail = f"Poor portfolio return ({ret_pct:.1f}%). Consider reallocating to better funds."
-
-                sig = {
-                    "holding_name": display_name,
-                    "ticker": "Mutual Fund" if ticker_candidate.isdigit() else ticker_candidate,
-                    "current_price": portfolio_price,
-                    "signal": sig_text,
-                    "strength_score": score,
-                    "momentum_pct": ret_pct,
-                    "details": f"Personal Return: {detail}"
-                }
-                trend_signals.append(sig)
+            
+            # 1. Calculate Personal Return Signal (applies to both MFs and Stocks)
+            ret_pct = float(row.get("returns_pct", 0.0))
+            if ret_pct > 15:
+                sig_text, score = "Strong Hold", 85
+                detail = f"Excellent portfolio return (+{ret_pct:.1f}%). Highly recommended to hold."
+            elif ret_pct > 5:
+                sig_text, score = "Hold", 65
+                detail = f"Steady portfolio return (+{ret_pct:.1f}%). Good core holding."
+            elif ret_pct > 0:
+                sig_text, score = "Hold", 55
+                detail = f"Positive portfolio return (+{ret_pct:.1f}%). Monitor performance."
+            elif ret_pct > -5:
+                sig_text, score = "Caution", 40
+                detail = f"Slightly negative return ({ret_pct:.1f}%). Evaluate fundamentals."
             else:
+                sig_text, score = "Reduce / Review", 25
+                detail = f"Poor portfolio return ({ret_pct:.1f}%). Consider reallocating."
+                
+            sig = {
+                "holding_name": display_name,
+                "ticker": "Mutual Fund" if ticker_candidate.isdigit() else ticker_candidate,
+                "current_price": portfolio_price,
+                "signal": sig_text,
+                "strength_score": score,
+                "momentum_pct": ret_pct,
+                "details": f"Personal Return: {detail}"
+            }
+
+            # 2. For Stocks, try to augment with Yahoo Finance Technicals
+            if not is_mf:
                 yf_ticker = ticker_candidate.upper()
                 if country == "India" and "." not in yf_ticker:
                     yf_ticker += ".NS"
-                sig = fetch_stock_trend_signal(yf_ticker)
-                sig["holding_name"] = display_name
-                if sig.get("current_price") is None and portfolio_price is not None:
-                    sig["current_price"] = portfolio_price
-                trend_signals.append(sig)
+                yf_sig = fetch_stock_trend_signal(yf_ticker)
+                
+                # If yfinance succeeded, blend the signals
+                if yf_sig.get("signal") != "Insufficient Data":
+                    # Average the technical score and personal score
+                    blended_score = int((score + yf_sig.get("strength_score", 50)) / 2)
+                    sig["strength_score"] = blended_score
+                    
+                    if blended_score >= 70:   sig["signal"] = "Strong Buy/Hold"
+                    elif blended_score >= 55: sig["signal"] = "Buy/Hold"
+                    elif blended_score >= 40: sig["signal"] = "Hold"
+                    elif blended_score >= 25: sig["signal"] = "Reduce"
+                    else:                     sig["signal"] = "Caution"
+                    
+                    # Combine details
+                    tech_detail = yf_sig.get('details', '')
+                    if not tech_detail:
+                        tech_detail = " | ".join([s for s in yf_sig.get("signals", [])])
+                    
+                    sig["details"] = f"**Personal:** {detail} | **Technical:** {tech_detail}"
+            
+            trend_signals.append(sig)
 
     # Sector breakdown
     sector_alloc = holdings_df.groupby("sector_segment")["current_value"].sum()
