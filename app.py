@@ -2113,6 +2113,66 @@ else:
                     
                 st.markdown("<hr>", unsafe_allow_html=True)
                 
+                # --- GROUPED PORTFOLIO SUMMARY ---
+                st.markdown("#### 📂 Grouped Holdings Summary")
+                st.caption("Expand categories below to view summarized totals and detailed sub-groupings.")
+                
+                # Categorize holdings
+                mf_mask = holdings_df["investment_type"].str.lower().str.contains("mutual fund|mf", na=False)
+                stock_mask = holdings_df["investment_type"].str.lower() == "equity"
+                other_mask = ~(mf_mask | stock_mask)
+                
+                mf_df = holdings_df[mf_mask]
+                stock_df = holdings_df[stock_mask]
+                other_df = holdings_df[other_mask]
+                
+                def render_summary_expander(title_prefix, df, is_mf=False, is_other=False):
+                    if df.empty:
+                        return
+                    total_val = float(df["current_value"].sum())
+                    total_gain = float(df["unrealized_gain"].sum())
+                    total_inv = float(df["investment_amount"].sum())
+                    gain_pct = (total_gain / total_inv * 100) if total_inv > 0 else 0
+                    
+                    gain_color = "🟢" if total_gain >= 0 else "🔴"
+                    expander_title = f"{title_prefix} | Total Value: ₹{total_val:,.2f} | {gain_color} Gain: ₹{total_gain:,.2f} ({gain_pct:+.2f}%)"
+                    
+                    # Unified formatting for tables
+                    col_cfg = {
+                        "description": st.column_config.TextColumn("Code / Name"),
+                        "resolved_name": st.column_config.TextColumn("Resolved Name"),
+                        "platform": st.column_config.TextColumn("Platform"),
+                        "investment_amount": st.column_config.NumberColumn("Invested", format="₹ %.2f"),
+                        "current_value": st.column_config.NumberColumn("Current Val", format="₹ %.2f"),
+                        "unrealized_gain": st.column_config.NumberColumn("Gain/Loss", format="₹ %.2f"),
+                        "returns_pct": st.column_config.NumberColumn("Return", format="%.2f%%")
+                    }
+                    
+                    with st.expander(expander_title):
+                        if is_mf:
+                            caps = df["market_cap"].unique()
+                            for cap in sorted(caps):
+                                cap_df = df[df["market_cap"] == cap]
+                                if not cap_df.empty:
+                                    cap_total = cap_df["current_value"].sum()
+                                    st.markdown(f"**{cap} (Total: ₹{cap_total:,.2f})**")
+                                    st.dataframe(cap_df[["description", "resolved_name", "platform", "investment_amount", "current_value", "unrealized_gain", "returns_pct"]], use_container_width=True, hide_index=True, column_config=col_cfg)
+                        elif is_other:
+                            types = df["investment_type"].unique()
+                            for t in sorted(types):
+                                t_df = df[df["investment_type"] == t]
+                                if not t_df.empty:
+                                    t_total = t_df["current_value"].sum()
+                                    st.markdown(f"**{t} (Total: ₹{t_total:,.2f})**")
+                                    st.dataframe(t_df[["description", "platform", "investment_amount", "current_value", "unrealized_gain", "returns_pct"]], use_container_width=True, hide_index=True, column_config=col_cfg)
+                        else:
+                            st.dataframe(df[["description", "platform", "investment_amount", "current_value", "unrealized_gain", "returns_pct"]], use_container_width=True, hide_index=True, column_config=col_cfg)
+
+                render_summary_expander("📈 Mutual Funds", mf_df, is_mf=True)
+                render_summary_expander("📊 Stocks (Equity)", stock_df)
+                render_summary_expander("🏦 Other Investments", other_df, is_other=True)
+                
+                st.markdown("<hr>", unsafe_allow_html=True)
                 # Target Allocation & Rebalancing Drift
                 st.markdown("#### ⚖️ Target Allocation & Rebalancing (Segment Drift)")
                 st.caption("Compare your current portfolio segments against ideal target allocations to identify drift.")
