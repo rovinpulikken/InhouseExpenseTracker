@@ -3081,6 +3081,9 @@ else:
                     cur_risk = current_user.get("risk_tolerance", "Moderate")
                     new_risk = st.selectbox("Risk Tolerance (Wealth Planner)", risk_opts, index=risk_opts.index(cur_risk) if cur_risk in risk_opts else 1)
                 
+                st.markdown("#### 4. API Configurations")
+                new_api_key = st.text_input("Gemini API Key", value=current_user.get("gemini_api_key", ""), type="password", help="Required for AI-powered features like Unstructured Statement Import.")
+                
                 if st.form_submit_button("💾 Save Profile", type="primary", use_container_width=True):
                     profile_data = {
                         "full_name": new_name,
@@ -3094,7 +3097,8 @@ else:
                         "income_range": new_income,
                         "occupation": new_occ,
                         "marital_status": new_marital,
-                        "risk_tolerance": new_risk
+                        "risk_tolerance": new_risk,
+                        "gemini_api_key": new_api_key
                     }
                     if update_user_profile(current_user["username"], profile_data):
                         # Update session state dynamically

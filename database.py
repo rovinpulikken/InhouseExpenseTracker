@@ -655,7 +655,7 @@ def update_user_profile(username: str, profile_data: dict) -> bool:
         update_fields = []
         params = []
         for key, value in profile_data.items():
-            if key in ["full_name", "age", "sex", "dob", "address", "city", "state", "country", "income_range", "occupation", "marital_status", "risk_tolerance"]:
+            if key in ["full_name", "age", "sex", "dob", "address", "city", "state", "country", "income_range", "occupation", "marital_status", "risk_tolerance", "gemini_api_key"]:
                 update_fields.append(f"{key} = ?")
                 params.append(value)
                 
