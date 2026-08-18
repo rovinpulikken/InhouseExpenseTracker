@@ -224,14 +224,71 @@ def parse_anand_rathi_statement(file_bytes, filename):
     except Exception as e:
         raise Exception(f"Failed to parse Anand Rathi statement: {str(e)}")
 
+def _call_gemini_rest(api_key, prompt_text, file_bytes=None, mime_type=None):
+    """
+    Calls the Gemini REST API directly. This avoids SDK version issues entirely.
+    For PDFs/images: sends file as base64 inline_data.
+    For text/CSV/Excel: sends as plain text part.
+    """
+    import requests
+    import base64
+
+    model = 'gemini-2.5-flash'
+    url = f'https://generativelanguage.googleapis.com/v1beta/models/{model}:generateContent?key={api_key}'
+
+    parts = []
+    if file_bytes and mime_type:
+        is_text_format = mime_type in (
+            'text/csv', 'text/plain',
+            'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+            'application/vnd.ms-excel'
+        )
+        if is_text_format:
+            # Convert spreadsheet/CSV to readable text
+            try:
+                if 'csv' in mime_type or 'text' in mime_type:
+                    file_text = file_bytes.decode('utf-8', errors='ignore')
+                else:
+                    df = pd.read_excel(io.BytesIO(file_bytes))
+                    file_text = df.to_string()
+            except Exception:
+                file_text = file_bytes.decode('utf-8', errors='ignore')
+            parts.append({'text': file_text})
+        else:
+            # Binary file (PDF, image) — base64 encode
+            encoded = base64.standard_b64encode(file_bytes).decode('utf-8')
+            parts.append({
+                'inline_data': {
+                    'mime_type': mime_type,
+                    'data': encoded
+                }
+            })
+
+    parts.append({'text': prompt_text})
+
+    payload = {
+        'contents': [{
+            'role': 'user',
+            'parts': parts
+        }]
+    }
+
+    response = requests.post(url, json=payload, timeout=120)
+    if response.status_code != 200:
+        raise Exception(f"{response.status_code} {response.reason}. {response.json()}")
+
+    result = response.json()
+    raw_text = result['candidates'][0]['content']['parts'][0]['text'].strip()
+    # Strip markdown code fences if present
+    raw_text = re.sub(r'```json\s*', '', raw_text)
+    raw_text = re.sub(r'```\s*', '', raw_text)
+    return raw_text.strip()
+
+
 def parse_investment_with_gemini(file_bytes, filename, api_key):
     """
-    Parses any investment statement using Gemini 2.5 Flash via google-genai SDK.
+    Parses any investment statement using Gemini REST API (no SDK dependency).
     """
-    from google import genai
-    from google.genai import types
-    
-    client = genai.Client(api_key=api_key)
     
     # Determine MIME type
     mime_type, _ = mimetypes.guess_type(filename)
@@ -247,77 +304,28 @@ def parse_investment_with_gemini(file_bytes, filename, api_key):
         else:
             mime_type = 'application/octet-stream'
 
-    system_prompt = """
+    prompt = """
 You are an expert financial AI assistant. Your task is to extract investment holdings from the provided broker statement or portfolio document.
 The document may be an image, PDF, CSV, or Excel file. Extract the data into a strict JSON list of dictionaries.
 
 Each dictionary MUST have the following keys and data types:
 - "name_or_symbol": (string) The name of the stock, mutual fund, or asset.
 - "type": (string) The asset type (e.g., "Equity", "Mutual Funds", "Deposits", "Alternative Asset").
-- "platform": (string) The broker or platform name (e.g., "ICICI Direct", "Zerodha", "Anand Rathi", etc.). Try to infer from the document context. If unknown, use "Generic Broker".
+- "platform": (string) The broker or platform name. If unknown, use "Generic Broker".
 - "amount": (float) The total invested amount or cost.
 - "units": (float) The total quantity or units held.
 - "avg_buy_price": (float) The average purchase price.
-- "current_value": (float) The TOTAL current market value of the holding. IMPORTANT: This MUST be the total value (i.e. units multiplied by current market price). If the document only provides a Current Market Price (CMP) per unit, you MUST multiply it by the number of units to get this total value. Do NOT put the unit price here.
+- "current_value": (float) The TOTAL current market value. Multiply units by CMP if only CMP is given.
 
 Rules:
-1. Return ONLY the JSON array. Do not include markdown codeblocks (like ```json), explanations, or text outside the JSON.
+1. Return ONLY the JSON array. No markdown, no explanations.
 2. If any numeric value is missing, use 0.0.
 3. Clean all numbers (remove commas, currency symbols).
-
-Example Output:
-[
-  {
-    "name_or_symbol": "HDFC Bank Ltd",
-    "type": "Equity",
-    "platform": "Zerodha",
-    "amount": 50000.0,
-    "units": 30.5,
-    "avg_buy_price": 1639.34,
-    "current_value": 52000.0
-  }
-]
 """
-
-    # For text-based formats, convert to string for better results
-    if mime_type in ('text/csv', 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet', 'application/vnd.ms-excel'):
-        import io
-        import pandas as pd
-        try:
-            if 'csv' in mime_type:
-                df = pd.read_csv(io.BytesIO(file_bytes))
-            else:
-                df = pd.read_excel(io.BytesIO(file_bytes))
-            file_text = df.to_string()
-        except Exception:
-            file_text = file_bytes.decode('utf-8', errors='ignore')
-        contents_payload = [system_prompt + "\n\n" + file_text]
-    else:
-        # Binary files (PDF, images) must be wrapped in a Content object
-        contents_payload = [
-            types.Content(
-                role='user',
-                parts=[
-                    types.Part.from_bytes(data=file_bytes, mime_type=mime_type),
-                    types.Part.from_text(text=system_prompt)
-                ]
-            )
-        ]
-
-    response = client.models.generate_content(
-        model='gemini-3.6-flash',
-        contents=contents_payload
-    )
-    
-    raw_text = response.text.strip()
-    if "```" in raw_text:
-        raw_text = re.sub(r"```json\s*", "", raw_text)
-        raw_text = re.sub(r"```\s*", "", raw_text)
-        
-    parsed_json = json.loads(raw_text.strip())
+    raw_text = _call_gemini_rest(api_key, prompt, file_bytes=file_bytes, mime_type=mime_type)
+    parsed_json = json.loads(raw_text)
     if not isinstance(parsed_json, list):
         raise ValueError("Gemini did not return a valid JSON list.")
-    
     return parsed_json
 
 
@@ -365,102 +373,35 @@ def identify_and_parse_statement(file_bytes, filename, api_key=None):
 
 def parse_expense_statement_with_gemini(file_bytes, filename, api_key):
     """
-    Parses unstructured bank/credit card statements into Expense/Income records using Gemini.
+    Parses unstructured bank/credit card statements into Expense/Income records using Gemini REST API.
     """
-    from google import genai
-    from google.genai import types
-    import json
-    import re
-    import mimetypes
-    
-    client = genai.Client(api_key=api_key)
-    
     # Determine MIME type
     mime_type, _ = mimetypes.guess_type(filename)
     if not mime_type:
-        if filename.lower().endswith('.csv'):
-            mime_type = 'text/csv'
-        elif filename.lower().endswith('.pdf'):
-            mime_type = 'application/pdf'
-        elif filename.lower().endswith('.xlsx'):
-            mime_type = 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'
-        elif filename.lower().endswith('.xls'):
-            mime_type = 'application/vnd.ms-excel'
-        else:
-            mime_type = 'application/octet-stream'
+        if filename.lower().endswith('.csv'):    mime_type = 'text/csv'
+        elif filename.lower().endswith('.pdf'):  mime_type = 'application/pdf'
+        elif filename.lower().endswith('.xlsx'): mime_type = 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'
+        elif filename.lower().endswith('.xls'):  mime_type = 'application/vnd.ms-excel'
+        else: mime_type = 'application/octet-stream'
 
-    system_prompt = """
+    prompt = """
 You are an expert financial AI assistant. Your task is to extract all transactions (both Debits and Credits) from the provided bank or credit card statement.
 The document may be an image, PDF, CSV, or Excel file. Extract the data into a strict JSON list of dictionaries.
 
-Each dictionary MUST have the following keys and data types:
+Each dictionary MUST have the following keys:
 - "date": (string) Transaction date in "YYYY-MM-DD" format.
-- "description": (string) Cleaned transaction description (e.g., remove weird alphanumeric transaction IDs if possible, keep the merchant name).
+- "description": (string) Cleaned transaction description. Keep the merchant name, remove transaction IDs.
 - "amount": (float) The transaction amount as a positive number.
-- "transaction_type": (string) MUST be either "Expense" (for debits/money out) or "Income" (for credits/refunds/money in).
-- "category": (string) Attempt to categorize the transaction based on the description. Use categories like "Dining & Swiggy/Zomato", "Groceries & Provisions", "Transportation & Fuel", "Shopping & Apparel", "Utilities (Electricity/Water/Gas)", "Rent & Housing", "Miscellaneous", "Salary", "Refund", "Interest".
+- "transaction_type": (string) MUST be either "Expense" (debits/money out) or "Income" (credits/refunds/money in).
+- "category": (string) Categorize using: "Dining & Swiggy/Zomato", "Groceries & Provisions", "Transportation & Fuel", "Shopping & Apparel", "Utilities (Electricity/Water/Gas)", "Rent & Housing", "Healthcare & Medical", "Miscellaneous", "Salary", "Refund", "Interest Income".
 
 Rules:
-1. Return ONLY the JSON array. Do not include markdown codeblocks (like ```json), explanations, or text outside the JSON.
-2. Ensure amounts are clean positive floats (no commas or currency symbols).
-3. If it's a credit card statement, payments TO the credit card should be marked as "Income" or ignored, while purchases are "Expense". If bank statement, money out is "Expense", money in is "Income".
-
-Example Output:
-[
-  {
-    "date": "2023-10-15",
-    "description": "Zomato Online Order",
-    "amount": 450.0,
-    "transaction_type": "Expense",
-    "category": "Dining & Swiggy/Zomato"
-  },
-  {
-    "date": "2023-10-16",
-    "description": "Salary Credit",
-    "amount": 150000.0,
-    "transaction_type": "Income",
-    "category": "Salary"
-  }
-]
+1. Return ONLY the JSON array. No markdown codeblocks, no explanations.
+2. Amounts must be clean positive floats (no commas or currency symbols).
+3. Credit card payments TO the card = "Income". All purchases = "Expense".
 """
-
-    # For text-based formats, convert to string for better results
-    if mime_type in ('text/csv', 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet', 'application/vnd.ms-excel'):
-        import io
-        import pandas as pd
-        try:
-            if 'csv' in mime_type:
-                df = pd.read_csv(io.BytesIO(file_bytes))
-            else:
-                df = pd.read_excel(io.BytesIO(file_bytes))
-            file_text = df.to_string()
-        except Exception:
-            file_text = file_bytes.decode('utf-8', errors='ignore')
-        contents_payload = [system_prompt + "\n\n" + file_text]
-    else:
-        # Binary files (PDF, images) must be wrapped in a Content object
-        contents_payload = [
-            types.Content(
-                role='user',
-                parts=[
-                    types.Part.from_bytes(data=file_bytes, mime_type=mime_type),
-                    types.Part.from_text(text=system_prompt)
-                ]
-            )
-        ]
-
-    response = client.models.generate_content(
-        model='gemini-3.6-flash',
-        contents=contents_payload
-    )
-    
-    raw_text = response.text.strip()
-    if "```" in raw_text:
-        raw_text = re.sub(r"```json\s*", "", raw_text)
-        raw_text = re.sub(r"```\s*", "", raw_text)
-        
-    parsed_json = json.loads(raw_text.strip())
+    raw_text = _call_gemini_rest(api_key, prompt, file_bytes=file_bytes, mime_type=mime_type)
+    parsed_json = json.loads(raw_text)
     if not isinstance(parsed_json, list):
         raise ValueError("Gemini did not return a valid JSON list.")
-    
     return parsed_json
