@@ -795,13 +795,34 @@ def generate_rebalance_advice(
     equity_hold = holdings_df[holdings_df["broad_class"] == "Equity"]
     for _, row in equity_hold.iterrows():
         ticker_candidate = str(row.get("description", "") or row.get("resolved_name", "")).strip()
+        inv_type = str(row.get("investment_type", "")).lower()
+        
+        units = float(row.get("units") or 0.0)
+        curr_val = float(row.get("current_value") or 0.0)
+        portfolio_price = round(curr_val / units, 2) if units > 0 else None
+
         if ticker_candidate and len(ticker_candidate) >= 2:
-            yf_ticker = ticker_candidate.upper()
-            if country == "India" and "." not in yf_ticker:
-                yf_ticker += ".NS"
-            sig = fetch_stock_trend_signal(yf_ticker)
-            sig["holding_name"] = ticker_candidate
-            trend_signals.append(sig)
+            is_mf = "mutual fund" in inv_type or "mf" in inv_type or ticker_candidate.isdigit()
+            if is_mf:
+                sig = {
+                    "holding_name": ticker_candidate,
+                    "ticker": "Mutual Fund" if ticker_candidate.isdigit() else ticker_candidate,
+                    "current_price": portfolio_price,
+                    "signal": "See AI Advice",
+                    "strength_score": 50,
+                    "momentum_pct": None,
+                    "details": "Technical signals not available for MFs via Yahoo Finance. Relying on AI fundamental review."
+                }
+                trend_signals.append(sig)
+            else:
+                yf_ticker = ticker_candidate.upper()
+                if country == "India" and "." not in yf_ticker:
+                    yf_ticker += ".NS"
+                sig = fetch_stock_trend_signal(yf_ticker)
+                sig["holding_name"] = ticker_candidate
+                if sig.get("current_price") is None and portfolio_price is not None:
+                    sig["current_price"] = portfolio_price
+                trend_signals.append(sig)
 
     # Sector breakdown
     sector_alloc = holdings_df.groupby("sector_segment")["current_value"].sum()
