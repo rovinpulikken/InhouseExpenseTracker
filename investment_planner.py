@@ -794,7 +794,20 @@ def generate_rebalance_advice(
     trend_signals = []
     equity_hold = holdings_df[holdings_df["broad_class"] == "Equity"]
     for _, row in equity_hold.iterrows():
-        ticker_candidate = str(row.get("description", "") or row.get("resolved_name", "")).strip()
+        desc = str(row.get("description", "")).strip()
+        res_name = str(row.get("resolved_name", "")).strip()
+        ticker_candidate = desc or res_name
+        
+        # Combine description and resolved name if they differ, so the UI shows "103819 (Fund Name)"
+        display_name = ticker_candidate
+        if desc and res_name and desc.lower() != res_name.lower():
+            if desc.isdigit() and not res_name.isdigit():
+                display_name = f'{desc} ("{res_name}")'
+            elif res_name.isdigit() and not desc.isdigit():
+                display_name = f'{res_name} ("{desc}")'
+            else:
+                display_name = f'{desc} ("{res_name}")'
+
         inv_type = str(row.get("investment_type", "")).lower()
         
         units = float(row.get("units") or 0.0)
@@ -805,7 +818,7 @@ def generate_rebalance_advice(
             is_mf = "mutual fund" in inv_type or "mf" in inv_type or ticker_candidate.isdigit()
             if is_mf:
                 sig = {
-                    "holding_name": ticker_candidate,
+                    "holding_name": display_name,
                     "ticker": "Mutual Fund" if ticker_candidate.isdigit() else ticker_candidate,
                     "current_price": portfolio_price,
                     "signal": "See AI Advice",
@@ -819,7 +832,7 @@ def generate_rebalance_advice(
                 if country == "India" and "." not in yf_ticker:
                     yf_ticker += ".NS"
                 sig = fetch_stock_trend_signal(yf_ticker)
-                sig["holding_name"] = ticker_candidate
+                sig["holding_name"] = display_name
                 if sig.get("current_price") is None and portfolio_price is not None:
                     sig["current_price"] = portfolio_price
                 trend_signals.append(sig)

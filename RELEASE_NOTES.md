@@ -3,6 +3,7 @@
 ## v1.5.4 (2026-08-18)
 ### Fixed
 - **Mutual Fund display in Smart Advisor**: Fixed an issue where Mutual Funds (especially those tracked via AMFI scheme codes like "103819") would display "N/A" for their ticker and price because Yahoo Finance does not support AMFI codes. The Advisor now correctly identifies Mutual Funds, skips the Yahoo Finance technical trend check (which causes the N/A), calculates their current price directly from the portfolio's active NAV, and passes them to the AI for fundamental advice.
+- **Enhanced Ticker Display**: Smart Advisor now combines the stock/fund code and the actual resolved name in the UI, displaying it as `103819 ("Fund Name")` for much better readability.
 ## v1.5.3 (2026-08-17)
 ### Added
 - **Strict Stock Recommendation Logic**: Injected a highly structured, forensic-focused AI system prompt (`BASE_STOCK_SYSTEM_PROMPT`) into the Smart Advisor's core engine. The AI now acts as a Senior Equity Research Analyst & Quantitative Portfolio Strategist, enforcing strict forensic checks (avoiding high promoter pledge, auditor red flags, debt traps) and providing realistic valuation targets before making any recommendations for rebalancing or new money deployment. The prompt automatically adapts to the user's selected country.
