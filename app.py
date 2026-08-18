@@ -755,19 +755,87 @@ else:
                 )
                 
             with col_ex_right:
-                st.markdown("#### Upload Completed Excel / CSV File")
-                st.write("Upload your filled Excel (`.xlsx`, `.xls`) or `.csv` spreadsheet. Categories will be auto-classified if missing!")
+                st.markdown("#### Upload Unstructured Statement (PDF/CSV) or Standard Excel")
+                st.write("Upload your bank/credit card statements. Gemini AI will automatically extract and categorize transactions for your review.")
                 
-                upload_vis = st.radio("Import Expense Visibility", ["Family", "Private"], horizontal=True, key="upload_vis")
-                uploaded_excel = st.file_uploader("Choose Excel, CSV, or PDF File", type=["xlsx", "xls", "csv", "pdf"], key="excel_uploader")
-                if uploaded_excel:
-                    if st.button("🚀 Import & Auto-Categorize File", type="primary", use_container_width=True):
-                        cnt, msg = import_from_excel_or_csv(uploaded_excel, username=current_user["username"], visibility=upload_vis, family_id=user_family_id)
-                        if cnt > 0:
-                            st.success(msg)
+                upload_vis = st.radio("Import Expense/Income Visibility", ["Family", "Private"], horizontal=True, key="upload_vis")
+                uploaded_file = st.file_uploader("Choose PDF, Excel, or CSV File", type=["xlsx", "xls", "csv", "pdf"], key="excel_uploader")
+                
+                gemini_api_key = current_user.get("gemini_api_key") or os.environ.get("GEMINI_API_KEY", "") or st.secrets.get("GEMINI_API_KEY", "")
+                
+                if uploaded_file:
+                    if st.button("🚀 Parse & Auto-Categorize Statement", type="primary", use_container_width=True):
+                        with st.spinner("🤖 AI is reading your statement. This may take 15-30 seconds..."):
+                            # Simple heuristic: if it's explicitly the template name or standard format without 'statement' keyword, try standard import
+                            if uploaded_file.name.lower().endswith(('.xlsx', '.csv')) and "statement" not in uploaded_file.name.lower() and "bill" not in uploaded_file.name.lower():
+                                try:
+                                    cnt, msg = import_from_excel_or_csv(uploaded_file, username=current_user["username"], visibility=upload_vis, family_id=user_family_id)
+                                    if cnt > 0:
+                                        st.success(msg)
+                                        import time; time.sleep(1)
+                                        st.rerun()
+                                    else:
+                                        st.error(msg)
+                                except Exception as e:
+                                    st.error(f"Error with standard template import: {e}. Try renaming file to include 'statement' to force AI parsing.")
+                            else:
+                                # Force AI unstructured parsing
+                                if not gemini_api_key:
+                                    st.error("⚠️ Gemini API Key is required for PDF/Unstructured Statement parsing. Add it in 'My Profile'.")
+                                else:
+                                    from statement_parser import parse_expense_statement_with_gemini
+                                    try:
+                                        raw_json = parse_expense_statement_with_gemini(uploaded_file.getvalue(), uploaded_file.name, gemini_api_key)
+                                        df_parsed = pd.DataFrame(raw_json)
+                                        if not df_parsed.empty:
+                                            # Standardize columns if missing
+                                            for col in ["date", "description", "amount", "transaction_type", "category"]:
+                                                if col not in df_parsed.columns:
+                                                    df_parsed[col] = ""
+                                            st.session_state["parsed_statement_df"] = df_parsed
+                                            st.rerun()
+                                        else:
+                                            st.warning("No transactions found in the document.")
+                                    except Exception as e:
+                                        st.error(f"Failed to parse statement: {e}")
+                                        
+                if "parsed_statement_df" in st.session_state:
+                    st.markdown("### 🔍 Review & Confirm Transactions")
+                    st.info("Please review the extracted transactions, correct any categories or amounts, and click Save.")
+                    
+                    edited_df = st.data_editor(
+                        st.session_state["parsed_statement_df"],
+                        num_rows="dynamic",
+                        column_config={
+                            "date": st.column_config.DateColumn("Date", required=True),
+                            "description": st.column_config.TextColumn("Description"),
+                            "amount": st.column_config.NumberColumn("Amount", required=True),
+                            "transaction_type": st.column_config.SelectboxColumn("Type", options=["Expense", "Income"], required=True),
+                            "category": st.column_config.SelectboxColumn("Category", options=EXPENSE_CATEGORIES + ["Salary", "Refund", "Interest"], required=True)
+                        },
+                        use_container_width=True,
+                        key="statement_editor"
+                    )
+                    
+                    col_save1, col_save2 = st.columns(2)
+                    with col_save1:
+                        if st.button("💾 Confirm & Save to Database", type="primary", use_container_width=True):
+                            records = edited_df.to_dict('records')
+                            for r in records:
+                                r['visibility'] = upload_vis
+                            
+                            try:
+                                cnt = insert_expenses(records, source=f"AI Import ({uploaded_file.name})", username=current_user["username"], visibility=upload_vis, family_id=user_family_id)
+                                st.success(f"Successfully saved {cnt} transactions!")
+                                del st.session_state["parsed_statement_df"]
+                                import time; time.sleep(1)
+                                st.rerun()
+                            except Exception as e:
+                                st.error(f"Database error: {e}")
+                    with col_save2:
+                        if st.button("❌ Cancel", type="secondary", use_container_width=True):
+                            del st.session_state["parsed_statement_df"]
                             st.rerun()
-                        else:
-                            st.error(msg)
                             
         st.divider()
         if True:

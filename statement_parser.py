@@ -340,3 +340,83 @@ def identify_and_parse_statement(file_bytes, filename, api_key=None):
                     item["current_value"] = round(val * units, 2)
                     
     return parsed_data
+
+def parse_expense_statement_with_gemini(file_bytes, filename, api_key):
+    """
+    Parses unstructured bank/credit card statements into Expense/Income records using Gemini.
+    """
+    from google import genai
+    from google.genai import types
+    import json
+    import re
+    import mimetypes
+    
+    client = genai.Client(api_key=api_key)
+    
+    # Determine MIME type
+    mime_type, _ = mimetypes.guess_type(filename)
+    if not mime_type:
+        if filename.lower().endswith('.csv'):
+            mime_type = 'text/csv'
+        elif filename.lower().endswith('.pdf'):
+            mime_type = 'application/pdf'
+        elif filename.lower().endswith('.xlsx'):
+            mime_type = 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'
+        elif filename.lower().endswith('.xls'):
+            mime_type = 'application/vnd.ms-excel'
+        else:
+            mime_type = 'application/octet-stream'
+
+    system_prompt = """
+You are an expert financial AI assistant. Your task is to extract all transactions (both Debits and Credits) from the provided bank or credit card statement.
+The document may be an image, PDF, CSV, or Excel file. Extract the data into a strict JSON list of dictionaries.
+
+Each dictionary MUST have the following keys and data types:
+- "date": (string) Transaction date in "YYYY-MM-DD" format.
+- "description": (string) Cleaned transaction description (e.g., remove weird alphanumeric transaction IDs if possible, keep the merchant name).
+- "amount": (float) The transaction amount as a positive number.
+- "transaction_type": (string) MUST be either "Expense" (for debits/money out) or "Income" (for credits/refunds/money in).
+- "category": (string) Attempt to categorize the transaction based on the description. Use categories like "Dining & Swiggy/Zomato", "Groceries & Provisions", "Transportation & Fuel", "Shopping & Apparel", "Utilities (Electricity/Water/Gas)", "Rent & Housing", "Miscellaneous", "Salary", "Refund", "Interest".
+
+Rules:
+1. Return ONLY the JSON array. Do not include markdown codeblocks (like ```json), explanations, or text outside the JSON.
+2. Ensure amounts are clean positive floats (no commas or currency symbols).
+3. If it's a credit card statement, payments TO the credit card should be marked as "Income" or ignored, while purchases are "Expense". If bank statement, money out is "Expense", money in is "Income".
+
+Example Output:
+[
+  {
+    "date": "2023-10-15",
+    "description": "Zomato Online Order",
+    "amount": 450.0,
+    "transaction_type": "Expense",
+    "category": "Dining & Swiggy/Zomato"
+  },
+  {
+    "date": "2023-10-16",
+    "description": "Salary Credit",
+    "amount": 150000.0,
+    "transaction_type": "Income",
+    "category": "Salary"
+  }
+]
+"""
+
+    response = client.models.generate_content(
+        model='gemini-1.5-flash-latest',
+        contents=[
+            types.Part.from_bytes(data=file_bytes, mime_type=mime_type),
+            system_prompt
+        ]
+    )
+    
+    raw_text = response.text.strip()
+    if "```" in raw_text:
+        raw_text = re.sub(r"```json\s*", "", raw_text)
+        raw_text = re.sub(r"```\s*", "", raw_text)
+        
+    parsed_json = json.loads(raw_text.strip())
+    if not isinstance(parsed_json, list):
+        raise ValueError("Gemini did not return a valid JSON list.")
+    
+    return parsed_json

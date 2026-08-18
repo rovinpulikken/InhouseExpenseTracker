@@ -312,12 +312,16 @@ def init_db():
             username TEXT DEFAULT 'admin',
             visibility TEXT DEFAULT 'Family',
             family_id INTEGER DEFAULT 1,
+            transaction_type TEXT DEFAULT 'Expense',
             created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
         )
     """)
     cursor.execute("PRAGMA table_info(expenses)")
     e_cols = [row[1] for row in cursor.fetchall()]
     if "half_year" not in e_cols:
+        cursor.execute("ALTER TABLE expenses ADD COLUMN half_year TEXT DEFAULT 'H1'")
+    if "transaction_type" not in e_cols:
+        cursor.execute("ALTER TABLE expenses ADD COLUMN transaction_type TEXT DEFAULT 'Expense'")
         cursor.execute("ALTER TABLE expenses ADD COLUMN half_year TEXT DEFAULT 'H1'")
     if "username" not in e_cols:
         cursor.execute("ALTER TABLE expenses ADD COLUMN username TEXT DEFAULT 'admin'")
@@ -837,10 +841,12 @@ def insert_expenses(
         except (ValueError, TypeError):
             continue
             
+        t_type = row.get("transaction_type", "Expense")
+        
         cursor.execute("""
-            INSERT INTO expenses (expense_date, financial_year, quarter, half_year, category, description, amount, source_note, username, visibility, family_id)
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-        """, (dt.isoformat(), fy, q_code, h_code, cat, str(desc), amt, source, user_clean, row_vis, fam_id))
+            INSERT INTO expenses (expense_date, financial_year, quarter, half_year, category, description, amount, source_note, username, visibility, family_id, transaction_type)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        """, (dt.isoformat(), fy, q_code, h_code, cat, str(desc), amt, source, user_clean, row_vis, fam_id, t_type))
         count += 1
         
     conn.commit()
@@ -852,11 +858,12 @@ def get_expenses_df(
     category: Optional[str] = None,
     username: Optional[str] = None,
     view_mode: str = "Family",
-    family_id: Optional[int] = 1
+    family_id: Optional[int] = 1,
+    transaction_type: str = "Expense"
 ) -> pd.DataFrame:
     conn = get_connection()
-    query = "SELECT * FROM expenses WHERE 1=1"
-    params = []
+    query = "SELECT * FROM expenses WHERE transaction_type = ?"
+    params = [transaction_type]
     
     if (username == "admin" or view_mode == "SuperAdmin") and (family_id is None or family_id == 0):
         # Super Admin viewing entire database across all families
@@ -898,14 +905,14 @@ def get_all_financial_years(username: Optional[str] = None, view_mode: str = "Fa
         fys.insert(0, current_fy)
     return fys
 
-def get_category_breakdown(fy: Optional[str] = None, username: Optional[str] = None, view_mode: str = "Family", family_id: int = 1) -> pd.DataFrame:
+def get_category_breakdown(fy: Optional[str] = None, username: Optional[str] = None, view_mode: str = "Family", family_id: int = 1, transaction_type: str = "Expense") -> pd.DataFrame:
     conn = get_connection()
     query = """
         SELECT category, SUM(amount) as Total_Amount, COUNT(*) as Transaction_Count, AVG(amount) as Avg_Amount
         FROM expenses
-        WHERE 1=1
+        WHERE transaction_type = ?
     """
-    params = []
+    params = [transaction_type]
     vis_clause, vis_params = _build_visibility_clause(username, view_mode, family_id)
     query += vis_clause
     params.extend(vis_params)

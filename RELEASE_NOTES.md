@@ -1,6 +1,11 @@
 # Release Notes
 
 ## v1.5.4 (2026-08-18)
+### Added
+- **Smart Statement Import**: Added AI-powered Bank and Credit Card Statement Import. The system now uses Google Gemini Vision to read any unstructured Bank or Credit Card Statement (PDF, CSV, or Excel), intelligently extracts dates, descriptions, amounts, determines if it's an Income or Expense, and automatically categorizes it.
+- **Unified Transaction Ledger**: Updated the `expenses` database table schema to include a `transaction_type` column to support both 'Expense' and 'Income' entries in the same place without breaking backward compatibility for existing expense charts.
+- **Interactive Review UI**: Revamped the "File Import & Quick Add" section. When you upload a PDF or CSV statement, it will process it using AI and present an interactive spreadsheet (`st.data_editor`) for you to review and confirm the AI's predicted categories or amounts before saving to the database.
+
 ### Fixed
 - **Mutual Fund display in Smart Advisor**: Fixed an issue where Mutual Funds (especially those tracked via AMFI scheme codes like "103819") would display "N/A" for their ticker and price because Yahoo Finance does not support AMFI codes. The Advisor now correctly identifies Mutual Funds, skips the Yahoo Finance technical trend check (which causes the N/A), calculates their current price directly from the portfolio's active NAV, and passes them to the AI for fundamental advice.
 - **Enhanced Ticker Display**: Smart Advisor now combines the stock/fund code and the actual resolved name in the UI, displaying it as `103819 ("Fund Name")` for much better readability.
