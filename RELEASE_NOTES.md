@@ -1,5 +1,9 @@
 # Release Notes
 
+## v1.5.5 (2026-08-19)
+### Fixed
+- **Gemini Model Migration**: Replaced the deprecated `gemini-2.5-flash` model (404 Not Found) with `gemini-2.5-flash-lite` across all AI-powered modules — `categorizer.py`, `statement_parser.py`, `ocr_engine.py`, `investment_planner.py`, and `example_stock_recommender.py`. All AI features (statement parsing, expense categorization, OCR, smart advisor) are restored.
+
 ## v1.5.4 (2026-08-18)
 ### Added
 - **Smart Statement Import**: Added AI-powered Bank and Credit Card Statement Import. The system now uses Google Gemini Vision to read any unstructured Bank or Credit Card Statement (PDF, CSV, or Excel), intelligently extracts dates, descriptions, amounts, determines if it's an Income or Expense, and automatically categorizes it.
