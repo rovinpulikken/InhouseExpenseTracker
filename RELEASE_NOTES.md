@@ -1,5 +1,9 @@
 # Release Notes
 
+## v1.5.9 (2026-08-19)
+### Changed
+- **Credit Card Bill Payments Ignored**: Instructed the AI statement parser to automatically skip credit card bill payments/settlements (typically appearing as "CR" entries for "Payment Received" or "Auto Debit"). These are debt settlements, not genuine income or expenses, and dropping them prevents double-counting. Also added a programmatic post-processing safety net to drop rows with payment-related keywords.
+
 ## v1.5.8 (2026-08-19)
 ### Fixed
 - **`StreamlitAPIException` on Statement Review (take 2)**: `DateColumn` in Streamlit on Python 3.14 rejects `object`-dtype columns of `datetime.date` objects even after `.dt.date` coercion. Fix: replaced `DateColumn` with `TextColumn("Date (YYYY-MM-DD)")` and store dates as ISO strings via `.dt.strftime("%Y-%m-%d")`. Also coerces `description`, `transaction_type`, `category` to clean strings to prevent any `SelectboxColumn` type errors.

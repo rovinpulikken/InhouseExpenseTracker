@@ -394,6 +394,8 @@ def identify_and_parse_statement(file_bytes, filename, api_key=None):
 def parse_expense_statement_with_gemini(file_bytes, filename, api_key):
     """
     Parses unstructured bank/credit card statements into Expense/Income records using Gemini REST API.
+    CR entries that are credit card bill payments/settlements are excluded — they are debt settlements,
+    not expenses or income, and must not be double-counted.
     """
     # Determine MIME type
     mime_type, _ = mimetypes.guess_type(filename)
@@ -405,23 +407,47 @@ def parse_expense_statement_with_gemini(file_bytes, filename, api_key):
         else: mime_type = 'application/octet-stream'
 
     prompt = """
-You are an expert financial AI assistant. Your task is to extract all transactions (both Debits and Credits) from the provided bank or credit card statement.
-The document may be an image, PDF, CSV, or Excel file. Extract the data into a strict JSON list of dictionaries.
+You are an expert financial AI assistant. Your task is to extract transactions from the provided bank or credit card statement.
+The document may be a PDF, CSV, or Excel file. Extract the data into a strict JSON list of dictionaries.
 
 Each dictionary MUST have the following keys:
 - "date": (string) Transaction date in "YYYY-MM-DD" format.
 - "description": (string) Cleaned transaction description. Keep the merchant name, remove transaction IDs.
 - "amount": (float) The transaction amount as a positive number.
-- "transaction_type": (string) MUST be either "Expense" (debits/money out) or "Income" (credits/refunds/money in).
-- "category": (string) Categorize using: "Dining & Swiggy/Zomato", "Groceries & Provisions", "Transportation & Fuel", "Shopping & Apparel", "Utilities (Electricity/Water/Gas)", "Rent & Housing", "Healthcare & Medical", "Miscellaneous", "Salary", "Refund", "Interest Income".
+- "transaction_type": (string) MUST be either "Expense" or "Income".
+- "category": (string) One of: "Dining & Swiggy/Zomato", "Groceries & Provisions", "Transportation & Fuel", "Shopping & Apparel", "Utilities (Electricity/Water/Gas)", "Rent & Housing", "Healthcare & Medical", "Salary", "Refund", "Interest Income", "Miscellaneous".
 
-Rules:
-1. Return ONLY the JSON array. No markdown codeblocks, no explanations.
+CRITICAL RULES — read carefully:
+1. Return ONLY the JSON array. No markdown, no explanations.
 2. Amounts must be clean positive floats (no commas or currency symbols).
-3. Credit card payments TO the card = "Income". All purchases = "Expense".
+3. SKIP any transaction that is a credit card bill payment or settlement.
+   These appear as "CR" (credit) entries with descriptions like:
+   "Payment received", "Bill payment", "Credit card payment", "Payment - thank you",
+   "Auto debit", "NEFT payment", "UPI payment to card", or any CR entry that clears dues.
+   These are NOT expenses or income — they are debt settlements. Do NOT include them.
+4. DR (Debit) entries = money spent = "Expense".
+5. Genuine CR (Credit) entries that are real income = "Income":
+   salary credits, refunds from merchants, interest credited, cashback.
 """
     raw_text = _call_gemini_rest(api_key, prompt, file_bytes=file_bytes, mime_type=mime_type)
     parsed_json = json.loads(raw_text)
     if not isinstance(parsed_json, list):
         raise ValueError("Gemini did not return a valid JSON list.")
-    return parsed_json
+
+    # Post-processing safety net: drop any CR-payment rows Gemini may have still included.
+    # These are characterised by payment-like keywords in the description.
+    PAYMENT_KEYWORDS = (
+        'payment received', 'bill payment', 'credit card payment', 'payment - thank you',
+        'payment thank you', 'auto debit', 'autopay', 'neft payment', 'payment to card',
+        'card payment', 'outstanding payment', 'min amt due', 'minimum due',
+        'total amount due', 'amount due',
+    )
+    filtered = []
+    for row in parsed_json:
+        desc = str(row.get('description', '')).lower().strip()
+        # Drop rows whose description matches a known credit card payment pattern
+        if any(kw in desc for kw in PAYMENT_KEYWORDS):
+            continue
+        filtered.append(row)
+
+    return filtered
