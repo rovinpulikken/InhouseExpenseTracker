@@ -792,6 +792,11 @@ else:
                                             for col in ["date", "description", "amount", "transaction_type", "category"]:
                                                 if col not in df_parsed.columns:
                                                     df_parsed[col] = ""
+                                            # Coerce types so st.data_editor column_config passes type check:
+                                            # DateColumn requires datetime.date, NumberColumn requires numeric
+                                            df_parsed["amount"] = pd.to_numeric(df_parsed["amount"], errors="coerce").fillna(0.0)
+                                            df_parsed["date"] = pd.to_datetime(df_parsed["date"], errors="coerce").dt.date
+                                            df_parsed["date"] = df_parsed["date"].where(df_parsed["date"].notna(), other=datetime.date.today())
                                             st.session_state["parsed_statement_df"] = df_parsed
                                             st.rerun()
                                         else:

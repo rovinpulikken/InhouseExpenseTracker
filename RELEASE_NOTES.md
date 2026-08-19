@@ -1,5 +1,9 @@
 # Release Notes
 
+## v1.5.7 (2026-08-19)
+### Fixed
+- **`StreamlitAPIException` on Statement Review (`st.data_editor`)**: `DateColumn` requires `datetime.date` objects but Gemini returns date strings (e.g. `"2026-01-01"`). Added type coercion in `app.py` before storing parsed data in session state: `date` column is coerced via `pd.to_datetime().dt.date` (invalid dates fall back to today), `amount` via `pd.to_numeric()` (invalid values default to `0.0`).
+
 ## v1.5.6 (2026-08-19)
 ### Fixed
 - **Statement Parse 400 INVALID_ARGUMENT — Definitive Fix**: `inline_data` (base64 PDF upload) returns 400 for this API key tier regardless of model — even `gemini-3.5-flash-lite` fails with real-sized PDFs. Root cause: PDF multimodal via `inline_data` requires a higher-tier API key. **Fix**: `_call_gemini_rest` now pre-extracts all file content to plain text before calling the API (pdfplumber for PDFs: full text + structured table rows; pandas for Excel; UTF-8 decode for CSV). Text-only approach is model-agnostic, key-tier-agnostic, and confirmed working end-to-end with live API test.
