@@ -1,5 +1,9 @@
 # Release Notes
 
+## v1.5.8 (2026-08-19)
+### Fixed
+- **`StreamlitAPIException` on Statement Review (take 2)**: `DateColumn` in Streamlit on Python 3.14 rejects `object`-dtype columns of `datetime.date` objects even after `.dt.date` coercion. Fix: replaced `DateColumn` with `TextColumn("Date (YYYY-MM-DD)")` and store dates as ISO strings via `.dt.strftime("%Y-%m-%d")`. Also coerces `description`, `transaction_type`, `category` to clean strings to prevent any `SelectboxColumn` type errors.
+
 ## v1.5.7 (2026-08-19)
 ### Fixed
 - **`StreamlitAPIException` on Statement Review (`st.data_editor`)**: `DateColumn` requires `datetime.date` objects but Gemini returns date strings (e.g. `"2026-01-01"`). Added type coercion in `app.py` before storing parsed data in session state: `date` column is coerced via `pd.to_datetime().dt.date` (invalid dates fall back to today), `amount` via `pd.to_numeric()` (invalid values default to `0.0`).

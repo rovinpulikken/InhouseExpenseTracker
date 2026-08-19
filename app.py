@@ -792,11 +792,12 @@ else:
                                             for col in ["date", "description", "amount", "transaction_type", "category"]:
                                                 if col not in df_parsed.columns:
                                                     df_parsed[col] = ""
-                                            # Coerce types so st.data_editor column_config passes type check:
-                                            # DateColumn requires datetime.date, NumberColumn requires numeric
+                                            # Coerce types for data_editor compatibility:
+                                            # amount → float64 (NumberColumn), date → ISO string (TextColumn, avoids DateColumn type errors)
                                             df_parsed["amount"] = pd.to_numeric(df_parsed["amount"], errors="coerce").fillna(0.0)
-                                            df_parsed["date"] = pd.to_datetime(df_parsed["date"], errors="coerce").dt.date
-                                            df_parsed["date"] = df_parsed["date"].where(df_parsed["date"].notna(), other=datetime.date.today())
+                                            df_parsed["date"] = pd.to_datetime(df_parsed["date"], errors="coerce").dt.strftime("%Y-%m-%d").fillna(str(datetime.date.today()))
+                                            for col in ["description", "transaction_type", "category"]:
+                                                df_parsed[col] = df_parsed[col].astype(str).str.strip()
                                             st.session_state["parsed_statement_df"] = df_parsed
                                             st.rerun()
                                         else:
@@ -812,7 +813,7 @@ else:
                         st.session_state["parsed_statement_df"],
                         num_rows="dynamic",
                         column_config={
-                            "date": st.column_config.DateColumn("Date", required=True),
+                            "date": st.column_config.TextColumn("Date (YYYY-MM-DD)", help="Edit as YYYY-MM-DD"),
                             "description": st.column_config.TextColumn("Description"),
                             "amount": st.column_config.NumberColumn("Amount", required=True),
                             "transaction_type": st.column_config.SelectboxColumn("Type", options=["Expense", "Income"], required=True),
