@@ -2,7 +2,7 @@
 
 ## v1.5.5 (2026-08-19)
 ### Fixed
-- **Gemini Model Migration**: Replaced the deprecated `gemini-2.5-flash` model (404 Not Found) with `gemini-2.5-flash-lite` across all AI-powered modules — `categorizer.py`, `statement_parser.py`, `ocr_engine.py`, `investment_planner.py`, and `example_stock_recommender.py`. All AI features (statement parsing, expense categorization, OCR, smart advisor) are restored.
+- **Gemini Model Migration (RCA)**: Root cause: This API key is a "new user" key — Google deprecated `gemini-2.5-flash` AND `gemini-2.5-flash-lite` for new-user keys (both return HTTP 404). Verified live via the models API that `gemini-3.5-flash` returns HTTP 200 for this key. All 10 AI call sites in `categorizer.py`, `statement_parser.py`, `ocr_engine.py`, `investment_planner.py`, and `example_stock_recommender.py` are now updated to `gemini-3.5-flash`.
 
 ## v1.5.4 (2026-08-18)
 ### Added
