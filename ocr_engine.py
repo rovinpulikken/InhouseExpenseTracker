@@ -53,7 +53,7 @@ def scan_handwritten_notebook(image: Image.Image, api_key: str = None) -> Tuple[
         img_bytes = img_byte_arr.getvalue()
         
         response = client.models.generate_content(
-            model='gemini-3.5-flash',
+            model='gemini-3.5-flash-lite',
             contents=[
                 types.Part.from_bytes(
                     data=img_bytes,

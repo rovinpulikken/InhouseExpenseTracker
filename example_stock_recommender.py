@@ -38,7 +38,7 @@ def run_savvy_screener_example(api_key: str = None):
     client = genai.Client(api_key=api_key)
 
     response = client.models.generate_content(
-        model="gemini-3.5-flash",
+        model="gemini-3.5-flash-lite",
         contents=[BASE_STOCK_SYSTEM_PROMPT, user_prompt]
     )
 

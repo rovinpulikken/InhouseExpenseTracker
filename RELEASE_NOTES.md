@@ -1,5 +1,9 @@
 # Release Notes
 
+## v1.5.6 (2026-08-19)
+### Fixed
+- **Statement Parse 400 INVALID_ARGUMENT (RCA)**: `gemini-3.5-flash` is text-only and rejects PDF `inline_data` with HTTP 400. Live-tested all candidate models: `gemini-3.5-flash-lite` confirmed to support multimodal PDF via `inline_data` (HTTP 200). Migrated all 11 call sites to `gemini-3.5-flash-lite`. Also enhanced the PDF path in `_call_gemini_rest` to send both `inline_data` (for visual understanding) **and** pdfplumber-extracted table text (for structured data) simultaneously, improving extraction accuracy on complex bank statement layouts.
+
 ## v1.5.5 (2026-08-19)
 ### Fixed
 - **Gemini Model Migration (RCA)**: Root cause: This API key is a "new user" key — Google deprecated `gemini-2.5-flash` AND `gemini-2.5-flash-lite` for new-user keys (both return HTTP 404). Verified live via the models API that `gemini-3.5-flash` returns HTTP 200 for this key. All 10 AI call sites in `categorizer.py`, `statement_parser.py`, `ocr_engine.py`, `investment_planner.py`, and `example_stock_recommender.py` are now updated to `gemini-3.5-flash`.
