@@ -226,59 +226,63 @@ def parse_anand_rathi_statement(file_bytes, filename):
 
 def _call_gemini_rest(api_key, prompt_text, file_bytes=None, mime_type=None):
     """
-    Calls the Gemini REST API directly.
-    - PDFs/images: sent as base64 inline_data (gemini-3.5-flash-lite supports multimodal)
-    - Excel/CSV: converted to string text and sent as a text part
+    Calls the Gemini REST API using text-only parts.
+    All file types are pre-converted to text before sending:
+      - PDF: pdfplumber extracts raw text + structured table rows
+      - Excel: pandas reads to string
+      - CSV/text: UTF-8 decoded directly
+    This avoids ALL inline_data / multimodal 400 errors regardless of key tier or model.
     """
     import requests
-    import base64
 
     model = 'gemini-3.5-flash-lite'
     url = f'https://generativelanguage.googleapis.com/v1beta/models/{model}:generateContent?key={api_key}'
 
     parts = []
-    if file_bytes and mime_type:
-        is_pdf = mime_type == 'application/pdf' or (mime_type and 'pdf' in mime_type)
-        is_text_format = mime_type in (
-            'text/csv', 'text/plain',
-            'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
-            'application/vnd.ms-excel'
-        )
 
-        if is_pdf:
-            # Primary: send PDF as base64 inline_data (gemini-3.5-flash-lite supports multimodal PDF)
-            encoded = base64.standard_b64encode(file_bytes).decode('utf-8')
-            parts.append({
-                'inline_data': {
-                    'mime_type': 'application/pdf',
-                    'data': encoded
-                }
-            })
-            # Secondary: also extract text via pdfplumber for structured table data
+    if file_bytes and mime_type:
+        extracted_text = ''
+
+        if 'pdf' in mime_type:
+            # Extract all text and table data from the PDF using pdfplumber
             try:
                 with pdfplumber.open(io.BytesIO(file_bytes)) as pdf:
-                    pages_text = []
-                    for page in pdf.pages:
+                    sections = []
+                    for page_num, page in enumerate(pdf.pages, 1):
+                        # Raw text
+                        raw = page.extract_text()
+                        if raw and raw.strip():
+                            sections.append(f"--- Page {page_num} ---\n{raw.strip()}")
+                        # Structured tables (often more accurate for bank statements)
                         for table in (page.extract_tables() or []):
                             if table:
-                                rows = ['\t'.join(str(c) if c else '' for c in row) for row in table if row]
+                                rows = [
+                                    '\t'.join(str(c).strip() if c else '' for c in row)
+                                    for row in table if any(c for c in row)
+                                ]
                                 if rows:
-                                    pages_text.append('\n'.join(rows))
-                    if pages_text:
-                        parts.append({'text': 'Extracted table data:\n' + '\n\n'.join(pages_text)[:20000]})
-            except Exception:
-                pass
+                                    sections.append('\n'.join(rows))
+                    extracted_text = '\n\n'.join(sections)
+            except Exception as e:
+                extracted_text = f'[PDF extraction error: {e}]'
 
-        elif is_text_format:
+        elif mime_type in (
+            'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+            'application/vnd.ms-excel'
+        ):
             try:
-                if 'csv' in mime_type or 'text' in mime_type:
-                    file_text = file_bytes.decode('utf-8', errors='ignore')
-                else:
-                    df = pd.read_excel(io.BytesIO(file_bytes))
-                    file_text = df.to_string()
+                df = pd.read_excel(io.BytesIO(file_bytes))
+                extracted_text = df.to_string(index=False)
             except Exception:
-                file_text = file_bytes.decode('utf-8', errors='ignore')
-            parts.append({'text': file_text[:60000]})
+                extracted_text = file_bytes.decode('utf-8', errors='ignore')
+
+        else:
+            # CSV, plain text, or unknown
+            extracted_text = file_bytes.decode('utf-8', errors='ignore')
+
+        if extracted_text.strip():
+            # Cap at 60k chars to stay within token limits
+            parts.append({'text': extracted_text[:60000]})
 
     parts.append({'text': prompt_text})
 

@@ -2,7 +2,7 @@
 
 ## v1.5.6 (2026-08-19)
 ### Fixed
-- **Statement Parse 400 INVALID_ARGUMENT (RCA)**: `gemini-3.5-flash` is text-only and rejects PDF `inline_data` with HTTP 400. Live-tested all candidate models: `gemini-3.5-flash-lite` confirmed to support multimodal PDF via `inline_data` (HTTP 200). Migrated all 11 call sites to `gemini-3.5-flash-lite`. Also enhanced the PDF path in `_call_gemini_rest` to send both `inline_data` (for visual understanding) **and** pdfplumber-extracted table text (for structured data) simultaneously, improving extraction accuracy on complex bank statement layouts.
+- **Statement Parse 400 INVALID_ARGUMENT — Definitive Fix**: `inline_data` (base64 PDF upload) returns 400 for this API key tier regardless of model — even `gemini-3.5-flash-lite` fails with real-sized PDFs. Root cause: PDF multimodal via `inline_data` requires a higher-tier API key. **Fix**: `_call_gemini_rest` now pre-extracts all file content to plain text before calling the API (pdfplumber for PDFs: full text + structured table rows; pandas for Excel; UTF-8 decode for CSV). Text-only approach is model-agnostic, key-tier-agnostic, and confirmed working end-to-end with live API test.
 
 ## v1.5.5 (2026-08-19)
 ### Fixed
