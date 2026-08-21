@@ -2657,6 +2657,13 @@ else:
             )
             st.markdown("<br>", unsafe_allow_html=True)
 
+            # Ensure API key is available in this scope
+            gemini_api_key = (
+                current_user.get("gemini_api_key") or
+                os.environ.get("GEMINI_API_KEY", "") or
+                st.secrets.get("GEMINI_API_KEY", "")
+            )
+
             adv_tab1, adv_tab2, adv_tab3 = st.tabs([
                 "🔄 Rebalance My Portfolio",
                 "💰 Deploy New Money",
@@ -2700,7 +2707,7 @@ else:
 
                 if run_rebal:
                     with st.spinner("Fetching live trend signals for ALL holdings and computing drift (this may take up to 30-45 seconds)..."):
-                        rebal_result = generate_rebalance_advice(inv_df, rebal_risk, rebal_country, advisor_user_context)
+                        rebal_result = generate_rebalance_advice(inv_df, rebal_risk, rebal_country, advisor_user_context, gemini_api_key)
                     st.session_state["rebal_result"] = rebal_result
 
                 rebal_result = st.session_state.get("rebal_result")
@@ -2849,7 +2856,7 @@ else:
                 if st.button("💡 Get Investment Suggestions", type="primary", use_container_width=True, key="nm_suggest_btn"):
                     with st.spinner("Generating personalised suggestions..."):
                         mode_str = "SIP" if "SIP" in nm_mode else "Lump Sum"
-                        nm_result = generate_new_money_advice(inv_df, nm_risk, nm_amount, mode_str, nm_country, advisor_user_context)
+                        nm_result = generate_new_money_advice(inv_df, nm_risk, nm_amount, mode_str, nm_country, advisor_user_context, gemini_api_key)
                     st.session_state["nm_result"] = nm_result
 
                 nm_result = st.session_state.get("nm_result")

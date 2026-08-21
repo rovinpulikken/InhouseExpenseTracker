@@ -755,7 +755,8 @@ def generate_rebalance_advice(
     holdings_df: Any,
     risk_profile: str = "Moderate",
     country: str = "India",
-    user_context: str = ""
+    user_context: str = "",
+    api_key: str = ""
 ) -> Dict[str, Any]:
     """
     Computes current vs target allocation, drift table, yfinance trend signals for
@@ -884,15 +885,16 @@ def generate_rebalance_advice(
     detailed_plan = []
     try:
         from google import genai
-        api_key = os.environ.get("GEMINI_API_KEY")
-        if not api_key:
+        # Use passed api_key first, then fall back to env/secrets
+        _key = api_key or os.environ.get("GEMINI_API_KEY", "") or ""
+        if not _key:
             try:
                 import streamlit as st
-                api_key = st.secrets.get("GEMINI_API_KEY")
+                _key = st.secrets.get("GEMINI_API_KEY", "")
             except Exception:
                 pass
-        if api_key:
-            client = genai.Client(api_key=api_key)
+        if _key:
+            client = genai.Client(api_key=_key)
             system_prompt = BASE_STOCK_SYSTEM_PROMPT.format(country=country)
             prompt = f"""
             {system_prompt}
@@ -966,7 +968,8 @@ def generate_new_money_advice(
     amount: float = 50000.0,
     mode: str = "Lump Sum",
     country: str = "India",
-    user_context: str = ""
+    user_context: str = "",
+    api_key: str = ""
 ) -> Dict[str, Any]:
     """
     Recommends specific instruments for deploying new money (lump-sum or SIP)
@@ -1006,15 +1009,16 @@ def generate_new_money_advice(
     detailed_plan = []
     try:
         from google import genai
-        api_key = os.environ.get("GEMINI_API_KEY")
-        if not api_key:
+        # Use passed api_key first, then fall back to env/secrets
+        _key = api_key or os.environ.get("GEMINI_API_KEY", "") or ""
+        if not _key:
             try:
                 import streamlit as st
-                api_key = st.secrets.get("GEMINI_API_KEY")
+                _key = st.secrets.get("GEMINI_API_KEY", "")
             except Exception:
                 pass
-        if api_key:
-            client = genai.Client(api_key=api_key)
+        if _key:
+            client = genai.Client(api_key=_key)
             system_prompt = BASE_STOCK_SYSTEM_PROMPT.format(country=country)
             prompt = f"""
             {system_prompt}
