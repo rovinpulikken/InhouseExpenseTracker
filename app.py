@@ -2711,11 +2711,14 @@ else:
                         st.success(f"✅ Analysis complete for portfolio of **{format_inr(rebal_result['total_value'])}**")
 
                         # DEBUG: show any errors from Gemini
+                        st.info(f"🔎 DEBUG: detailed_plan={len(rebal_result.get('detailed_plan',[]))}, recommendations={len(rebal_result.get('recommendations',[]))}, sector_analysis={len(rebal_result.get('sector_analysis',[]))}")
                         if st.session_state.get("_rebal_error"):
-                            st.error(f"🔴 Gemini Error: {st.session_state['_rebal_error']}")
+                            st.error(f"🔴 Gemini Error:\n{st.session_state['_rebal_error']}")
                         if st.session_state.get("_rebal_raw_resp"):
                             with st.expander("🔎 DEBUG: Raw Gemini Response (first 500 chars)"):
                                 st.code(st.session_state["_rebal_raw_resp"])
+                        if not st.session_state.get("_rebal_error") and not st.session_state.get("_rebal_raw_resp"):
+                            st.warning("⚠️ DEBUG: No Gemini response captured — API key might be None or Gemini block was skipped")
 
                         # Allocation Comparison Charts
                         alloc_c1, alloc_c2 = st.columns(2)
