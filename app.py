@@ -2739,29 +2739,36 @@ else:
                                 use_container_width=True, hide_index=True
                             )
 
+                        # Detailed Action Plan
+                        if rebal_result.get("detailed_plan"):
+                            st.markdown("##### 🗺️ Detailed Action Plan")
+                            with st.expander("View Step-by-Step Plan", expanded=True):
+                                for i, step in enumerate(rebal_result["detailed_plan"]):
+                                    st.markdown(f"**Step {i+1}:** {step}")
+
                         # Trend Signals for Equity Holdings
                         if rebal_result.get("trend_signals"):
-                            st.markdown("##### 📈 Live Trend Signals (Equity Holdings)")
-                            for sig in rebal_result["trend_signals"]:
-                                signal_color = {"Strong Buy": "#10b981", "Buy": "#34d399", "Hold": "#94a3b8", "Reduce": "#f59e0b", "Caution": "#ef4444"}.get(sig.get("signal", ""), "#94a3b8")
-                                sig_col1, sig_col2, sig_col3, sig_col4 = st.columns([2, 1.5, 1, 3])
-                                with sig_col1:
-                                    st.markdown(f"**{sig.get('holding_name', sig.get('ticker', '?'))}**")
-                                    st.caption(f"Ticker: `{sig.get('ticker', 'N/A')}`")
-                                with sig_col2:
-                                    price = sig.get("current_price")
-                                    st.metric("Current Price", f"₹{price:,.2f}" if price else "N/A",
-                                              delta=f"{sig.get('momentum_pct', 0):+.1f}% (30d)" if sig.get("momentum_pct") is not None else None)
-                                with sig_col3:
-                                    st.markdown(f"""<div style="background:{signal_color}22; border:1px solid {signal_color};
-                                        border-radius:6px; padding:8px 12px; text-align:center;
-                                        font-weight:700; color:{signal_color}; font-size:0.9rem;">
-                                        {sig.get('signal', 'N/A')}<br>
-                                        <span style="font-size:0.75rem; font-weight:400;">{sig.get('strength_score', 50)}/100</span>
-                                        </div>""", unsafe_allow_html=True)
-                                with sig_col4:
-                                    st.caption(sig.get("details", ""))
-                                st.markdown("<hr style='margin:6px 0; border-color:#334155;'>", unsafe_allow_html=True)
+                            with st.expander("📈 Live Trend Signals (Equity Holdings)", expanded=False):
+                                for sig in rebal_result["trend_signals"]:
+                                    signal_color = {"Strong Buy": "#10b981", "Buy": "#34d399", "Hold": "#94a3b8", "Reduce": "#f59e0b", "Caution": "#ef4444"}.get(sig.get("signal", ""), "#94a3b8")
+                                    sig_col1, sig_col2, sig_col3, sig_col4 = st.columns([2, 1.5, 1, 3])
+                                    with sig_col1:
+                                        st.markdown(f"**{sig.get('holding_name', sig.get('ticker', '?'))}**")
+                                        st.caption(f"Ticker: `{sig.get('ticker', 'N/A')}`")
+                                    with sig_col2:
+                                        price = sig.get("current_price")
+                                        st.metric("Current Price", f"₹{price:,.2f}" if price else "N/A",
+                                                  delta=f"{sig.get('momentum_pct', 0):+.1f}% (30d)" if sig.get("momentum_pct") is not None else None)
+                                    with sig_col3:
+                                        st.markdown(f"""<div style="background:{signal_color}22; border:1px solid {signal_color};
+                                            border-radius:6px; padding:8px 12px; text-align:center;
+                                            font-weight:700; color:{signal_color}; font-size:0.9rem;">
+                                            {sig.get('signal', 'N/A')}<br>
+                                            <span style="font-size:0.75rem; font-weight:400;">{sig.get('strength_score', 50)}/100</span>
+                                            </div>""", unsafe_allow_html=True)
+                                    with sig_col4:
+                                        st.caption(sig.get("details", ""))
+                                    st.markdown("<hr style='margin:6px 0; border-color:#334155;'>", unsafe_allow_html=True)
 
                         # Recommendations
                         if rebal_result.get("recommendations"):
@@ -2793,13 +2800,6 @@ else:
                                     <div style="color:#94a3b8; font-size:0.82rem; margin-top:6px;">{sec.get('rationale','')}</div>
                                 </div>
                                 """, unsafe_allow_html=True)
-
-                        # Detailed Action Plan
-                        if rebal_result.get("detailed_plan"):
-                            st.markdown("##### 🗺️ Detailed Action Plan")
-                            with st.expander("View Step-by-Step Plan", expanded=True):
-                                for i, step in enumerate(rebal_result["detailed_plan"]):
-                                    st.markdown(f"**Step {i+1}:** {step}")
 
             # --------------------------------
             # INNER TAB 2: DEPLOY NEW MONEY
