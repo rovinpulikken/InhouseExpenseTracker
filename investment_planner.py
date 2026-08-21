@@ -912,7 +912,7 @@ def generate_rebalance_advice(
             Output strictly as JSON with keys:
             - 'recommendations': list of {{title, action_type (Buy/Sell/Hold), instrument, rationale}}. Max 5 items.
             - 'sector_analysis': list of {{sector, action_type (Buy/Sell/Hold), rationale}}. Max 4 items based on current macro environment.
-            - 'detailed_plan': list of strings containing a step-by-step roadmap that details exactly HOW the plan will meet the user's specific goals, including expected outcomes. Max 5 steps.
+            - 'detailed_plan': list of strings containing a step-by-step roadmap detailing HOW the plan will meet the user's goals (if provided) or general wealth objectives. Max 5 steps. MUST BE INCLUDED.
             """
             resp = client.models.generate_content(model="gemini-3.5-flash-lite", contents=prompt)
             if resp and resp.text:
@@ -1018,7 +1018,7 @@ def generate_new_money_advice(
             Enhance rationale for current {country} market environment.
             Output JSON strictly with keys: 
             - 'summary': string, overarching strategy summary.
-            - 'detailed_plan': list of strings containing a step-by-step roadmap that details exactly HOW the deployment plan will meet the user's specific goals, including expected outcomes. Max 5 steps.
+            - 'detailed_plan': list of strings containing a step-by-step roadmap detailing HOW the deployment plan will meet the user's goals (if provided) or general wealth objectives. Max 5 steps. MUST BE INCLUDED.
             Keep instruments same.
             """
             resp = client.models.generate_content(model="gemini-3.5-flash-lite", contents=prompt)
