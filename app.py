@@ -2794,6 +2794,13 @@ else:
                                 </div>
                                 """, unsafe_allow_html=True)
 
+                        # Detailed Action Plan
+                        if rebal_result.get("detailed_plan"):
+                            st.markdown("##### 🗺️ Detailed Action Plan")
+                            with st.expander("View Step-by-Step Plan", expanded=True):
+                                for i, step in enumerate(rebal_result["detailed_plan"]):
+                                    st.markdown(f"**Step {i+1}:** {step}")
+
             # --------------------------------
             # INNER TAB 2: DEPLOY NEW MONEY
             # --------------------------------
@@ -2831,6 +2838,12 @@ else:
 
                     st.success("🎉 Suggestions Ready!")
                     st.info(nm_result.get("summary", ""))
+
+                    if nm_result.get("detailed_plan"):
+                        st.markdown("##### 🗺️ Detailed Action Plan")
+                        with st.expander("View Step-by-Step Plan", expanded=True):
+                            for i, step in enumerate(nm_result["detailed_plan"]):
+                                st.markdown(f"**Step {i+1}:** {step}")
 
                     st.markdown("---")
                     st.markdown("##### 🗂️ Instrument Suggestions by Asset Class")

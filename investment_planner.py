@@ -911,6 +911,7 @@ def generate_rebalance_advice(
             Output strictly as JSON with keys:
             - 'recommendations': list of {{title, action_type (Buy/Sell/Hold), instrument, rationale}}. Max 5 items.
             - 'sector_analysis': list of {{sector, action_type (Buy/Sell/Hold), rationale}}. Max 4 items based on current macro environment.
+            - 'detailed_plan': list of strings containing step-by-step actions and timelines to achieve the user's specific context/goal (if provided). Max 5 steps.
             """
             resp = client.models.generate_content(model="gemini-3.5-flash-lite", contents=prompt)
             if resp and resp.text:
@@ -918,6 +919,7 @@ def generate_rebalance_advice(
                 parsed = json.loads(resp.text.replace("```json", "").replace("```", "").strip())
                 recommendations = parsed.get("recommendations", [])
                 sector_analysis = parsed.get("sector_analysis", [])
+                detailed_plan = parsed.get("detailed_plan", [])
     except Exception:
         pass
 
@@ -934,7 +936,7 @@ def generate_rebalance_advice(
 
     return {"current_allocation": current_pct, "target_allocation": target, "total_value": total_value,
             "drift_table": drift_table, "recommendations": recommendations, "trend_signals": trend_signals, 
-            "sector_analysis": sector_analysis, "risk_profile": risk_profile}
+            "sector_analysis": sector_analysis, "risk_profile": risk_profile, "detailed_plan": locals().get("detailed_plan", [])}
 
 
 def generate_new_money_advice(
@@ -1003,18 +1005,22 @@ def generate_new_money_advice(
             (Ensure the rationale directly addresses this context if provided.)
 
             Enhance rationale for current {country} market environment.
-            JSON: key 'summary' (string) only. Keep instruments same.
+            Output JSON strictly with keys: 
+            - 'summary': string, overarching strategy summary.
+            - 'detailed_plan': list of strings containing a step-by-step roadmap to achieve the user's specific context/goal (if provided). Max 5 steps.
+            Keep instruments same.
             """
             resp = client.models.generate_content(model="gemini-3.5-flash-lite", contents=prompt)
             if resp and resp.text:
                 import json
                 parsed = json.loads(resp.text.replace("```json", "").replace("```", "").strip())
                 summary = parsed.get("summary", summary)
+                detailed_plan = parsed.get("detailed_plan", [])
     except Exception:
         pass
 
     return {"mode": mode, "amount": amount, "country": country, "risk_profile": risk_profile,
-            "allocation_split": alloc, "suggestions": suggestions, "summary": summary}
+            "allocation_split": alloc, "suggestions": suggestions, "summary": summary, "detailed_plan": locals().get("detailed_plan", [])}
 
 
 def _india_new_regime_tax(gross: float) -> float:

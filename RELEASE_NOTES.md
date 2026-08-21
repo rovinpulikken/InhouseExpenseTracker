@@ -3,6 +3,7 @@
 ## v1.5.9 (2026-08-21)
 ### Changed
 - **Smart Advisor Context Input**: Added an optional text area in the "Smart Advisor & Tax Planner" tab. Users can now enter specific goals, life events, or questions (e.g., "I want to buy a house in 2 years") which are passed directly to the Gemini AI to generate highly personalized rebalancing and new money deployment advice.
+- **Detailed Action Plan**: The Smart Advisor now automatically generates and displays a step-by-step roadmap or timeline mapping out exactly how to achieve the specific goals or context provided by the user.
 - **Credit Card Bill Payments Ignored**: Instructed the AI statement parser to automatically skip credit card bill payments/settlements (typically appearing as "CR" entries for "Payment Received" or "Auto Debit"). These are debt settlements, not genuine income or expenses, and dropping them prevents double-counting. Also added a programmatic post-processing safety net to drop rows with payment-related keywords.
 
 ## v1.5.8 (2026-08-19)
