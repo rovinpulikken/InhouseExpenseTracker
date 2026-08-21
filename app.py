@@ -2701,7 +2701,10 @@ else:
                 if run_rebal:
                     with st.spinner("Fetching live trend signals for ALL holdings and computing drift (this may take up to 30-45 seconds)..."):
                         rebal_result = generate_rebalance_advice(inv_df, rebal_risk, rebal_country, advisor_user_context)
+                    st.session_state["rebal_result"] = rebal_result
 
+                rebal_result = st.session_state.get("rebal_result")
+                if rebal_result:
                     if "error" in rebal_result:
                         st.warning(f"⚠️ {rebal_result['error']}")
                     else:
@@ -2835,7 +2838,10 @@ else:
                     with st.spinner("Generating personalised suggestions..."):
                         mode_str = "SIP" if "SIP" in nm_mode else "Lump Sum"
                         nm_result = generate_new_money_advice(inv_df, nm_risk, nm_amount, mode_str, nm_country, advisor_user_context)
+                    st.session_state["nm_result"] = nm_result
 
+                nm_result = st.session_state.get("nm_result")
+                if nm_result:
                     st.success("🎉 Suggestions Ready!")
                     st.info(nm_result.get("summary", ""))
 
@@ -2882,6 +2888,7 @@ else:
                                 </div>
                             </div>
                             """, unsafe_allow_html=True)
+
 
             # --------------------------------
             # INNER TAB 3: INCOME & TAX PLANNER
