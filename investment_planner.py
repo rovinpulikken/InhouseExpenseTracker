@@ -881,6 +881,7 @@ def generate_rebalance_advice(
     # Gemini rebalancing & sector narrative
     recommendations = []
     sector_analysis = []
+    detailed_plan = []
     try:
         from google import genai
         api_key = os.environ.get("GEMINI_API_KEY")
@@ -916,11 +917,20 @@ def generate_rebalance_advice(
             resp = client.models.generate_content(model="gemini-3.5-flash-lite", contents=prompt)
             if resp and resp.text:
                 import json
-                parsed = json.loads(resp.text.replace("```json", "").replace("```", "").strip())
+                import re
+                text = resp.text
+                match = re.search(r'```(?:json)?\s*(\{.*?\})\s*```', text, re.DOTALL)
+                if match:
+                    json_str = match.group(1)
+                else:
+                    json_str = text[text.find("{"):text.rfind("}")+1]
+                
+                parsed = json.loads(json_str)
                 recommendations = parsed.get("recommendations", [])
                 sector_analysis = parsed.get("sector_analysis", [])
                 detailed_plan = parsed.get("detailed_plan", [])
-    except Exception:
+    except Exception as e:
+        print(f"Gemini Rebalance Error: {e}")
         pass
 
     if not recommendations:
@@ -936,7 +946,7 @@ def generate_rebalance_advice(
 
     return {"current_allocation": current_pct, "target_allocation": target, "total_value": total_value,
             "drift_table": drift_table, "recommendations": recommendations, "trend_signals": trend_signals, 
-            "sector_analysis": sector_analysis, "risk_profile": risk_profile, "detailed_plan": locals().get("detailed_plan", [])}
+            "sector_analysis": sector_analysis, "risk_profile": risk_profile, "detailed_plan": detailed_plan}
 
 
 def generate_new_money_advice(
@@ -982,6 +992,7 @@ def generate_new_money_advice(
             suggestions[cls].append(entry)
 
     summary = f"For a {risk_profile} investor in {country}: deploy {mode} of Rs{amount:,.0f} across the suggested instruments below."
+    detailed_plan = []
     try:
         from google import genai
         api_key = os.environ.get("GEMINI_API_KEY")
@@ -1013,14 +1024,23 @@ def generate_new_money_advice(
             resp = client.models.generate_content(model="gemini-3.5-flash-lite", contents=prompt)
             if resp and resp.text:
                 import json
-                parsed = json.loads(resp.text.replace("```json", "").replace("```", "").strip())
+                import re
+                text = resp.text
+                match = re.search(r'```(?:json)?\s*(\{.*?\})\s*```', text, re.DOTALL)
+                if match:
+                    json_str = match.group(1)
+                else:
+                    json_str = text[text.find("{"):text.rfind("}")+1]
+                
+                parsed = json.loads(json_str)
                 summary = parsed.get("summary", summary)
                 detailed_plan = parsed.get("detailed_plan", [])
-    except Exception:
+    except Exception as e:
+        print(f"Gemini New Money Error: {e}")
         pass
 
     return {"mode": mode, "amount": amount, "country": country, "risk_profile": risk_profile,
-            "allocation_split": alloc, "suggestions": suggestions, "summary": summary, "detailed_plan": locals().get("detailed_plan", [])}
+            "allocation_split": alloc, "suggestions": suggestions, "summary": summary, "detailed_plan": detailed_plan}
 
 
 def _india_new_regime_tax(gross: float) -> float:
