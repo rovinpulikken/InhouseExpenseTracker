@@ -754,7 +754,8 @@ def fetch_stock_trend_signal(ticker: str, days: int = 210) -> Dict[str, Any]:
 def generate_rebalance_advice(
     holdings_df: Any,
     risk_profile: str = "Moderate",
-    country: str = "India"
+    country: str = "India",
+    user_context: str = ""
 ) -> Dict[str, Any]:
     """
     Computes current vs target allocation, drift table, yfinance trend signals for
@@ -903,6 +904,9 @@ def generate_rebalance_advice(
             Drifts: {[d for d in drift_table if d['Action'] != 'Hold — On Track']}
             Equity Trend Signals: {trend_signals}
 
+            User's Specific Context / Goals: {user_context}
+            (Ensure recommendations directly address this context if provided.)
+
             Recommend specific {country} instruments. 
             Output strictly as JSON with keys:
             - 'recommendations': list of {{title, action_type (Buy/Sell/Hold), instrument, rationale}}. Max 5 items.
@@ -938,7 +942,8 @@ def generate_new_money_advice(
     risk_profile: str = "Moderate",
     amount: float = 50000.0,
     mode: str = "Lump Sum",
-    country: str = "India"
+    country: str = "India",
+    user_context: str = ""
 ) -> Dict[str, Any]:
     """
     Recommends specific instruments for deploying new money (lump-sum or SIP)
@@ -993,6 +998,9 @@ def generate_new_money_advice(
             Risk={risk_profile}, Mode={mode}, Amount=Rs{amount:,.0f}, Country={country}
             Current portfolio: {current_pct}, Target: {target}
             Pre-selected: {{{', '.join(f'{k}: {[i["name"] for i in v[:2]]}' for k, v in suggestions.items())}}}
+
+            User's Specific Context / Goals: {user_context}
+            (Ensure the rationale directly addresses this context if provided.)
 
             Enhance rationale for current {country} market environment.
             JSON: key 'summary' (string) only. Keep instruments same.

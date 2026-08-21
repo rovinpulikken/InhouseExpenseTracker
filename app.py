@@ -2650,6 +2650,13 @@ else:
             </div>
             """, unsafe_allow_html=True)
 
+            advisor_user_context = st.text_area(
+                "💬 Additional Context / Goals (Optional)", 
+                placeholder="e.g., 'I want to buy a house in 2 years' or 'Should I shift my FDs to Mutual Funds?'",
+                help="The AI will incorporate these specific goals into its recommendations."
+            )
+            st.markdown("<br>", unsafe_allow_html=True)
+
             adv_tab1, adv_tab2, adv_tab3 = st.tabs([
                 "🔄 Rebalance My Portfolio",
                 "💰 Deploy New Money",
@@ -2693,7 +2700,7 @@ else:
 
                 if run_rebal:
                     with st.spinner("Fetching live trend signals for ALL holdings and computing drift (this may take up to 30-45 seconds)..."):
-                        rebal_result = generate_rebalance_advice(inv_df, rebal_risk, rebal_country)
+                        rebal_result = generate_rebalance_advice(inv_df, rebal_risk, rebal_country, advisor_user_context)
 
                     if "error" in rebal_result:
                         st.warning(f"⚠️ {rebal_result['error']}")
@@ -2820,7 +2827,7 @@ else:
                 if st.button("💡 Get Investment Suggestions", type="primary", use_container_width=True, key="nm_suggest_btn"):
                     with st.spinner("Generating personalised suggestions..."):
                         mode_str = "SIP" if "SIP" in nm_mode else "Lump Sum"
-                        nm_result = generate_new_money_advice(inv_df, nm_risk, nm_amount, mode_str, nm_country)
+                        nm_result = generate_new_money_advice(inv_df, nm_risk, nm_amount, mode_str, nm_country, advisor_user_context)
 
                     st.success("🎉 Suggestions Ready!")
                     st.info(nm_result.get("summary", ""))
