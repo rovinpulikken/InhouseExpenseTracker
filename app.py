@@ -2710,6 +2710,13 @@ else:
                     else:
                         st.success(f"✅ Analysis complete for portfolio of **{format_inr(rebal_result['total_value'])}**")
 
+                        # DEBUG: show any errors from Gemini
+                        if st.session_state.get("_rebal_error"):
+                            st.error(f"🔴 Gemini Error: {st.session_state['_rebal_error']}")
+                        if st.session_state.get("_rebal_raw_resp"):
+                            with st.expander("🔎 DEBUG: Raw Gemini Response (first 500 chars)"):
+                                st.code(st.session_state["_rebal_raw_resp"])
+
                         # Allocation Comparison Charts
                         alloc_c1, alloc_c2 = st.columns(2)
                         with alloc_c1:
@@ -2743,10 +2750,12 @@ else:
                             )
 
                         # Detailed Action Plan
-                        if rebal_result.get("detailed_plan"):
+                        dp = rebal_result.get("detailed_plan", [])
+                        st.caption(f"🔎 DEBUG: detailed_plan has {len(dp)} steps")
+                        if dp:
                             st.markdown("##### 🗺️ Detailed Action Plan")
                             with st.expander("View Step-by-Step Plan", expanded=True):
-                                for i, step in enumerate(rebal_result["detailed_plan"]):
+                                for i, step in enumerate(dp):
                                     st.markdown(f"**Step {i+1}:** {step}")
 
                         # Trend Signals for Equity Holdings
