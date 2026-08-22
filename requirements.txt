@@ -8,3 +8,4 @@ libsql-client>=0.3.0
 scikit-learn>=1.3.0
 pdfplumber>=0.11.0
 yfinance
+pypdf>=4.0.0

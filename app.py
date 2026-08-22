@@ -761,6 +761,10 @@ else:
                 upload_vis = st.radio("Import Expense/Income Visibility", ["Family", "Private"], horizontal=True, key="upload_vis")
                 uploaded_file = st.file_uploader("Choose PDF, Excel, or CSV File", type=["xlsx", "xls", "csv", "pdf"], key="excel_uploader")
                 
+                pdf_password = ""
+                if uploaded_file and uploaded_file.name.lower().endswith('.pdf'):
+                    pdf_password = st.text_input("PDF Password (if protected)", type="password", help="Enter password if your bank statement is password protected")
+
                 gemini_api_key = current_user.get("gemini_api_key") or os.environ.get("GEMINI_API_KEY", "") or st.secrets.get("GEMINI_API_KEY", "")
                 
                 if uploaded_file:
@@ -785,7 +789,7 @@ else:
                                 else:
                                     from statement_parser import parse_expense_statement_with_gemini
                                     try:
-                                        raw_json = parse_expense_statement_with_gemini(uploaded_file.getvalue(), uploaded_file.name, gemini_api_key)
+                                        raw_json = parse_expense_statement_with_gemini(uploaded_file.getvalue(), uploaded_file.name, gemini_api_key, pdf_password)
                                         df_parsed = pd.DataFrame(raw_json)
                                         if not df_parsed.empty:
                                             # Standardize columns if missing

@@ -391,7 +391,7 @@ def identify_and_parse_statement(file_bytes, filename, api_key=None):
                     
     return parsed_data
 
-def parse_expense_statement_with_gemini(file_bytes, filename, api_key):
+def parse_expense_statement_with_gemini(file_bytes, filename, api_key, pdf_password=""):
     """
     Parses unstructured bank/credit card statements into Expense/Income records using Gemini REST API.
     CR entries that are credit card bill payments/settlements are excluded — they are debt settlements,
@@ -405,6 +405,25 @@ def parse_expense_statement_with_gemini(file_bytes, filename, api_key):
         elif filename.lower().endswith('.xlsx'): mime_type = 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'
         elif filename.lower().endswith('.xls'):  mime_type = 'application/vnd.ms-excel'
         else: mime_type = 'application/octet-stream'
+
+    if filename.lower().endswith('.pdf') and pdf_password:
+        try:
+            import pypdf
+            import io
+            reader = pypdf.PdfReader(io.BytesIO(file_bytes))
+            if reader.is_encrypted:
+                res = reader.decrypt(pdf_password)
+                if res != 0:
+                    writer = pypdf.PdfWriter()
+                    for page in reader.pages:
+                        writer.add_page(page)
+                    decrypted_bytes_io = io.BytesIO()
+                    writer.write(decrypted_bytes_io)
+                    file_bytes = decrypted_bytes_io.getvalue()
+                else:
+                    raise ValueError("Incorrect PDF password.")
+        except Exception as e:
+            raise ValueError(f"Failed to decrypt PDF: {e}")
 
     prompt = """
 You are an expert financial AI assistant. Your task is to extract transactions from the provided bank or credit card statement.
