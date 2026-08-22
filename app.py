@@ -796,14 +796,23 @@ else:
                                             for col in ["date", "description", "amount", "transaction_type", "category"]:
                                                 if col not in df_parsed.columns:
                                                     df_parsed[col] = ""
-                                            # Coerce types for data_editor compatibility:
-                                            # amount → float64 (NumberColumn), date → ISO string (TextColumn, avoids DateColumn type errors)
-                                            df_parsed["amount"] = pd.to_numeric(df_parsed["amount"], errors="coerce").fillna(0.0)
-                                            df_parsed["date"] = pd.to_datetime(df_parsed["date"], errors="coerce").dt.strftime("%Y-%m-%d").fillna(str(datetime.date.today()))
-                                            for col in ["description", "transaction_type", "category"]:
-                                                df_parsed[col] = df_parsed[col].astype(str).str.strip()
-                                            st.session_state["parsed_statement_df"] = df_parsed
-                                            st.rerun()
+                                                    
+                                            # Filter out 'Income' and 'Refund' entirely based on user request
+                                            df_parsed["transaction_type"] = df_parsed["transaction_type"].astype(str).str.strip().str.title()
+                                            df_parsed["category"] = df_parsed["category"].astype(str).str.strip().str.title()
+                                            
+                                            df_parsed = df_parsed[df_parsed["transaction_type"] != "Income"]
+                                            df_parsed = df_parsed[~df_parsed["category"].str.contains("Refund", case=False, na=False)]
+                                            
+                                            if not df_parsed.empty:
+                                                # Coerce types for data_editor compatibility:
+                                                # amount → float64 (NumberColumn), date → ISO string (TextColumn, avoids DateColumn type errors)
+                                                df_parsed["amount"] = pd.to_numeric(df_parsed["amount"], errors="coerce").fillna(0.0)
+                                                df_parsed["date"] = pd.to_datetime(df_parsed["date"], errors="coerce").dt.strftime("%Y-%m-%d").fillna(str(datetime.date.today()))
+                                                st.session_state["parsed_statement_df"] = df_parsed
+                                                st.rerun()
+                                            else:
+                                                st.warning("No expense transactions found (or all were filtered out as Income/Refunds).")
                                         else:
                                             st.warning("No transactions found in the document.")
                                     except Exception as e:
