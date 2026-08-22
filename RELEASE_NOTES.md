@@ -136,3 +136,5 @@
 - **Dynamic Market Index Returns**: Integrated `yfinance` to allow users to fetch live historical data from major global indices (Nifty 50, BSE Sensex, S&P 500, NASDAQ) to compute the actual historical Average Annual Return (CAGR) dynamically for the last 5, 10, 15, or 20 years.
 - **AI Retirement Advisory**: Integrated Gemini AI to cross-reference the user's projected retirement corpus with their *active* holdings portfolio, generating a tailored strategic withdrawal and rebalancing plan.
 - Fixed an issue where the user's age was not persistently saving when updated from the Wealth Planner dashboard.
+
+- **Defects Fixed:** Fixed UI issue where the 'Detect Duplicates' tab was hidden when there were no expenses in the currently selected Financial Year. The tab is now always visible and queries all financial years.

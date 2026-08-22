@@ -938,18 +938,18 @@ else:
             
             expenses_df_all = get_expenses_df(fy=selected_fy, username=current_user["username"], view_mode=view_mode)
             
-            if expenses_df_all.empty:
-                st.warning("No expense records available to edit or delete.")
-            else:
-                edit_mode_tab1, edit_mode_tab2, edit_mode_tab3, edit_mode_tab4, edit_mode_tab5 = st.tabs([
-                    "📝 Inline Table Editor",
-                    "🔍 Search & Edit Single Record",
-                    "🗑️ Delete Single Record",
-                    "🧹 Clear Entire Month Data",
-                    "🕵️ Detect Duplicates"
-                ])
-                
-                with edit_mode_tab1:
+            edit_mode_tab1, edit_mode_tab2, edit_mode_tab3, edit_mode_tab4, edit_mode_tab5 = st.tabs([
+                "📝 Inline Table Editor",
+                "🔍 Search & Edit Single Record",
+                "🗑️ Delete Single Record",
+                "🧹 Clear Entire Month Data",
+                "🕵️ Detect Duplicates"
+            ])
+            
+            with edit_mode_tab1:
+                if expenses_df_all.empty:
+                    st.warning(f"No expense records available to edit or delete in {selected_fy}.")
+                else:
                     st.markdown("#### Interactive Database Table Editor")
                     st.caption("Edit dates, categories, descriptions, or amounts directly in the grid. FY and Quarters recalculate automatically upon saving.")
                     
@@ -975,7 +975,10 @@ else:
                         st.success(f"🎉 Successfully updated {updated_count} record(s) in database!")
                         st.rerun()
                         
-                with edit_mode_tab2:
+            with edit_mode_tab2:
+                if expenses_df_all.empty:
+                    st.warning(f"No expense records available to edit or delete in {selected_fy}.")
+                else:
                     st.markdown("#### Select & Modify Single Record")
                     record_ids = expenses_df_all["id"].tolist()
                     selected_id = st.selectbox("Select Expense ID to Edit", record_ids, key="single_edit_id")
@@ -1010,7 +1013,10 @@ else:
                         st.success(f"Updated record #{selected_id}!")
                         st.rerun()
                         
-                with edit_mode_tab3:
+            with edit_mode_tab3:
+                if expenses_df_all.empty:
+                    st.warning(f"No expense records available to edit or delete in {selected_fy}.")
+                else:
                     st.markdown("#### Delete Single Record by ID")
                     del_id_select = st.selectbox("Select Expense ID to Delete", record_ids, key="single_del_id_select")
                     del_target = expenses_df_all[expenses_df_all["id"] == del_id_select].iloc[0]
@@ -1022,7 +1028,10 @@ else:
                         st.success(f"Deleted record #{del_id_select}!")
                         st.rerun()
                         
-                with edit_mode_tab4:
+            with edit_mode_tab4:
+                if expenses_df_all.empty:
+                    st.warning(f"No expense records available to edit or delete in {selected_fy}.")
+                else:
                     st.markdown("#### Bulk Delete Entire Month Data")
                     if "Month_Year" in expenses_df_all.columns:
                         available_m = sorted(expenses_df_all["Month_Year"].unique().tolist(), reverse=True)
@@ -1038,54 +1047,57 @@ else:
                             st.success(f"Deleted {cnt_del} records for {del_month_target}!")
                             st.rerun()
 
-                with edit_mode_tab5:
-                    st.markdown("#### 🕵️ Detect Duplicates")
-                    st.write("Find and delete duplicate expense entries (exact same Date and Amount).")
+            with edit_mode_tab5:
+                st.markdown("#### 🕵️ Detect Duplicates")
+                st.write("Find and delete duplicate expense entries across **ALL Financial Years** (exact same Date and Amount).")
+                
+                # Fetch ALL expenses across ALL years globally
+                all_time_expenses_df = get_expenses_df(fy="All FYs", username=current_user["username"], view_mode=view_mode)
+                
+                if not all_time_expenses_df.empty:
+                    # Find duplicate groups
+                    dup_counts = all_time_expenses_df.groupby(['expense_date', 'amount']).size().reset_index(name='count')
+                    dup_groups = dup_counts[dup_counts['count'] > 1]
                     
-                    if not expenses_df_all.empty:
-                        # Find duplicate groups
-                        dup_counts = expenses_df_all.groupby(['expense_date', 'amount']).size().reset_index(name='count')
-                        dup_groups = dup_counts[dup_counts['count'] > 1]
-                        
-                        if dup_groups.empty:
-                            st.success("No duplicate entries found in this Financial Year!")
-                        else:
-                            st.warning(f"Found {len(dup_groups)} groups of duplicate entries.")
-                            
-                            # Join back to get full details of duplicates
-                            merged = pd.merge(expenses_df_all, dup_groups, on=['expense_date', 'amount'])
-                            merged = merged.sort_values(['expense_date', 'amount', 'id'])
-                            
-                            st.write("Select the redundant records you want to delete (typically keep one from each group):")
-                            
-                            merged['Delete'] = False
-                            
-                            edited_dups = st.data_editor(
-                                merged[['Delete', 'id', 'expense_date', 'category', 'description', 'amount', 'source_note']],
-                                num_rows="fixed",
-                                column_config={
-                                    "Delete": st.column_config.CheckboxColumn("🗑️ Delete", default=False),
-                                    "id": st.column_config.NumberColumn("ID", disabled=True),
-                                    "expense_date": st.column_config.DateColumn("Date", disabled=True),
-                                    "category": st.column_config.TextColumn("Category", disabled=True),
-                                    "description": st.column_config.TextColumn("Description", disabled=True),
-                                    "amount": st.column_config.NumberColumn("Amount", format="₹ %.2f", disabled=True),
-                                    "source_note": st.column_config.TextColumn("Source", disabled=True)
-                                },
-                                use_container_width=True,
-                                hide_index=True,
-                                key="dup_editor"
-                            )
-                            
-                            to_delete_ids = edited_dups[edited_dups['Delete'] == True]['id'].tolist()
-                            if len(to_delete_ids) > 0:
-                                if st.button(f"🗑️ Delete Selected ({len(to_delete_ids)} records)", type="primary"):
-                                    for d_id in to_delete_ids:
-                                        delete_expense(int(d_id))
-                                    st.success(f"Successfully deleted {len(to_delete_ids)} duplicate records!")
-                                    st.rerun()
+                    if dup_groups.empty:
+                        st.success("No duplicate entries found across any Financial Year!")
                     else:
-                        st.info("No records to check for duplicates.")
+                        st.warning(f"Found {len(dup_groups)} groups of duplicate entries.")
+                        
+                        # Join back to get full details of duplicates
+                        merged = pd.merge(all_time_expenses_df, dup_groups, on=['expense_date', 'amount'])
+                        merged = merged.sort_values(['expense_date', 'amount', 'id'])
+                        
+                        st.write("Select the redundant records you want to delete (typically keep one from each group):")
+                        
+                        merged['Delete'] = False
+                        
+                        edited_dups = st.data_editor(
+                            merged[['Delete', 'id', 'expense_date', 'category', 'description', 'amount', 'source_note']],
+                            num_rows="fixed",
+                            column_config={
+                                "Delete": st.column_config.CheckboxColumn("🗑️ Delete", default=False),
+                                "id": st.column_config.NumberColumn("ID", disabled=True),
+                                "expense_date": st.column_config.DateColumn("Date", disabled=True),
+                                "category": st.column_config.TextColumn("Category", disabled=True),
+                                "description": st.column_config.TextColumn("Description", disabled=True),
+                                "amount": st.column_config.NumberColumn("Amount", format="₹ %.2f", disabled=True),
+                                "source_note": st.column_config.TextColumn("Source", disabled=True)
+                            },
+                            use_container_width=True,
+                            hide_index=True,
+                            key="dup_editor"
+                        )
+                        
+                        to_delete_ids = edited_dups[edited_dups['Delete'] == True]['id'].tolist()
+                        if len(to_delete_ids) > 0:
+                            if st.button(f"🗑️ Delete Selected ({len(to_delete_ids)} records)", type="primary"):
+                                for d_id in to_delete_ids:
+                                    delete_expense(int(d_id))
+                                st.success(f"Successfully deleted {len(to_delete_ids)} duplicate records!")
+                                st.rerun()
+                else:
+                    st.info("No records to check for duplicates.")
 
 
         # ----------------------------------------------------
