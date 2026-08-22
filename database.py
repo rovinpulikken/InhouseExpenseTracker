@@ -294,9 +294,20 @@ def init_db():
         cursor.execute("ALTER TABLE users ADD COLUMN country TEXT DEFAULT 'India'")
         cursor.execute("ALTER TABLE users ADD COLUMN income_range TEXT DEFAULT ''")
         cursor.execute("ALTER TABLE users ADD COLUMN occupation TEXT DEFAULT ''")
+    if "marital_status" not in u_cols:
         cursor.execute("ALTER TABLE users ADD COLUMN marital_status TEXT DEFAULT ''")
+    if "risk_tolerance" not in u_cols:
         cursor.execute("ALTER TABLE users ADD COLUMN risk_tolerance TEXT DEFAULT 'Moderate'")
-
+    if "email" not in u_cols:
+        cursor.execute("ALTER TABLE users ADD COLUMN email TEXT")
+    if "security_question" not in u_cols:
+        cursor.execute("ALTER TABLE users ADD COLUMN security_question TEXT")
+    if "security_answer_hash" not in u_cols:
+        cursor.execute("ALTER TABLE users ADD COLUMN security_answer_hash TEXT")
+    if "otp_hash" not in u_cols:
+        cursor.execute("ALTER TABLE users ADD COLUMN otp_hash TEXT")
+    if "otp_expiry" not in u_cols:
+        cursor.execute("ALTER TABLE users ADD COLUMN otp_expiry TIMESTAMP")
     # 3. Expenses Table
     cursor.execute("""
         CREATE TABLE IF NOT EXISTS expenses (
@@ -476,7 +487,7 @@ def generate_family_code(family_name: str) -> str:
     rand_suffix = secrets.token_hex(2).upper()
     return f"FAM-{clean_prefix}-{rand_suffix}"
 
-def create_family(family_name: str, admin_username: str, password: str, full_name: str) -> Tuple[bool, str, Optional[Dict[str, Any]]]:
+def create_family(family_name: str, admin_username: str, password: str, full_name: str, email: str = "", security_question: str = "", security_answer: str = "") -> Tuple[bool, str, Optional[Dict[str, Any]]]:
     family_name_clean = family_name.strip()
     if not family_name_clean:
         return False, "Family name cannot be empty.", None
@@ -503,10 +514,15 @@ def create_family(family_name: str, admin_username: str, password: str, full_nam
     family_id = cursor.lastrowid
 
     pwd_hash = hash_password(password)
+    ans_hash = hash_password(security_answer.strip().lower()) if security_answer else None
+    
     cursor.execute("""
-        INSERT INTO users (username, password_hash, full_name, role, family_id)
-        VALUES (?, ?, ?, ?, ?)
-    """, (username_clean, pwd_hash, full_name.strip(), "Admin", family_id))
+        INSERT INTO users (username, password_hash, full_name, role, family_id, email, security_question, security_answer_hash)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+    """, (username_clean, pwd_hash, full_name.strip(), "Admin", family_id, 
+          email.strip().lower() if email else None, 
+          security_question.strip() if security_question else None, 
+          ans_hash))
     user_id = cursor.lastrowid
 
     conn.commit()
@@ -549,7 +565,7 @@ def get_all_families() -> List[Dict[str, Any]]:
             fams.append({"id": r[0], "family_code": r[1], "family_name": r[2], "created_at": r[3]})
     return fams
 
-def join_family_by_code(family_code: str, username: str, password: str, full_name: str, role: str = "Member") -> Tuple[bool, str, Optional[Dict[str, Any]]]:
+def join_family_by_code(family_code: str, username: str, password: str, full_name: str, role: str = "Member", email: str = "", security_question: str = "", security_answer: str = "") -> Tuple[bool, str, Optional[Dict[str, Any]]]:
     fam = get_family_by_code(family_code)
     if not fam:
         return False, f"Invalid Family Code '{family_code}'. Please verify code with your Family Admin.", None
@@ -568,10 +584,15 @@ def join_family_by_code(family_code: str, username: str, password: str, full_nam
         return False, f"Username '{username_clean}' is already taken.", None
 
     pwd_hash = hash_password(password)
+    ans_hash = hash_password(security_answer.strip().lower()) if security_answer else None
+    
     cursor.execute("""
-        INSERT INTO users (username, password_hash, full_name, role, family_id)
-        VALUES (?, ?, ?, ?, ?)
-    """, (username_clean, pwd_hash, full_name.strip(), role, fam["id"]))
+        INSERT INTO users (username, password_hash, full_name, role, family_id, email, security_question, security_answer_hash)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+    """, (username_clean, pwd_hash, full_name.strip(), role, fam["id"],
+          email.strip().lower() if email else None, 
+          security_question.strip() if security_question else None, 
+          ans_hash))
     user_id = cursor.lastrowid
     conn.commit()
     conn.close()
@@ -588,6 +609,101 @@ def join_family_by_code(family_code: str, username: str, password: str, full_nam
     return True, f"Successfully joined '{fam['family_name']}'!", user_info
 
 # ----------------------------------------------------
+# PASSWORD RECOVERY & OTP MANAGEMENT
+# ----------------------------------------------------
+def set_user_recovery_info(username: str, email: str, question: str, answer: str) -> bool:
+    try:
+        conn = get_connection()
+        cursor = conn.cursor()
+        if answer:
+            ans_hash = hash_password(answer.strip().lower())
+            cursor.execute("""
+                UPDATE users 
+                SET email = ?, security_question = ?, security_answer_hash = ? 
+                WHERE username = ?
+            """, (email.strip().lower() if email else None, question.strip() if question else None, ans_hash, username.strip().lower()))
+        else:
+            cursor.execute("""
+                UPDATE users 
+                SET email = ?, security_question = ? 
+                WHERE username = ?
+            """, (email.strip().lower() if email else None, question.strip() if question else None, username.strip().lower()))
+        conn.commit()
+        conn.close()
+        return True
+    except Exception as e:
+        print(f"Error setting recovery info: {e}")
+        return False
+
+def get_user_recovery_info(username: str) -> Optional[Dict[str, Any]]:
+    conn = get_connection()
+    cursor = conn.cursor()
+    cursor.execute("""
+        SELECT email, security_question, security_answer_hash 
+        FROM users WHERE username = ?
+    """, (username.strip().lower(),))
+    row = cursor.fetchone()
+    conn.close()
+    if row:
+        return {"email": row[0], "security_question": row[1], "security_answer_hash": row[2]}
+    return None
+
+def verify_security_answer(username: str, answer_attempt: str) -> bool:
+    info = get_user_recovery_info(username)
+    if not info or not info["security_answer_hash"]:
+        return False
+    return verify_password(info["security_answer_hash"], answer_attempt.strip().lower())
+
+def set_recovery_otp(username: str, otp: str, expiry_minutes: int = 10) -> bool:
+    try:
+        otp_hash = hash_password(otp.strip())
+        expiry_time = (datetime.datetime.now() + datetime.timedelta(minutes=expiry_minutes)).strftime('%Y-%m-%d %H:%M:%S')
+        conn = get_connection()
+        cursor = conn.cursor()
+        cursor.execute("UPDATE users SET otp_hash = ?, otp_expiry = ? WHERE username = ?", 
+                       (otp_hash, expiry_time, username.strip().lower()))
+        conn.commit()
+        conn.close()
+        return True
+    except Exception as e:
+        print(f"Error setting OTP: {e}")
+        return False
+
+def verify_recovery_otp(username: str, otp_attempt: str) -> bool:
+    conn = get_connection()
+    cursor = conn.cursor()
+    cursor.execute("SELECT otp_hash, otp_expiry FROM users WHERE username = ?", (username.strip().lower(),))
+    row = cursor.fetchone()
+    conn.close()
+    
+    if not row or not row[0] or not row[1]:
+        return False
+    
+    otp_hash = row[0]
+    expiry_str = row[1]
+    
+    try:
+        expiry = datetime.datetime.strptime(expiry_str, '%Y-%m-%d %H:%M:%S')
+        if datetime.datetime.now() > expiry:
+            return False
+    except ValueError:
+        return False
+        
+    return verify_password(otp_hash, otp_attempt.strip())
+
+def clear_recovery_otp(username: str) -> bool:
+    try:
+        conn = get_connection()
+        cursor = conn.cursor()
+        cursor.execute("UPDATE users SET otp_hash = NULL, otp_expiry = NULL WHERE username = ?", 
+                       (username.strip().lower(),))
+        conn.commit()
+        conn.close()
+        return True
+    except:
+        return False
+
+# ----------------------------------------------------
 # USER AUTHENTICATION & MANAGEMENT
 # ----------------------------------------------------
 def authenticate_user(username: str, password_attempt: str) -> Optional[Dict[str, Any]]:
@@ -596,7 +712,7 @@ def authenticate_user(username: str, password_attempt: str) -> Optional[Dict[str
     cursor.execute("""
         SELECT u.id, u.username, u.password_hash, u.full_name, u.role, u.family_id, f.family_name, f.family_code, 
                u.gemini_api_key, u.age, u.sex, u.dob, u.address, u.city, u.state, u.country, u.income_range, 
-               u.occupation, u.marital_status, u.risk_tolerance
+               u.occupation, u.marital_status, u.risk_tolerance, u.email, u.security_question
         FROM users u
         LEFT JOIN families f ON u.family_id = f.id
         WHERE u.username = ?
@@ -615,7 +731,8 @@ def authenticate_user(username: str, password_attempt: str) -> Optional[Dict[str
             "family_id": row[5] or 1, "family_name": row[6] or "Primary Household", "family_code": row[7] or "PRIMARY-1001", 
             "gemini_api_key": row[8], "age": row[9] if row[9] is not None else 35,
             "sex": row[10], "dob": row[11], "address": row[12], "city": row[13], "state": row[14], 
-            "country": row[15], "income_range": row[16], "occupation": row[17], "marital_status": row[18], "risk_tolerance": row[19]
+            "country": row[15], "income_range": row[16], "occupation": row[17], "marital_status": row[18], "risk_tolerance": row[19],
+            "email": row[20], "security_question": row[21]
         }
     
     if verify_password(user_dict["password_hash"], password_attempt):

@@ -921,30 +921,18 @@ def generate_rebalance_advice(
                 import json
                 import re
                 text = resp.text
-                try:
-                    import streamlit as st
-                    st.session_state["_rebal_raw_resp"] = text[:500]
-                except Exception:
-                    pass
                 match = re.search(r'```(?:json)?\s*(\{.*?\})\s*```', text, re.DOTALL)
                 if match:
                     json_str = match.group(1)
                 else:
                     json_str = text[text.find("{"):text.rfind("}")+1]
-                
                 parsed = json.loads(json_str)
                 recommendations = parsed.get("recommendations", [])
                 sector_analysis = parsed.get("sector_analysis", [])
                 detailed_plan = parsed.get("detailed_plan", [])
     except Exception as e:
         import traceback
-        err_msg = traceback.format_exc()
-        print(f"Gemini Rebalance Error: {err_msg}")
-        try:
-            import streamlit as st
-            st.session_state["_rebal_error"] = err_msg
-        except Exception:
-            pass
+        print(f"Gemini Rebalance Error: {traceback.format_exc()}")
 
     if not recommendations:
         universe = COUNTRY_UNIVERSE.get(country, COUNTRY_UNIVERSE["India"])

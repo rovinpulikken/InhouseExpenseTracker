@@ -1,0 +1,2 @@
+from test_app import test_duplicate_detection
+test_duplicate_detection()
