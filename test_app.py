@@ -331,6 +331,59 @@ def test_multi_family_data_isolation():
     
     print("✅ Multi-Family Workspace & Super Admin Data Isolation tests passed.")
 
+def test_duplicate_detection():
+    from database import init_db, insert_expenses, get_expenses_df, delete_expense
+    import pandas as pd
+    
+    init_db()
+    
+    # We will simulate the behavior of detect_and_flag_duplicates here
+    # since importing from app.py runs Streamlit.
+    
+    # Insert some initial data
+    u = "testuser"
+    f_id = 99
+    
+    insert_expenses([{
+        "date": "2023-01-01",
+        "category": "Food",
+        "description": "Lunch",
+        "amount": 500.0,
+        "visibility": "Private"
+    }], source="Test", username=u, visibility="Private", family_id=f_id)
+    
+    # Now simulate the imported file
+    df_import = pd.DataFrame([
+        {"date": "2023-01-01", "category": "Food", "description": "Lunch", "amount": 500.0},
+        {"date": "2023-01-02", "category": "Transport", "description": "Taxi", "amount": 250.0}
+    ])
+    
+    # 1. Fetch existing
+    existing = get_expenses_df(fy="All FYs", username=u, view_mode="Private", family_id=f_id)
+    existing_sigs = set()
+    for _, row in existing.iterrows():
+        sig = (str(row['expense_date']).strip()[:10], float(row.get('amount', 0)))
+        existing_sigs.add(sig)
+        
+    dup_list = []
+    imp_list = []
+    for _, row in df_import.iterrows():
+        sig = (str(row.get('date', '')).strip()[:10], float(row.get('amount', 0)))
+        is_dup = sig in existing_sigs
+        dup_list.append(is_dup)
+        imp_list.append(not is_dup)
+        
+    df_import["duplicate_warning"] = dup_list
+    df_import["import"] = imp_list
+    
+    assert df_import.iloc[0]["duplicate_warning"] == True
+    assert df_import.iloc[0]["import"] == False
+    
+    assert df_import.iloc[1]["duplicate_warning"] == False
+    assert df_import.iloc[1]["import"] == True
+    
+    print("✅ File Import Duplicate Detection test passed.")
+
 if __name__ == "__main__":
     try:
         test_strict_uploaded_date_enforcement()
@@ -344,7 +397,10 @@ if __name__ == "__main__":
         test_active_holdings_tracker()
         test_statement_ingestion_and_segments()
         test_multi_family_data_isolation()
+        test_duplicate_detection()
         print("🎉 All test suite assertions passed successfully!")
     finally:
         if os.path.exists(database.DB_PATH):
             os.unlink(database.DB_PATH)
+
+

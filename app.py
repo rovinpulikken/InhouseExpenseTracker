@@ -555,12 +555,13 @@ else:
             
             df = df[df["amount"] > 0]
             if df.empty:
-                return 0, f"No valid rows with expense amounts > 0 were found in {file.name}."
+                return None, f"No valid rows with expense amounts > 0 were found in {file.name}."
                 
             records = df[["date", "category", "description", "amount", "visibility"]].to_dict("records")
             records = auto_categorize_records(records)
-            count = insert_expenses(records, source=f"Import ({file.name})", username=username, visibility=visibility, family_id=family_id)
-            return count, f"Successfully imported {count} expense rows from {file.name}!"
+            df_final = pd.DataFrame(records)
+            df_final["transaction_type"] = "Expense"
+            return df_final, f"Successfully parsed {len(df_final)} expense rows from {file.name}!"
         except Exception as e:
             return 0, f"Error processing file: {e}"
 
@@ -569,6 +570,29 @@ else:
     if st.sidebar.button("🚪 Sign Out", use_container_width=True):
         st.session_state.clear()
         st.rerun()
+
+    # ----------------------------------------------------
+    # Helper: Detect Duplicates in DataFrame
+    def detect_and_flag_duplicates(df_import, username, view_mode, family_id):
+        existing_expenses = get_expenses_df(fy="All FYs", username=username, view_mode=view_mode, family_id=family_id)
+        existing_signatures = set()
+        if not existing_expenses.empty:
+            for _, row in existing_expenses.iterrows():
+                # Signature: (date_str, amount)
+                sig = (str(row['expense_date']).strip()[:10], float(row.get('amount', 0)))
+                existing_signatures.add(sig)
+        
+        duplicate_list = []
+        import_list = []
+        for _, row in df_import.iterrows():
+            sig = (str(row.get('date', '')).strip()[:10], float(row.get('amount', 0)))
+            is_dup = sig in existing_signatures
+            duplicate_list.append(is_dup)
+            import_list.append(not is_dup)
+            
+        df_import["duplicate_warning"] = duplicate_list
+        df_import["import"] = import_list
+        return df_import
 
     # ----------------------------------------------------
     # 🏠 DASHBOARD
@@ -773,11 +797,11 @@ else:
                             # Simple heuristic: if it's explicitly the template name or standard format without 'statement' keyword, try standard import
                             if uploaded_file.name.lower().endswith(('.xlsx', '.csv')) and "statement" not in uploaded_file.name.lower() and "bill" not in uploaded_file.name.lower():
                                 try:
-                                    cnt, msg = import_from_excel_or_csv(uploaded_file, username=current_user["username"], visibility=upload_vis, family_id=user_family_id)
-                                    if cnt > 0:
-                                        st.success(msg)
-                                        import time; time.sleep(1)
-                                        st.rerun()
+                                    df_parsed, msg = import_from_excel_or_csv(uploaded_file, username=current_user["username"], visibility=upload_vis, family_id=user_family_id)
+                                    if df_parsed is not None and not df_parsed.empty:
+                                        df_parsed = detect_and_flag_duplicates(df_parsed, current_user["username"], view_mode, user_family_id)
+                                        st.session_state["parsed_statement_df"] = df_parsed
+                                        st.success(f"{msg} Please review them below.")
                                     else:
                                         st.error(msg)
                                 except Exception as e:
@@ -809,6 +833,9 @@ else:
                                                 # amount → float64 (NumberColumn), date → ISO string (TextColumn, avoids DateColumn type errors)
                                                 df_parsed["amount"] = pd.to_numeric(df_parsed["amount"], errors="coerce").fillna(0.0)
                                                 df_parsed["date"] = pd.to_datetime(df_parsed["date"], errors="coerce").dt.strftime("%Y-%m-%d").fillna(str(datetime.date.today()))
+                                                
+                                                df_parsed = detect_and_flag_duplicates(df_parsed, current_user["username"], view_mode, user_family_id)
+                                                
                                                 st.session_state["parsed_statement_df"] = df_parsed
                                                 st.rerun()
                                             else:
@@ -820,12 +847,14 @@ else:
                                         
                 if "parsed_statement_df" in st.session_state:
                     st.markdown("### 🔍 Review & Confirm Transactions")
-                    st.info("Please review the extracted transactions, correct any categories or amounts, and click Save.")
+                    st.info("Please review the extracted transactions, uncheck any duplicates you don't want to save, correct categories/amounts, and click Save.")
                     
                     edited_df = st.data_editor(
                         st.session_state["parsed_statement_df"],
                         num_rows="dynamic",
                         column_config={
+                            "import": st.column_config.CheckboxColumn("Import?", default=True),
+                            "duplicate_warning": st.column_config.CheckboxColumn("Duplicate?", disabled=True, help="Checked if a record with the same Date + Amount already exists."),
                             "date": st.column_config.TextColumn("Date (YYYY-MM-DD)", help="Edit as YYYY-MM-DD"),
                             "description": st.column_config.TextColumn("Description"),
                             "amount": st.column_config.NumberColumn("Amount", required=True),
@@ -842,15 +871,16 @@ else:
                             records = edited_df.to_dict('records')
                             valid_records = []
                             for r in records:
-                                t_type = str(r.get('transaction_type', '')).strip().lower()
-                                if t_type != 'income':
-                                    r['visibility'] = upload_vis
-                                    # Force positive amount just in case
-                                    try:
-                                        r['amount'] = abs(float(str(r.get('amount', 0)).replace(',', '')))
-                                    except:
-                                        pass
-                                    valid_records.append(r)
+                                if r.get('import', True):
+                                    t_type = str(r.get('transaction_type', '')).strip().lower()
+                                    if t_type != 'income':
+                                        r['visibility'] = upload_vis
+                                        # Force positive amount just in case
+                                        try:
+                                            r['amount'] = abs(float(str(r.get('amount', 0)).replace(',', '')))
+                                        except:
+                                            pass
+                                        valid_records.append(r)
                             
                             try:
                                 if valid_records:
@@ -911,11 +941,12 @@ else:
             if expenses_df_all.empty:
                 st.warning("No expense records available to edit or delete.")
             else:
-                edit_mode_tab1, edit_mode_tab2, edit_mode_tab3, edit_mode_tab4 = st.tabs([
+                edit_mode_tab1, edit_mode_tab2, edit_mode_tab3, edit_mode_tab4, edit_mode_tab5 = st.tabs([
                     "📝 Inline Table Editor",
                     "🔍 Search & Edit Single Record",
                     "🗑️ Delete Single Record",
-                    "🧹 Clear Entire Month Data"
+                    "🧹 Clear Entire Month Data",
+                    "🕵️ Detect Duplicates"
                 ])
                 
                 with edit_mode_tab1:
@@ -1006,6 +1037,55 @@ else:
                             cnt_del = delete_month_expenses(del_month_target)
                             st.success(f"Deleted {cnt_del} records for {del_month_target}!")
                             st.rerun()
+
+                with edit_mode_tab5:
+                    st.markdown("#### 🕵️ Detect Duplicates")
+                    st.write("Find and delete duplicate expense entries (exact same Date and Amount).")
+                    
+                    if not expenses_df_all.empty:
+                        # Find duplicate groups
+                        dup_counts = expenses_df_all.groupby(['expense_date', 'amount']).size().reset_index(name='count')
+                        dup_groups = dup_counts[dup_counts['count'] > 1]
+                        
+                        if dup_groups.empty:
+                            st.success("No duplicate entries found in this Financial Year!")
+                        else:
+                            st.warning(f"Found {len(dup_groups)} groups of duplicate entries.")
+                            
+                            # Join back to get full details of duplicates
+                            merged = pd.merge(expenses_df_all, dup_groups, on=['expense_date', 'amount'])
+                            merged = merged.sort_values(['expense_date', 'amount', 'id'])
+                            
+                            st.write("Select the redundant records you want to delete (typically keep one from each group):")
+                            
+                            merged['Delete'] = False
+                            
+                            edited_dups = st.data_editor(
+                                merged[['Delete', 'id', 'expense_date', 'category', 'description', 'amount', 'source_note']],
+                                num_rows="fixed",
+                                column_config={
+                                    "Delete": st.column_config.CheckboxColumn("🗑️ Delete", default=False),
+                                    "id": st.column_config.NumberColumn("ID", disabled=True),
+                                    "expense_date": st.column_config.DateColumn("Date", disabled=True),
+                                    "category": st.column_config.TextColumn("Category", disabled=True),
+                                    "description": st.column_config.TextColumn("Description", disabled=True),
+                                    "amount": st.column_config.NumberColumn("Amount", format="₹ %.2f", disabled=True),
+                                    "source_note": st.column_config.TextColumn("Source", disabled=True)
+                                },
+                                use_container_width=True,
+                                hide_index=True,
+                                key="dup_editor"
+                            )
+                            
+                            to_delete_ids = edited_dups[edited_dups['Delete'] == True]['id'].tolist()
+                            if len(to_delete_ids) > 0:
+                                if st.button(f"🗑️ Delete Selected ({len(to_delete_ids)} records)", type="primary"):
+                                    for d_id in to_delete_ids:
+                                        delete_expense(int(d_id))
+                                    st.success(f"Successfully deleted {len(to_delete_ids)} duplicate records!")
+                                    st.rerun()
+                    else:
+                        st.info("No records to check for duplicates.")
 
 
         # ----------------------------------------------------
