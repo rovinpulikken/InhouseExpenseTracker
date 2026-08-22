@@ -138,3 +138,5 @@
 - Fixed an issue where the user's age was not persistently saving when updated from the Wealth Planner dashboard.
 
 - **Defects Fixed:** Fixed UI issue where the 'Detect Duplicates' tab was hidden when there were no expenses in the currently selected Financial Year. The tab is now always visible and queries all financial years.
+
+- **Newly Added Requirements:** Implemented a 'Smart Select' feature in the 'Detect Duplicates' tab that automatically pre-selects all redundant duplicates for deletion, saving the user from clicking them individually while safely keeping one original record.

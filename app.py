@@ -1068,9 +1068,10 @@ else:
                         merged = pd.merge(all_time_expenses_df, dup_groups, on=['expense_date', 'amount'])
                         merged = merged.sort_values(['expense_date', 'amount', 'id'])
                         
-                        st.write("Select the redundant records you want to delete (typically keep one from each group):")
+                        st.write("By default, all redundant records are pre-selected for deletion (keeping one original record from each group):")
                         
-                        merged['Delete'] = False
+                        # Smart selection: mark all but the first in each group for deletion
+                        merged['Delete'] = merged.duplicated(subset=['expense_date', 'amount'], keep='first')
                         
                         edited_dups = st.data_editor(
                             merged[['Delete', 'id', 'expense_date', 'category', 'description', 'amount', 'source_note']],
