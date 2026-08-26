@@ -1991,11 +1991,13 @@ def delete_income_source(income_id: int, family_id: int) -> bool:
     try:
         conn = get_connection()
         cursor = conn.cursor()
+        fam_id = int(family_id) if family_id else 1
         cursor.execute("DELETE FROM income_sources WHERE id = ? AND family_id = ?",
-                       (income_id, family_id))
+                       (income_id, fam_id))
+        rows_affected = cursor.rowcount
         conn.commit()
         conn.close()
-        return True
+        return rows_affected > 0
     except Exception:
         return False
 
