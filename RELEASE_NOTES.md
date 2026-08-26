@@ -5,6 +5,11 @@
 - **Income Deletion Bug in Income & Tax Planner**: Fixed a critical bug where clicking 🗑️ **Delete** on an income source could silently delete *any* income record — including ones that don't belong to the current user/family.
   - **Root Cause**: `delete_income_source` contained an unsafe fallback `DELETE FROM income_sources WHERE id = ?` with no ownership guard. When the primary query (scoped to `family_id`) returned 0 rows, the fallback fired unconditionally by primary key alone, bypassing all access control.
   - **Fix**: Removed the unconstrained fallback. The primary query already handles `NULL family_id` via `OR family_id IS NULL`, so the fallback was redundant and dangerous. If the scoped delete returns 0 rows, the function now correctly returns `False` (no record deleted), and the UI shows an appropriate error.
+- **UI Error Feedback on Failed Delete (`app.py`)**: Restored missing `else` branch in the income delete button handler — the UI now displays a visible error message when a delete operation fails instead of silently doing nothing.
+
+### Tests
+- **`test_income_source_crud` (`test_app.py`)**: Added a comprehensive CRUD test suite for income sources covering add, fetch, scoped delete by family, unscoped delete (no family_id), and verifying that deleting a non-existent or already-deleted record returns `False`.
+- **DB Isolation Fix (`test_app.py`)**: Added environment variable overrides (`TURSO_DATABASE_URL`, `TURSO_AUTH_TOKEN`) and a `get_turso_credentials` stub at test startup to ensure the test suite always runs against a local temp SQLite DB and never touches the production Turso cloud database.
 
 ## v1.6.0 (2026-08-26)
 ### Fixed

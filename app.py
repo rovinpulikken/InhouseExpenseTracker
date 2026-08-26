@@ -3215,6 +3215,8 @@ else:
                                 if delete_income_source(int(irow["id"]), user_family_id):
                                     st.success("Deleted!")
                                     st.rerun()
+                                else:
+                                    st.error("Failed to delete income source.")
                         st.markdown("<hr style='margin:4px 0; border-color:#1e293b;'>", unsafe_allow_html=True)
                 else:
                     st.info("No income sources yet. Add your first one below!")

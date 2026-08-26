@@ -18,12 +18,18 @@ from database import (
     update_user_password,
     update_user_role,
     get_all_users,
-    delete_user
+    delete_user,
+    add_income_source,
+    get_income_sources_df,
+    delete_income_source
 )
 from cpi_data import calculate_cpi_inflation
 from categorizer import auto_categorize_description, auto_categorize_records
 
 # Isolate test suite DB so live data/expenses.db is NEVER touched or modified by test runs
+os.environ["TURSO_DATABASE_URL"] = ""
+os.environ["TURSO_AUTH_TOKEN"] = ""
+database.get_turso_credentials = lambda: (None, None)
 temp_db = tempfile.NamedTemporaryFile(suffix="_test.db", delete=False)
 database.DB_PATH = temp_db.name
 temp_db.close()
@@ -384,6 +390,41 @@ def test_duplicate_detection():
     
     print("✅ File Import Duplicate Detection test passed.")
 
+def test_income_source_crud():
+    init_db()
+    # Add income sources
+    id1 = add_income_source(username="admin", family_id=1, source_name="Primary Salary", income_type="Salary", amount=100000.0, frequency="Monthly")
+    id2 = add_income_source(username="admin", family_id=None, source_name="Freelance", income_type="Freelance/Consulting", amount=25000.0, frequency="Monthly")
+    id3 = add_income_source(username="rahul", family_id=2, source_name="Rental", income_type="Rental Income", amount=15000.0, frequency="Monthly")
+
+    assert id1 > 0
+    assert id2 > 0
+    assert id3 > 0
+
+    df_admin = get_income_sources_df(username="admin", family_id=1, view_mode="Family")
+    assert any(df_admin["source_name"] == "Primary Salary")
+
+    # Test deleting when family_id is None (Super Admin / Global scope)
+    assert delete_income_source(id2, family_id=None) == True
+    df_after_del2 = get_income_sources_df(username="admin", family_id=1, view_mode="All")
+    assert not any(df_after_del2["id"] == id2)
+
+    # Test deleting when family_id is provided
+    assert delete_income_source(id1, family_id=1) == True
+    df_after_del1 = get_income_sources_df(username="admin", family_id=1, view_mode="Family")
+    assert not any(df_after_del1["id"] == id1)
+
+    # Test deleting row with mismatched family_id (fallback to id deletion)
+    assert delete_income_source(id3, family_id=1) == True
+    df_after_del3 = get_income_sources_df(username="rahul", family_id=2, view_mode="Family")
+    assert not any(df_after_del3["id"] == id3)
+
+    # Deleting already deleted item returns False
+    assert delete_income_source(id1, family_id=1) == False
+    assert delete_income_source(99999, family_id=1) == False
+
+    print("✅ Income Source CRUD and Deletion tests passed.")
+
 if __name__ == "__main__":
     try:
         test_strict_uploaded_date_enforcement()
@@ -398,6 +439,7 @@ if __name__ == "__main__":
         test_statement_ingestion_and_segments()
         test_multi_family_data_isolation()
         test_duplicate_detection()
+        test_income_source_crud()
         print("🎉 All test suite assertions passed successfully!")
     finally:
         if os.path.exists(database.DB_PATH):
