@@ -550,14 +550,28 @@ else:
         st.markdown("#### 📂 Grouped Holdings Summary")
         st.caption("Expand categories below to view summarized totals and detailed sub-groupings.")
         
+        # Add Recommendation logic based on returns
+        def get_rec(ret):
+            if pd.isna(ret): return "Hold ⏳"
+            if ret <= -15: return "Risk ⚠️"
+            elif ret >= 20: return "Sell 🎯"
+            elif -5 <= ret <= 10: return "Buy ❇️"
+            else: return "Hold ⏳"
+            
+        _df = holdings_df.copy()
+        if "returns_pct" in _df.columns:
+            _df["Recommendation"] = _df["returns_pct"].apply(get_rec)
+        else:
+            _df["Recommendation"] = "Hold ⏳"
+        
         # Categorize holdings
-        mf_mask = holdings_df["investment_type"].str.lower().str.contains("mutual fund|mf", na=False)
-        stock_mask = holdings_df["investment_type"].str.lower() == "equity"
+        mf_mask = _df["investment_type"].str.lower().str.contains("mutual fund|mf", na=False)
+        stock_mask = _df["investment_type"].str.lower() == "equity"
         other_mask = ~(mf_mask | stock_mask)
         
-        mf_df = holdings_df[mf_mask]
-        stock_df = holdings_df[stock_mask]
-        other_df = holdings_df[other_mask]
+        mf_df = _df[mf_mask]
+        stock_df = _df[stock_mask]
+        other_df = _df[other_mask]
         
         def render_summary_expander(title_prefix, df, is_mf=False, is_other=False):
             if df.empty:
@@ -578,7 +592,8 @@ else:
                 "investment_amount": st.column_config.NumberColumn("Invested", format="₹ %.2f"),
                 "current_value": st.column_config.NumberColumn("Current Val", format="₹ %.2f"),
                 "unrealized_gain": st.column_config.NumberColumn("Gain/Loss", format="₹ %.2f"),
-                "returns_pct": st.column_config.NumberColumn("Return", format="%.2f%%")
+                "returns_pct": st.column_config.NumberColumn("Return", format="%.2f%%"),
+                "Recommendation": st.column_config.TextColumn("Action")
             }
             
             with st.expander(expander_title):
@@ -589,7 +604,7 @@ else:
                         if not cap_df.empty:
                             cap_total = cap_df["current_value"].sum()
                             st.markdown(f"**{cap} (Total: ₹{cap_total:,.2f})**")
-                            st.dataframe(cap_df[["description", "resolved_name", "platform", "investment_amount", "current_value", "unrealized_gain", "returns_pct"]], use_container_width=True, hide_index=True, column_config=col_cfg)
+                            st.dataframe(cap_df[["description", "resolved_name", "platform", "investment_amount", "current_value", "unrealized_gain", "returns_pct", "Recommendation"]], use_container_width=True, hide_index=True, column_config=col_cfg)
                 elif is_other:
                     types = df["investment_type"].unique()
                     for t in sorted(types):
@@ -597,9 +612,9 @@ else:
                         if not t_df.empty:
                             t_total = t_df["current_value"].sum()
                             st.markdown(f"**{t} (Total: ₹{t_total:,.2f})**")
-                            st.dataframe(t_df[["description", "platform", "investment_amount", "current_value", "unrealized_gain", "returns_pct"]], use_container_width=True, hide_index=True, column_config=col_cfg)
+                            st.dataframe(t_df[["description", "platform", "investment_amount", "current_value", "unrealized_gain", "returns_pct", "Recommendation"]], use_container_width=True, hide_index=True, column_config=col_cfg)
                 else:
-                    st.dataframe(df[["description", "platform", "investment_amount", "current_value", "unrealized_gain", "returns_pct"]], use_container_width=True, hide_index=True, column_config=col_cfg)
+                    st.dataframe(df[["description", "platform", "investment_amount", "current_value", "unrealized_gain", "returns_pct", "Recommendation"]], use_container_width=True, hide_index=True, column_config=col_cfg)
 
         render_summary_expander("📈 Mutual Funds", mf_df, is_mf=True)
         render_summary_expander("📊 Stocks (Equity)", stock_df)
