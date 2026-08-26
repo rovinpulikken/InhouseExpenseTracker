@@ -157,3 +157,6 @@
   - Upgraded the AI model to `gemini-1.5-pro` for deeper financial reasoning.
   - Instructed the AI to adopt a SEBI RIA persona and strictly adhere to Indian tax codes.
   - Implemented Gemini Structured Outputs (JSON Schema via Pydantic) to ensure the AI's response perfectly maps to the UI, eliminating formatting crashes.
+
+### Bug Fixes
+- **Income Sources:** Fixed an issue where deleting an income source in "Personal View" mode would silently fail due to a missing family_id fallback.
