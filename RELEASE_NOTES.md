@@ -1,5 +1,18 @@
 # Release Notes
 
+## v1.6.1 (2026-08-26)
+### Fixed
+- **Income Deletion Bug in Income & Tax Planner**: Fixed a critical bug where clicking 🗑️ **Delete** on an income source could silently delete *any* income record — including ones that don't belong to the current user/family.
+  - **Root Cause**: `delete_income_source` contained an unsafe fallback `DELETE FROM income_sources WHERE id = ?` with no ownership guard. When the primary query (scoped to `family_id`) returned 0 rows, the fallback fired unconditionally by primary key alone, bypassing all access control.
+  - **Fix**: Removed the unconstrained fallback. The primary query already handles `NULL family_id` via `OR family_id IS NULL`, so the fallback was redundant and dangerous. If the scoped delete returns 0 rows, the function now correctly returns `False` (no record deleted), and the UI shows an appropriate error.
+
+## v1.6.0 (2026-08-26)
+### Fixed
+- **Income Deletion in Income & Tax Planner**: Fixed an issue where clicking delete on an income source in the Income & Tax Planner would display "Deleted!" but fail to remove the record from the database.
+  - **Root Cause 1**: `LibSQLCursorWrapper` checked `res.rows_changed` which was not present on `libsql_client.result.ResultSet` (the attribute name is `rows_affected`). It defaulted to `1`, causing zero-row DML operations to report success falsely. Fixed to properly inspect `rows_affected` and default to `0` when no rows are modified.
+  - **Root Cause 2**: `delete_income_source`, `delete_debt`, and `delete_savings_goal` failed to match rows when `family_id` was `None` (e.g. Super Admin / Global scope) or when rows had `NULL` `family_id`. Updated the SQL queries to handle `(family_id = ? OR family_id IS NULL)` with fallback deletion by primary key `id`.
+  - Added unit test suite `test_income_source_crud` to prevent regressions.
+
 ## v1.5.9 (2026-08-21)
 ### Changed
 - **Smart Advisor Context Input**: Added an optional text area in the "Smart Advisor & Tax Planner" tab. Users can now enter specific goals, life events, or questions (e.g., "I want to buy a house in 2 years") which are passed directly to the Gemini AI to generate highly personalized rebalancing and new money deployment advice.

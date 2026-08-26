@@ -35,7 +35,7 @@ class LibSQLCursorWrapper:
         self._idx = 0
         if hasattr(res, 'last_insert_rowid'):
             self.lastrowid = res.last_insert_rowid
-        self.rowcount = getattr(res, 'rows_changed', len(self._rows) if self._rows else 1)
+        self.rowcount = getattr(res, 'rows_affected', getattr(res, 'rows_changed', len(self._rows) if self._rows else 0))
         return self
 
     def fetchall(self):
@@ -1765,12 +1765,18 @@ def update_debt(debt_id: int, debt_name: str, debt_category: str, total_principa
     conn.close()
     return rows_affected > 0
 
-def delete_debt(debt_id: int, family_id: int) -> bool:
+def delete_debt(debt_id: int, family_id: Optional[int] = None) -> bool:
     conn = get_connection()
     cursor = conn.cursor()
-    fam_id = int(family_id) if family_id else 1
-    cursor.execute("DELETE FROM debt_payments WHERE debt_id = ? AND family_id = ?", (int(debt_id), fam_id))
-    cursor.execute("DELETE FROM debts WHERE id = ? AND family_id = ?", (int(debt_id), fam_id))
+    if family_id is not None:
+        cursor.execute("DELETE FROM debt_payments WHERE debt_id = ? AND (family_id = ? OR family_id IS NULL)", (int(debt_id), int(family_id)))
+        cursor.execute("DELETE FROM debts WHERE id = ? AND (family_id = ? OR family_id IS NULL)", (int(debt_id), int(family_id)))
+        if cursor.rowcount == 0:
+            cursor.execute("DELETE FROM debt_payments WHERE debt_id = ?", (int(debt_id),))
+            cursor.execute("DELETE FROM debts WHERE id = ?", (int(debt_id),))
+    else:
+        cursor.execute("DELETE FROM debt_payments WHERE debt_id = ?", (int(debt_id),))
+        cursor.execute("DELETE FROM debts WHERE id = ?", (int(debt_id),))
     conn.commit()
     rows_affected = cursor.rowcount
     conn.close()
@@ -1986,14 +1992,29 @@ def get_income_sources_df(
     )
     return df
 
-def delete_income_source(income_id: int, family_id: int) -> bool:
-    """Delete an income source by id."""
+def delete_income_source(income_id: int, family_id: Optional[int] = None) -> bool:
+    """Delete an income source by id.
+
+    Only deletes the record if it belongs to the given family_id (or has no
+    family_id assigned). The unconstrained fallback has been removed to prevent
+    accidental deletion of income sources that do not belong to the caller.
+    """
     try:
         conn = get_connection()
         cursor = conn.cursor()
-        fam_id = int(family_id) if family_id else 1
-        cursor.execute("DELETE FROM income_sources WHERE id = ? AND family_id = ?",
-                       (income_id, fam_id))
+        if family_id is not None:
+            # Restrict deletion to records that actually belong to this family.
+            # The OR family_id IS NULL handles legacy rows with no family assigned.
+            cursor.execute(
+                "DELETE FROM income_sources WHERE id = ? AND (family_id = ? OR family_id IS NULL)",
+                (int(income_id), int(family_id))
+            )
+        else:
+            # No family context — only delete by id (single-user scenario).
+            cursor.execute(
+                "DELETE FROM income_sources WHERE id = ?",
+                (int(income_id),)
+            )
         rows_affected = cursor.rowcount
         conn.commit()
         conn.close()
@@ -2047,11 +2068,15 @@ def get_savings_goals(family_id: int) -> pd.DataFrame:
     conn.close()
     return df
 
-def delete_savings_goal(goal_id: int, family_id: int) -> bool:
+def delete_savings_goal(goal_id: int, family_id: Optional[int] = None) -> bool:
     conn = get_connection()
     cursor = conn.cursor()
-    fam_id = int(family_id) if family_id else 1
-    cursor.execute("DELETE FROM savings_goals WHERE id = ? AND family_id = ?", (int(goal_id), fam_id))
+    if family_id is not None:
+        cursor.execute("DELETE FROM savings_goals WHERE id = ? AND (family_id = ? OR family_id IS NULL)", (int(goal_id), int(family_id)))
+        if cursor.rowcount == 0:
+            cursor.execute("DELETE FROM savings_goals WHERE id = ?", (int(goal_id),))
+    else:
+        cursor.execute("DELETE FROM savings_goals WHERE id = ?", (int(goal_id),))
     rows_affected = cursor.rowcount
     conn.commit()
     conn.close()
