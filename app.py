@@ -2424,13 +2424,13 @@ else:
                     return f"{prefix}{format_inr_short(val)} ({prefix}{pct:.2f}%)"
                 
                 with dh1:
-                    st.metric("Since Last Sync", "", delta=format_delta(deltas["previous_sync"]), delta_color="normal" if deltas["previous_sync"]["value"] >= 0 else "inverse")
+                    st.metric("Since Last Sync", "", delta=format_delta(deltas["previous_sync"]), delta_color="normal")
                 with dh2:
-                    st.metric("7-Day Change", "", delta=format_delta(deltas["weekly"]), delta_color="normal" if deltas["weekly"]["value"] >= 0 else "inverse")
+                    st.metric("7-Day Change", "", delta=format_delta(deltas["weekly"]), delta_color="normal")
                 with dh3:
-                    st.metric("30-Day Change", "", delta=format_delta(deltas["monthly"]), delta_color="normal" if deltas["monthly"]["value"] >= 0 else "inverse")
+                    st.metric("30-Day Change", "", delta=format_delta(deltas["monthly"]), delta_color="normal")
                 with dh4:
-                    st.metric("1-Year Change", "", delta=format_delta(deltas["yearly"]), delta_color="normal" if deltas["yearly"]["value"] >= 0 else "inverse")
+                    st.metric("1-Year Change", "", delta=format_delta(deltas["yearly"]), delta_color="normal")
 
                 st.markdown("<br>", unsafe_allow_html=True)
                 
