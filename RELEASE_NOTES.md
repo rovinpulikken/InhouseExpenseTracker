@@ -145,3 +145,6 @@
 - **Feature**: Added a complete Forgot Password flow using either Email OTP or a Security Question.
 - **Requirement**: Made Email setup mandatory for existing users upon login to ensure account recovery is always possible.
 - **Profile Management**: Users can now update their Email Address and Security Question/Answer directly in their Profile Settings.
+
+### Fixed
+- **Portfolio Analytics**: Fixed an issue in the "Historical Growth (vs Live Market)" section where a decrease in portfolio value was incorrectly displayed in green instead of red.
