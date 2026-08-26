@@ -235,7 +235,7 @@ def _call_gemini_rest(api_key, prompt_text, file_bytes=None, mime_type=None):
     """
     import requests
 
-    model = 'gemini-3.5-flash-lite'
+    model = 'gemini-1.5-flash'
     url = f'https://generativelanguage.googleapis.com/v1beta/models/{model}:generateContent?key={api_key}'
 
     parts = []

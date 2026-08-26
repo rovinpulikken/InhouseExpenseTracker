@@ -148,3 +148,6 @@
 
 ### Fixed
 - **Portfolio Analytics**: Fixed an issue in the "Historical Growth (vs Live Market)" section where a decrease in portfolio value was incorrectly displayed in green instead of red.
+
+### Fixed
+- **AI Integration**: Fixed an issue where Gemini AI features (like Portfolio Suggestions) silently failed and fell back to rule-based generation due to an invalid model name (`gemini-3.5-flash-lite`). Updated all AI endpoints to correctly use `gemini-1.5-flash`.

@@ -289,7 +289,7 @@ def generate_ai_spend_rationalization(surge_df: Any, timeframe_label: str = "Sel
             - 'total_potential_savings': string (e.g. '₹ 3,500 / month')
             """
             response = client.models.generate_content(
-                model="gemini-3.5-flash-lite",
+                model="gemini-1.5-flash",
                 contents=prompt
             )
             if response and response.text:
