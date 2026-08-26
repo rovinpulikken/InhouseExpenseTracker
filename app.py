@@ -2894,7 +2894,8 @@ else:
             )
             from database import (
                 add_income_source, get_income_sources_df,
-                delete_income_source, INCOME_TYPES, FREQUENCY_OPTIONS
+                delete_income_source, update_income_source,
+                INCOME_TYPES, FREQUENCY_OPTIONS
             )
 
             st.markdown("### 💡 Smart Investment Advisor & Tax Planner")
@@ -3178,13 +3179,14 @@ else:
                 total_monthly_income = float(income_df["monthly_equivalent"].sum()) if not income_df.empty else 0.0
                 total_annual_income = total_monthly_income * 12.0
 
+                # KPI summary row
                 if not income_df.empty:
                     ki1, ki2, ki3 = st.columns(3)
                     ki1.metric("📅 Total Monthly Income", format_inr(total_monthly_income))
                     ki2.metric("📆 Total Annual Income", format_inr(total_annual_income))
                     ki3.metric("🔢 Income Sources", str(len(income_df)))
 
-                    # Income breakdown bar chart
+                    # Income breakdown bar chart (only when > 1 sources)
                     if len(income_df) > 1:
                         fig_inc = px.bar(
                             income_df.sort_values("monthly_equivalent", ascending=True),
@@ -3194,64 +3196,189 @@ else:
                             title="Income Sources Breakdown (Monthly Equivalent)",
                             height=max(200, len(income_df) * 40)
                         )
-                        fig_inc.update_layout(paper_bgcolor="#1e293b", plot_bgcolor="#1e293b", margin=dict(l=20,r=20,t=40,b=20))
+                        fig_inc.update_layout(paper_bgcolor="#1e293b", plot_bgcolor="#1e293b",
+                                              margin=dict(l=20, r=20, t=40, b=20))
                         st.plotly_chart(fig_inc, use_container_width=True)
 
-                    # Income sources table with delete buttons
+                # Initialise edit-mode tracker
+                if "edit_inc_id" not in st.session_state:
+                    st.session_state["edit_inc_id"] = None
+
+                # Income-type → icon mapping for visual scanning
+                _inc_icons = {
+                    "Salary / Regular Employment": "💼",
+                    "Business / Self-Employment": "🏢",
+                    "Freelance / Consulting": "💻",
+                    "Rental Income": "🏠",
+                    "Dividends / Investment Income": "📈",
+                    "Pension / Annuity": "🧓",
+                    "Capital Gains": "💹",
+                    "Agricultural Income": "🌾",
+                    "Gifts / Inheritance": "🎁",
+                    "Other": "💰",
+                }
+
+                # --- 3-COLUMN CARD GRID ---
+                if not income_df.empty:
                     st.markdown("**Your Income Sources:**")
-                    for _, irow in income_df.iterrows():
-                        ic1, ic2, ic3, ic4, ic5 = st.columns([2.5, 1.5, 1.2, 1.2, 0.8])
-                        with ic1:
-                            st.markdown(f"**{irow['source_name']}**")
-                            st.caption(f"{irow['income_type']}")
-                        with ic2:
-                            st.markdown(f"**{format_inr(float(irow['amount']))}** {irow['frequency']}")
-                        with ic3:
-                            st.caption(f"Monthly: {format_inr(float(irow['monthly_equivalent']))}")
-                        with ic4:
-                            st.caption(f"Annual: {format_inr(float(irow['monthly_equivalent']) * 12)}")
-                        with ic5:
-                            if st.button("🗑️", key=f"del_inc_{irow['id']}", help="Delete this income source"):
-                                if delete_income_source(int(irow["id"]), user_family_id):
-                                    st.success("Deleted!")
-                                    st.rerun()
+                    inc_rows = list(income_df.iterrows())
+                    for row_start in range(0, len(inc_rows), 3):
+                        grid_cols = st.columns(3)
+                        for col_idx, (_, irow) in enumerate(inc_rows[row_start:row_start + 3]):
+                            with grid_cols[col_idx]:
+                                inc_icon = _inc_icons.get(str(irow["income_type"]), "💰")
+                                is_editing = st.session_state.get("edit_inc_id") == irow["id"]
+
+                                if is_editing:
+                                    # ── Inline edit form ──────────────────────────
+                                    st.markdown(
+                                        f"<div style='background:linear-gradient(135deg,#1e293b,#0f172a);"
+                                        f"border:2px solid #a78bfa; border-radius:12px; padding:14px 16px; margin-bottom:6px;'>"
+                                        f"<div style='font-weight:700; color:#a78bfa; font-size:0.88rem; margin-bottom:8px;'>"
+                                        f"✏️ Editing: {irow['source_name']}</div></div>",
+                                        unsafe_allow_html=True
+                                    )
+                                    with st.form(key=f"edit_inc_form_{irow['id']}"):
+                                        e_name = st.text_input("Source Name", value=str(irow["source_name"]))
+                                        e_type = st.selectbox(
+                                            "Income Type", INCOME_TYPES,
+                                            index=INCOME_TYPES.index(irow["income_type"])
+                                            if irow["income_type"] in INCOME_TYPES else 0
+                                        )
+                                        e_amount = st.number_input(
+                                            "Amount (₹)", min_value=0.0, step=1000.0,
+                                            value=float(irow["amount"])
+                                        )
+                                        e_freq = st.selectbox(
+                                            "Frequency", FREQUENCY_OPTIONS,
+                                            index=FREQUENCY_OPTIONS.index(irow["frequency"])
+                                            if irow["frequency"] in FREQUENCY_OPTIONS else 0
+                                        )
+                                        e_notes = st.text_input(
+                                            "Notes",
+                                            value=str(irow["notes"]) if irow["notes"] else ""
+                                        )
+                                        esb1, esb2 = st.columns(2)
+                                        with esb1:
+                                            do_save = st.form_submit_button(
+                                                "💾 Save", type="primary", use_container_width=True
+                                            )
+                                        with esb2:
+                                            do_cancel = st.form_submit_button(
+                                                "✖ Cancel", use_container_width=True
+                                            )
+
+                                        if do_save:
+                                            if update_income_source(
+                                                int(irow["id"]),
+                                                source_name=e_name,
+                                                income_type=e_type,
+                                                amount=e_amount,
+                                                frequency=e_freq,
+                                                notes=e_notes
+                                            ):
+                                                st.session_state["edit_inc_id"] = None
+                                                st.rerun()
+                                            else:
+                                                st.error("Failed to save changes.")
+                                        if do_cancel:
+                                            st.session_state["edit_inc_id"] = None
+                                            st.rerun()
+
                                 else:
-                                    st.error("Failed to delete income source.")
-                        st.markdown("<hr style='margin:4px 0; border-color:#1e293b;'>", unsafe_allow_html=True)
+                                    # ── Display card ──────────────────────────────
+                                    notes_html = (
+                                        f"<div style='color:#64748b; font-size:0.72rem; margin-top:6px; "
+                                        f"font-style:italic;'>{irow['notes']}</div>"
+                                        if irow.get("notes") else ""
+                                    )
+                                    st.markdown(
+                                        f"""
+                                        <div style="background:linear-gradient(135deg,#1e293b,#0f172a);
+                                                    border:1px solid #334155; border-radius:12px;
+                                                    padding:16px 18px; margin-bottom:4px; min-height:170px;">
+                                            <div style="font-size:1.5rem; line-height:1;">{inc_icon}</div>
+                                            <div style="font-weight:700; color:#f1f5f9; font-size:0.95rem;
+                                                        margin:6px 0 2px; white-space:nowrap; overflow:hidden;
+                                                        text-overflow:ellipsis;">{irow['source_name']}</div>
+                                            <div style="color:#94a3b8; font-size:0.74rem; margin-bottom:10px;">{irow['income_type']}</div>
+                                            <div style="color:#38bdf8; font-weight:600; font-size:0.9rem;">
+                                                {format_inr(float(irow['amount']))}
+                                                <span style="color:#64748b; font-size:0.74rem;"> / {irow['frequency']}</span>
+                                            </div>
+                                            <div style="display:flex; gap:20px; margin-top:8px;">
+                                                <div>
+                                                    <div style="color:#64748b; font-size:0.68rem;">Monthly</div>
+                                                    <div style="color:#34d399; font-size:0.82rem; font-weight:600;">{format_inr(float(irow['monthly_equivalent']))}</div>
+                                                </div>
+                                                <div>
+                                                    <div style="color:#64748b; font-size:0.68rem;">Annual</div>
+                                                    <div style="color:#fbbf24; font-size:0.82rem; font-weight:600;">{format_inr(float(irow['monthly_equivalent']) * 12)}</div>
+                                                </div>
+                                            </div>
+                                            {notes_html}
+                                        </div>
+                                        """,
+                                        unsafe_allow_html=True
+                                    )
+                                    cbtn1, cbtn2 = st.columns(2)
+                                    with cbtn1:
+                                        if st.button(
+                                            "✏️ Edit", key=f"edit_inc_{irow['id']}",
+                                            use_container_width=True, help="Edit this income source"
+                                        ):
+                                            st.session_state["edit_inc_id"] = irow["id"]
+                                            st.rerun()
+                                    with cbtn2:
+                                        if st.button(
+                                            "🗑️ Delete", key=f"del_inc_{irow['id']}",
+                                            use_container_width=True, help="Delete this income source"
+                                        ):
+                                            if delete_income_source(int(irow["id"]), user_family_id):
+                                                if st.session_state.get("edit_inc_id") == irow["id"]:
+                                                    st.session_state["edit_inc_id"] = None
+                                                st.rerun()
+                                            else:
+                                                st.error("Failed to delete income source.")
                 else:
                     st.info("No income sources yet. Add your first one below!")
 
-                # Add income source form
-                with st.expander("➕ Add New Income Source"):
-                    with st.form("add_income_form"):
-                        ai1, ai2, ai3 = st.columns(3)
-                        with ai1:
-                            i_name = st.text_input("Source Name", placeholder="e.g. Primary Salary, Rental - Flat B")
-                            i_type = st.selectbox("Income Type", INCOME_TYPES)
-                        with ai2:
-                            i_amount = st.number_input("Amount (₹)", min_value=0.0, step=1000.0)
-                            i_freq = st.selectbox("Frequency", FREQUENCY_OPTIONS)
-                        with ai3:
-                            i_from = st.date_input("Effective From", value=datetime.date.today())
-                            i_notes = st.text_input("Notes (Optional)", placeholder="e.g. Includes bonus")
+                # --- ADD INCOME SOURCE (persistent, always visible) ---
+                st.markdown("---")
+                st.markdown(
+                    "<div style='font-weight:700; color:#f1f5f9; font-size:0.95rem; margin-bottom:10px;'>"
+                    "➕ Add New Income Source</div>",
+                    unsafe_allow_html=True
+                )
+                with st.form("add_income_form"):
+                    ai1, ai2, ai3 = st.columns(3)
+                    with ai1:
+                        i_name = st.text_input("Source Name", placeholder="e.g. Primary Salary, Rental - Flat B")
+                        i_type = st.selectbox("Income Type", INCOME_TYPES)
+                    with ai2:
+                        i_amount = st.number_input("Amount (₹)", min_value=0.0, step=1000.0)
+                        i_freq = st.selectbox("Frequency", FREQUENCY_OPTIONS)
+                    with ai3:
+                        i_from = st.date_input("Effective From", value=datetime.date.today())
+                        i_notes = st.text_input("Notes (Optional)", placeholder="e.g. Includes bonus")
 
-                        if st.form_submit_button("💾 Add Income Source", type="primary"):
-                            if i_name and i_amount > 0:
-                                new_inc_id = add_income_source(
-                                    username=current_user["username"],
-                                    family_id=user_family_id,
-                                    source_name=i_name,
-                                    income_type=i_type,
-                                    amount=i_amount,
-                                    frequency=i_freq,
-                                    effective_from=str(i_from),
-                                    notes=i_notes
-                                )
-                                if new_inc_id:
-                                    st.success(f"✅ Added income source: {i_name}")
-                                    st.rerun()
-                            else:
-                                st.error("Please provide a source name and amount.")
+                    if st.form_submit_button("💾 Add Income Source", type="primary"):
+                        if i_name and i_amount > 0:
+                            new_inc_id = add_income_source(
+                                username=current_user["username"],
+                                family_id=user_family_id,
+                                source_name=i_name,
+                                income_type=i_type,
+                                amount=i_amount,
+                                frequency=i_freq,
+                                effective_from=str(i_from),
+                                notes=i_notes
+                            )
+                            if new_inc_id:
+                                st.success(f"✅ Added income source: {i_name}")
+                                st.rerun()
+                        else:
+                            st.error("Please provide a source name and amount.")
 
                 # --- TAX PLANNER SECTION ---
                 st.markdown("---")

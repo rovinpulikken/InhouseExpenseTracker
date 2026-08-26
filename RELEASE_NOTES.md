@@ -1,5 +1,12 @@
 # Release Notes
 
+## v1.6.2 (2026-08-26)
+### Added
+- **Income Sources — Inline Edit**: Each income source now has an ✏️ **Edit** button. Clicking it expands an inline edit form directly within the card, pre-populated with the current values (name, type, amount, frequency, notes). Saving calls `update_income_source()` and immediately refreshes the view. Cancelling reverts without changes.
+### Changed
+- **Income & Tax Planner — Card Grid UI**: Replaced the flat columnar list of income sources with a responsive **3-column card grid**. Each card displays a type icon (💼 🏠 📈 etc.), source name, income type, amount/frequency, monthly and annual equivalents, and optional notes. Actions (Edit / Delete) appear as full-width buttons below each card.
+- **Add Income Source — Always Visible**: The "Add New Income Source" form is now persistently visible below the cards (no longer buried inside a collapsed expander).
+
 ## v1.6.1 (2026-08-26)
 ### Fixed
 - **Income Deletion Bug in Income & Tax Planner**: Fixed a critical bug where clicking 🗑️ **Delete** on an income source could silently delete *any* income record — including ones that don't belong to the current user/family.
