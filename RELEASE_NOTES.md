@@ -151,3 +151,9 @@
 
 ### Fixed
 - **AI Integration**: Fixed an issue where Gemini AI features (like Portfolio Suggestions) silently failed and fell back to rule-based generation due to an invalid model name (`gemini-3.5-flash-lite`). Updated all AI endpoints to correctly use `gemini-1.5-flash`.
+
+- **Gemini AI Portfolio Review Enhancement**: 
+  - Integrated User Profile (Age, Income, Risk Tolerance), Active Debts, and Savings Goals context into the AI engine.
+  - Upgraded the AI model to `gemini-1.5-pro` for deeper financial reasoning.
+  - Instructed the AI to adopt a SEBI RIA persona and strictly adhere to Indian tax codes.
+  - Implemented Gemini Structured Outputs (JSON Schema via Pydantic) to ensure the AI's response perfectly maps to the UI, eliminating formatting crashes.

@@ -7,6 +7,7 @@ SIP breakdown, compound wealth projections (5, 10, 15, 20 yrs), and Gemini AI ad
 import os
 from typing import Dict, Any, List, Tuple
 import pandas as pd
+from pydantic import BaseModel
 
 BASE_STOCK_SYSTEM_PROMPT = """
 You are a Senior Equity Research Analyst & Quantitative Portfolio Strategist specializing in the {country} Stock Market with deep expertise in fundamental valuation, technical momentum, corporate governance, and risk management.
@@ -200,7 +201,12 @@ def generate_ai_wealth_advice(plan: Dict[str, Any]) -> Dict[str, Any]:
         "key_takeaways": takeaways
     }
 
-def generate_ai_portfolio_suggestions(holdings_df: Any) -> Dict[str, Any]:
+def generate_ai_portfolio_suggestions(
+    holdings_df: Any, 
+    user_profile: Dict[str, Any] = None, 
+    debts_df: Any = None, 
+    goals_df: Any = None
+) -> Dict[str, Any]:
     """
     Generates AI suggestions for active portfolio holdings across platforms and investment types.
     Uses Google Gemini AI (with fallback to an intelligent rule engine).
@@ -221,6 +227,34 @@ def generate_ai_portfolio_suggestions(holdings_df: Any) -> Dict[str, Any]:
 
     holdings_summary = holdings_df[["platform", "investment_type", "investment_amount", "current_value", "year_invested"]].to_dict("records")
 
+    # Extract additional context
+    profile_info = ""
+    if user_profile:
+        profile_info = f"""
+        - Age: {user_profile.get('age', 'Unknown')}
+        - Monthly Income: ₹ {user_profile.get('monthly_income', 'Unknown'):,}
+        - Risk Tolerance: {user_profile.get('risk_tolerance', 'Unknown')}
+        """
+        
+    debts_info = ""
+    if debts_df is not None and not debts_df.empty:
+        total_debt = float(debts_df["current_outstanding"].sum()) if "current_outstanding" in debts_df.columns else 0.0
+        debts_info = f"\n- Active Debts/Liabilities: ₹ {total_debt:,} outstanding across {len(debts_df)} loans. Consider loan interest vs investment returns."
+
+    goals_info = ""
+    if goals_df is not None and not goals_df.empty:
+        total_target = float(goals_df["target_amount"].sum()) if "target_amount" in goals_df.columns else 0.0
+        goals_info = f"\n- Active Savings Goals: ₹ {total_target:,} target across {len(goals_df)} goals."
+
+    class PortfolioRecommendation(BaseModel):
+        title: str
+        observation: str
+        suggestion: str
+
+    class PortfolioReviewSchema(BaseModel):
+        summary: str
+        recommendations: List[PortfolioRecommendation]
+
     # 1. Try Gemini AI generation
     try:
         from google import genai
@@ -235,34 +269,40 @@ def generate_ai_portfolio_suggestions(holdings_df: Any) -> Dict[str, Any]:
         if api_key:
             client = genai.Client(api_key=api_key)
             prompt = f"""
-            Act as an expert Indian Wealth Manager and Portfolio Analyst.
-            Analyze the user's active holdings:
+            Act as an expert SEBI Registered Investment Advisor (RIA) and Portfolio Strategist in India.
+            
+            Analyze the user's overall financial picture:
+            [User Profile]{profile_info}
+            [Holdings Context]
             - Total Invested Capital: ₹ {total_invested:,}
             - Current Portfolio Value: ₹ {total_current:,} (Unrealized Gain: ₹ {total_gain:,}, Overall Return: {overall_return_pct}%)
             - Asset Breakdown by Type: {by_type}
             - Platform Distribution: {by_platform}
-            - Individual Holdings: {holdings_summary}
+            - Individual Holdings: {holdings_summary}{debts_info}{goals_info}
 
-            Provide actionable, smart suggestions for:
+            Apply current Indian tax laws (e.g. LTCG on equity > ₹1.25L @ 12.5%, STCG @ 20%, Debt funds @ slab rates).
+            Provide actionable, highly personalized, quantitative suggestions for:
             1. Platform & Broker Risk Concentration
-            2. Asset Class Balance (Equity, Mutual Funds, EPF, PPF, Startup, etc.)
-            3. Tax Efficiency (Section 80C, LTCG ₹1.25L exemption, Debt taxation)
-            4. Rebalancing & Profit Booking Advice
-
-            Format response as JSON with keys:
-            - 'summary': string summary paragraph
-            - 'recommendations': list of objects with 'title', 'observation', 'suggestion'
+            2. Asset Class Balance (Comparing holdings against risk tolerance and age)
+            3. Tax Efficiency (Optimization for Indian taxation and 80C)
+            4. Debt & Liquidity Management (If debts exist, advise on payoff vs investing)
+            5. Goal Alignment (If goals exist, advise on hitting targets)
             """
+            
             response = client.models.generate_content(
-                model="gemini-1.5-flash",
-                contents=prompt
+                model="gemini-1.5-pro",
+                contents=prompt,
+                config={
+                    "response_mime_type": "application/json",
+                    "response_schema": PortfolioReviewSchema,
+                },
             )
             if response and response.text:
                 import json
-                cleaned = response.text.replace("```json", "").replace("```", "").strip()
-                parsed = json.loads(cleaned)
+                parsed = json.loads(response.text)
                 return parsed
-    except Exception:
+    except Exception as e:
+        print(f"AI Portfolio Suggestion Error: {e}")
         pass
 
     # 2. Rule-based Fallback Suggestions

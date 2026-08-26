@@ -2636,7 +2636,9 @@ else:
 
                 if st.button("🤖 Generate AI Portfolio Review & Suggestions", type="primary", use_container_width=True):
                     with st.spinner("🤖 Analyzing active investment portfolio with Gemini AI..."):
-                        portfolio_ai = generate_ai_portfolio_suggestions(holdings_df)
+                        debts_df = get_debts(family_id=user_family_id)
+                        goals_df = get_savings_goals(family_id=user_family_id)
+                        portfolio_ai = generate_ai_portfolio_suggestions(holdings_df, current_user, debts_df, goals_df)
 
                     st.success("🎉 Portfolio AI Review Complete!")
                     st.info(portfolio_ai.get("summary", ""))
