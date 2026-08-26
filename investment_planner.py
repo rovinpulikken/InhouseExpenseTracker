@@ -201,6 +201,15 @@ def generate_ai_wealth_advice(plan: Dict[str, Any]) -> Dict[str, Any]:
         "key_takeaways": takeaways
     }
 
+class PortfolioRecommendation(BaseModel):
+    title: str
+    observation: str
+    suggestion: str
+
+class PortfolioReviewSchema(BaseModel):
+    summary: str
+    recommendations: List[PortfolioRecommendation]
+
 def generate_ai_portfolio_suggestions(
     holdings_df: Any, 
     user_profile: Dict[str, Any] = None, 
@@ -230,10 +239,25 @@ def generate_ai_portfolio_suggestions(
     # Extract additional context
     profile_info = ""
     if user_profile:
+        age = user_profile.get('age')
+        income = user_profile.get('monthly_income')
+        risk = user_profile.get('risk_tolerance')
+        
+        age_str = age if age is not None else 'Unknown'
+        
+        income_str = 'Unknown'
+        if income is not None:
+            try:
+                income_str = f"₹ {float(income):,}"
+            except Exception:
+                income_str = str(income)
+                
+        risk_str = risk if risk is not None else 'Unknown'
+        
         profile_info = f"""
-        - Age: {user_profile.get('age', 'Unknown')}
-        - Monthly Income: ₹ {user_profile.get('monthly_income', 'Unknown'):,}
-        - Risk Tolerance: {user_profile.get('risk_tolerance', 'Unknown')}
+        - Age: {age_str}
+        - Monthly Income: {income_str}
+        - Risk Tolerance: {risk_str}
         """
         
     debts_info = ""
@@ -245,15 +269,6 @@ def generate_ai_portfolio_suggestions(
     if goals_df is not None and not goals_df.empty:
         total_target = float(goals_df["target_amount"].sum()) if "target_amount" in goals_df.columns else 0.0
         goals_info = f"\n- Active Savings Goals: ₹ {total_target:,} target across {len(goals_df)} goals."
-
-    class PortfolioRecommendation(BaseModel):
-        title: str
-        observation: str
-        suggestion: str
-
-    class PortfolioReviewSchema(BaseModel):
-        summary: str
-        recommendations: List[PortfolioRecommendation]
 
     # 1. Try Gemini AI generation
     try:
