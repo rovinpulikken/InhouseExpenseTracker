@@ -64,6 +64,7 @@ _EQUITY_KEYWORDS = {"equity", "stock", "share", "nse", "bse", "equity (stocks)"}
 
 # ─── Income-source type keywords (for scanning income_sources table entries) ───
 _FRSB_INCOME_KEYWORDS = {"frsb", "floating rate", "rbi bond", "rbi savings", "goi bond", "savings bond"}
+_PPF_INCOME_KEYWORDS  = {"ppf", "public provident fund"}
 _EPF_INCOME_KEYWORDS  = {"epf", "epfo", "provident fund", "vpf"}
 _FD_INCOME_KEYWORDS   = {"fixed deposit", "fd interest", "term deposit", "bank interest"}
 _SCSS_INCOME_KEYWORDS = {"scss", "senior citizen savings"}
@@ -298,6 +299,20 @@ def derive_investment_income(
                 })
                 seen_names.add(name_lower)
 
+            # PPF in income sources
+            elif any(k in name_lower or k in itype_lower for k in _PPF_INCOME_KEYWORDS):
+                entries.append({
+                    "source_name": sname or "PPF (Income)",
+                    "income_type": "Interest Income (Exempt)",
+                    "annual_amount": annual_amt,
+                    "taxability": "EXEMPT u/s 10(11) — EEE.",
+                    "payment_months": [3],
+                    "notes": f"From income sources. PPF interest rate {PPF_RATE*100:.1f}% p.a. completely tax-free.",
+                    "derivation_method": "Income source entry (PPF detected)",
+                    "override_allowed": True,
+                })
+                seen_names.add(name_lower)
+
             # EPF / EPFO in income sources
             elif any(k in name_lower or k in itype_lower for k in _EPF_INCOME_KEYWORDS):
                 entries.append({
@@ -340,7 +355,18 @@ def derive_investment_income(
                 })
                 seen_names.add(name_lower)
 
-    return entries
+    # Deduplicate entries (aggregate amounts for exact same source_name and income_type)
+    dedup_dict = {}
+    for e in entries:
+        key = (e["source_name"], e["income_type"])
+        if key in dedup_dict:
+            dedup_dict[key]["annual_amount"] = round(dedup_dict[key]["annual_amount"] + e["annual_amount"], 2)
+            if dedup_dict[key]["notes"] != e["notes"]:
+                dedup_dict[key]["notes"] += f" | {e['notes']}"
+        else:
+            dedup_dict[key] = dict(e)
+            
+    return list(dedup_dict.values())
 
 
 def _fetch_equity_dividend(ticker: str) -> float:
@@ -816,12 +842,21 @@ def compute_full_tax(
 
     gross_salary = 0.0
     income_breakdown = []
+    
+    # Collect passive income sources to avoid double counting them in slab income
+    passive_source_names = {p["source_name"].lower() for p in passive_income_entries}
+    
     if income_sources_df is not None and not income_sources_df.empty:
         for _, row in income_sources_df.iterrows():
+            sname = str(row.get("source_name", "")).strip()
+            # If this income was already extracted into passive_income_entries (like FRSB/EPF), skip it here
+            if sname.lower() in passive_source_names:
+                continue
+                
             annual = float(row.get("monthly_equivalent", 0.0)) * 12.0
             gross_salary += annual
             income_breakdown.append({
-                "source": row["source_name"],
+                "source": sname,
                 "type":   row["income_type"],
                 "annual": round(annual, 2),
                 "taxability": "Slab",

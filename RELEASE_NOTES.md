@@ -207,3 +207,8 @@
 
 ### Bug Fixes
 - **Income Sources:** Fixed an issue where deleting an income source in "Personal View" mode would silently fail due to a missing family_id fallback.
+
+### Fixed
+- **Passive Income UI & Calculation**: Fixed a defect where duplicate portfolio investments (e.g. two EPF entries under the same bank) were displayed multiple times in the Tax Planner Section B. Entries are now correctly deduplicated and aggregated by source name and income type.
+- **Tax Double Counting**: Fixed an issue where auto-derived passive income sources (like FRSB bonds or EPF entered in the Income Sources tab) were double-counted in both standard Gross Salary and Passive Income calculations. 
+- **Keyword Matching**: Fixed an issue where an income source named 'Public Provident Fund' was incorrectly parsed as EPF instead of PPF due to keyword overlap.
