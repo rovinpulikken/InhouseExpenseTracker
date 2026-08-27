@@ -464,6 +464,67 @@ def init_db():
         )
     """)
 
+    # 10. Tax Deductions Table (India — per user per FY)
+    cursor.execute("""
+        CREATE TABLE IF NOT EXISTS tax_deductions (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            username TEXT NOT NULL,
+            family_id INTEGER DEFAULT 1,
+            financial_year TEXT NOT NULL DEFAULT '2025-26',
+            ppf_contribution REAL DEFAULT 0,
+            elss_investment REAL DEFAULT 0,
+            lic_premium REAL DEFAULT 0,
+            home_loan_principal REAL DEFAULT 0,
+            school_fees REAL DEFAULT 0,
+            nsc_interest_reinvested REAL DEFAULT 0,
+            epf_contribution REAL DEFAULT 0,
+            tax_saver_fd REAL DEFAULT 0,
+            health_ins_self REAL DEFAULT 0,
+            health_ins_parents REAL DEFAULT 0,
+            parents_senior INTEGER DEFAULT 0,
+            nps_80ccd_1b REAL DEFAULT 0,
+            nps_employer_80ccd2 REAL DEFAULT 0,
+            home_loan_interest REAL DEFAULT 0,
+            hra_basic_salary REAL DEFAULT 0,
+            hra_received REAL DEFAULT 0,
+            rent_paid REAL DEFAULT 0,
+            metro_city INTEGER DEFAULT 1,
+            professional_tax REAL DEFAULT 0,
+            savings_bank_interest REAL DEFAULT 0,
+            scss_interest REAL DEFAULT 0,
+            tds_deducted REAL DEFAULT 0,
+            advance_paid REAL DEFAULT 0,
+            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+            updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+            UNIQUE(username, family_id, financial_year)
+        )
+    """)
+
+    # 11. Capital Gains Entries Table (per user per FY)
+    cursor.execute("""
+        CREATE TABLE IF NOT EXISTS capital_gains_entries (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            username TEXT NOT NULL,
+            family_id INTEGER DEFAULT 1,
+            financial_year TEXT NOT NULL DEFAULT '2025-26',
+            equity_ltcg REAL DEFAULT 0,
+            equity_stcg REAL DEFAULT 0,
+            equity_mf_ltcg REAL DEFAULT 0,
+            equity_mf_stcg REAL DEFAULT 0,
+            debt_mf_ltcg REAL DEFAULT 0,
+            debt_mf_stcg REAL DEFAULT 0,
+            property_ltcg REAL DEFAULT 0,
+            property_stcg REAL DEFAULT 0,
+            other_ltcg REAL DEFAULT 0,
+            other_stcg REAL DEFAULT 0,
+            source TEXT DEFAULT 'Manual',
+            notes TEXT DEFAULT '',
+            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+            updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+            UNIQUE(username, family_id, financial_year)
+        )
+    """)
+
     # Seed default admin if users table is empty
     cursor.execute("SELECT COUNT(*) FROM users")
     user_cnt = cursor.fetchone()[0]
@@ -2095,3 +2156,120 @@ def add_goal_contribution(goal_id: int, family_id: int, amount: float) -> bool:
     conn.commit()
     conn.close()
     return rows_affected > 0
+
+# ──────────────────────────────────────────────────────────────────────────────
+# TAX DEDUCTIONS CRUD
+# ──────────────────────────────────────────────────────────────────────────────
+
+def upsert_tax_deductions(username: str, family_id: int, financial_year: str,
+                           deductions: dict) -> bool:
+    """
+    Upsert (insert or replace) tax deduction data for a given user and FY.
+    Returns True on success.
+    """
+    conn = get_connection()
+    cursor = conn.cursor()
+    fid = family_id or 1
+    cols = [
+        "ppf_contribution", "elss_investment", "lic_premium", "home_loan_principal",
+        "school_fees", "nsc_interest_reinvested", "epf_contribution", "tax_saver_fd",
+        "health_ins_self", "health_ins_parents", "parents_senior", "nps_80ccd_1b",
+        "nps_employer_80ccd2", "home_loan_interest", "hra_basic_salary", "hra_received",
+        "rent_paid", "metro_city", "professional_tax", "savings_bank_interest",
+        "scss_interest", "tds_deducted", "advance_paid",
+    ]
+    set_clause = ", ".join([f"{c} = ?" for c in cols])
+    set_clause += ", updated_at = CURRENT_TIMESTAMP"
+    vals = [float(deductions.get(c, 0)) for c in cols]
+    try:
+        cursor.execute(
+            f"""INSERT INTO tax_deductions (username, family_id, financial_year, {', '.join(cols)})
+                VALUES (?, ?, ?, {', '.join(['?']*len(cols))})
+                ON CONFLICT(username, family_id, financial_year)
+                DO UPDATE SET {set_clause}""",
+            [username, fid, financial_year] + vals + vals
+        )
+        conn.commit()
+        return True
+    except Exception as e:
+        print(f"upsert_tax_deductions error: {e}")
+        return False
+    finally:
+        conn.close()
+
+
+def get_tax_deductions(username: str, family_id: int, financial_year: str = "2025-26") -> dict:
+    """Retrieve stored tax deduction data for a user and FY. Returns {} if not found."""
+    conn = get_connection()
+    cursor = conn.cursor()
+    fid = family_id or 1
+    cursor.execute(
+        "SELECT * FROM tax_deductions WHERE username = ? AND family_id = ? AND financial_year = ?",
+        (username, fid, financial_year)
+    )
+    row = cursor.fetchone()
+    conn.close()
+    if row:
+        cols = [desc[0] for desc in cursor.description]
+        return dict(zip(cols, row))
+    return {}
+
+
+# ──────────────────────────────────────────────────────────────────────────────
+# CAPITAL GAINS CRUD
+# ──────────────────────────────────────────────────────────────────────────────
+
+def upsert_capital_gains(username: str, family_id: int, financial_year: str,
+                          cg_data: dict) -> bool:
+    """
+    Upsert capital gains data for a given user and FY.
+    cg_data keys: equity_ltcg, equity_stcg, equity_mf_ltcg, equity_mf_stcg,
+                  debt_mf_ltcg, debt_mf_stcg, property_ltcg, property_stcg,
+                  other_ltcg, other_stcg, source, notes
+    Returns True on success.
+    """
+    conn = get_connection()
+    cursor = conn.cursor()
+    fid = family_id or 1
+    float_cols = [
+        "equity_ltcg", "equity_stcg", "equity_mf_ltcg", "equity_mf_stcg",
+        "debt_mf_ltcg", "debt_mf_stcg", "property_ltcg", "property_stcg",
+        "other_ltcg", "other_stcg",
+    ]
+    set_parts = [f"{c} = ?" for c in float_cols] + ["source = ?", "notes = ?", "updated_at = CURRENT_TIMESTAMP"]
+    set_clause = ", ".join(set_parts)
+    vals = [float(cg_data.get(c, 0)) for c in float_cols]
+    vals += [str(cg_data.get("source", "Manual")), str(cg_data.get("notes", ""))]
+    try:
+        cursor.execute(
+            f"""INSERT INTO capital_gains_entries
+                    (username, family_id, financial_year, {', '.join(float_cols)}, source, notes)
+                VALUES (?, ?, ?, {', '.join(['?']*len(float_cols))}, ?, ?)
+                ON CONFLICT(username, family_id, financial_year)
+                DO UPDATE SET {set_clause}""",
+            [username, fid, financial_year] + vals + vals
+        )
+        conn.commit()
+        return True
+    except Exception as e:
+        print(f"upsert_capital_gains error: {e}")
+        return False
+    finally:
+        conn.close()
+
+
+def get_capital_gains(username: str, family_id: int, financial_year: str = "2025-26") -> dict:
+    """Retrieve stored capital gains data. Returns {} if not found."""
+    conn = get_connection()
+    cursor = conn.cursor()
+    fid = family_id or 1
+    cursor.execute(
+        "SELECT * FROM capital_gains_entries WHERE username = ? AND family_id = ? AND financial_year = ?",
+        (username, fid, financial_year)
+    )
+    row = cursor.fetchone()
+    conn.close()
+    if row:
+        cols = [desc[0] for desc in cursor.description]
+        return dict(zip(cols, row))
+    return {}

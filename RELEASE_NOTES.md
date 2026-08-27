@@ -1,5 +1,27 @@
 # Release Notes
 
+## v1.7.0 (2026-08-27)
+### Added
+- **`tax_engine.py` — New Standalone Tax Engine Module**:
+  A comprehensive India tax computation engine for FY 2025-26, extracted from `investment_planner.py` and significantly enhanced.
+  - **Passive Income Auto-Derivation** (`derive_investment_income`): Scans portfolio holdings and auto-computes annual passive income for RBI FRSB bonds (8.05% p.a., Jan/Jul payments), Sovereign Gold Bonds (2.5% p.a.), Fixed Deposits, Recurring Deposits, NSC, SCSS, PPF (exempt), and equity stock dividends via `yfinance`. PPF/NPS interest correctly marked as Exempt (green badge) and excluded from taxable income.
+  - **Capital Gains Parser** (`parse_capital_gains`): Auto-detects and parses LTCG/STCG from uploaded documents — **Zerodha Tax P&L PDF**, **ICICI Direct Capital Gains PDF**, **CAMS/KFintech Consolidated Account Statement PDF**, **IT Dept AIS JSON** download, and a generic PDF fallback. Returns per-category breakdown (equity, equity MF, debt MF, property, other) with correct FY 2025-26 tax rates.
+  - **Full Deduction Waterfall** (`compute_deductions`): Old Regime — 80C (PPF, ELSS, LIC, home loan principal, school fees, NSC interest, EPF, tax-saver FD, capped ₹1.5L), 80D (health insurance for self + parents, senior citizen limits ₹50K), 80CCD(1B) NPS (₹50K), 24(b) home loan interest (₹2L), HRA exemption (10(13A), least-of-three calculation, metro/non-metro), Professional Tax (₹2,400), 80TTA/80TTB (savings bank + SCSS interest). New Regime — Standard Deduction (₹75K) + NPS Employer 80CCD(2) + Professional Tax only.
+  - **CG Tax Computation** (`compute_cg_tax`): Applies FY 2025-26 rates — Equity LTCG 12.5% above ₹1.25L exempt, Equity STCG 20%, Property LTCG 12.5% (no indexation). Debt MF/property STCG/other correctly added to slab income.
+  - **Advance Tax Schedule** (`compute_advance_tax_schedule`): Computes FY 2025-26 quarterly instalments (15 Jun 15%, 15 Sep 45%, 15 Dec 75%, 15 Mar 100%). Shows days-remaining countdown, overdue/paid status. Only generates schedule when net liability > ₹10,000.
+  - **Master Compute** (`compute_full_tax`): Combines income sources + passive income (with per-item override) + CG + full deductions → slab tax + CG tax → advance tax schedule + regime comparison + savings opportunities.
+- **Database — `tax_deductions` Table**: Persists per-user per-FY deduction inputs (all 80C components, 80D, HRA details, NPS, home loan interest, professional tax, TDS deducted, advance paid). Upsert function with UNIQUE constraint on (username, family_id, financial_year).
+- **Database — `capital_gains_entries` Table**: Persists uploaded/manual CG data per user per FY (10 CG categories + source + notes).
+- **Database CRUD**: `upsert_tax_deductions`, `get_tax_deductions`, `upsert_capital_gains`, `get_capital_gains`.
+
+### Changed
+- **Tax Planner UI (app.py)** — Completely redesigned from a basic single-button calculator to a **4-section workbench** for India users:
+  - **Section A — Deductions**: Collapsible form with all deduction inputs. Old Regime shows full 80C/80D/HRA/home loan fields; New Regime shows simplified view. Values auto-saved to DB.
+  - **Section B — Passive Income**: Auto-scans portfolio holdings and shows derived income cards (color-coded by taxability). Each entry has an override number input. Refreshes on portfolio changes.
+  - **Section C — Capital Gains**: Tabbed panel with Upload (PDF/JSON auto-detection), Manual Entry form, and Saved Data view. Parsed results shown in editable table before saving.
+  - **Section D — Tax Summary**: Single "🧮 Calculate Full Tax Liability" button triggers `compute_full_tax`. Shows 5-column KPI row, tax breakdown card, CG tax detail table, income breakdown, deduction breakdown, advance tax instalment schedule, savings opportunities, and "Additional Information Needed" reference panel (Form 16, 26AS, FD interest certificates, home loan statement, rental income, foreign income, etc.).
+- Non-India countries continue to use the existing `compute_tax_liability` flow unchanged.
+
 ## v1.6.2 (2026-08-26)
 ### Added
 - **Income Sources — Inline Edit**: Each income source now has an ✏️ **Edit** button. Clicking it expands an inline edit form directly within the card, pre-populated with the current values (name, type, amount, frequency, notes). Saving calls `update_income_source()` and immediately refreshes the view. Cancelling reverts without changes.

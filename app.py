@@ -2895,7 +2895,15 @@ else:
             from database import (
                 add_income_source, get_income_sources_df,
                 delete_income_source, update_income_source,
-                INCOME_TYPES, FREQUENCY_OPTIONS
+                INCOME_TYPES, FREQUENCY_OPTIONS,
+                upsert_tax_deductions, get_tax_deductions,
+                upsert_capital_gains, get_capital_gains,
+            )
+            from tax_engine import (
+                derive_investment_income, parse_capital_gains,
+                compute_deductions, compute_cg_tax,
+                compute_advance_tax_schedule, compute_full_tax,
+                FRSB_RATE, FRSB_RATE_EFFECTIVE,
             )
 
             st.markdown("### 💡 Smart Investment Advisor & Tax Planner")
@@ -3380,11 +3388,15 @@ else:
                         else:
                             st.error("Please provide a source name and amount.")
 
-                # --- TAX PLANNER SECTION ---
+                # ═══════════════════════════════════════════════════════════
+                # ENHANCED TAX PLANNER — 4 sections
+                # ═══════════════════════════════════════════════════════════
                 st.markdown("---")
-                st.markdown("##### 🏛️ Tax Liability Calculator")
+                st.markdown("### 🏛️ Advanced Tax Planner (FY 2025-26)")
+                st.caption(f"Auto-derives interest & dividends from your portfolio · Parses capital gains from broker PDFs · Full deduction waterfall · Advance tax schedule. RBI FRSB rate: **{FRSB_RATE*100:.2f}%** (effective {FRSB_RATE_EFFECTIVE})")
 
-                tax_c1, tax_c2, tax_c3 = st.columns([1.5, 1.5, 1])
+                # Country & Regime selectors
+                tax_c1, tax_c2 = st.columns([2, 2])
                 with tax_c1:
                     tax_country_opts = ["India", "United States", "UAE", "United Kingdom", "Singapore", "Other"]
                     tax_cur_country = st.session_state.get("user", {}).get("country", "India")
@@ -3397,68 +3409,441 @@ else:
                         from database import update_user_profile
                         update_user_profile(current_user["username"], country=tax_country)
                         st.session_state["user"]["country"] = tax_country
-
                 with tax_c2:
                     if tax_country == "India":
-                        tax_regime = st.selectbox("📋 Tax Regime", ["New Regime", "Old Regime"], key="tax_regime_sel",
-                                                  help="New Regime (2024): Higher standard deduction of ₹75,000, simplified slabs, no 80C. Old Regime: ₹50,000 std deduction + 80C/80D deductions.")
+                        tax_regime = st.selectbox(
+                            "📋 Tax Regime", ["New Regime", "Old Regime"],
+                            key="tax_regime_sel",
+                            help="New Regime: ₹75,000 std deduction, simplified slabs. Old Regime: ₹50,000 std + 80C/80D/HRA/24b."
+                        )
                     else:
                         tax_regime = "N/A"
                         st.info(f"Tax rules auto-applied for {tax_country}.")
 
-                with tax_c3:
-                    st.write("")
-                    run_tax = st.button("🧮 Calculate Tax Liability", type="primary", use_container_width=True, key="run_tax_btn")
+                if tax_country == "India":
+                    _user_key  = current_user["username"]
+                    _fam_id    = current_user.get("family_id", 1)
+                    _fy        = "2025-26"
+                    _saved_ded = get_tax_deductions(_user_key, _fam_id, _fy)
+                    _saved_cg  = get_capital_gains(_user_key, _fam_id, _fy)
 
-                if run_tax:
-                    if income_df.empty:
-                        st.warning("⚠️ No income sources found. Please add at least one income source above first.")
-                    else:
-                        with st.spinner("Computing tax liability..."):
-                            tax_result = compute_tax_liability(income_df, inv_df, tax_country, tax_regime)
+                    # ─────────────────────────────────────────────────────
+                    # SECTION A — DEDUCTIONS
+                    # ─────────────────────────────────────────────────────
+                    with st.expander("📋 Section A — Deductions & TDS Details", expanded=False):
+                        st.caption("Enter your deduction details for FY 2025-26. Values are saved automatically.")
+                        _user_age = current_user.get("age", 35)
 
-                        # Main Tax KPIs
-                        t1, t2, t3, t4 = st.columns(4)
-                        t1.metric("💰 Gross Annual Income", format_inr(tax_result["gross_annual_income"]))
-                        t2.metric("📊 Taxable Income", format_inr(tax_result.get("taxable_income", 0)))
-                        t3.metric("🏛️ Est. Annual Tax", format_inr(tax_result["estimated_tax"]),
-                                  delta=f"-{format_inr(tax_result.get('eighty_c_deduction', 0))} 80C Deduction" if tax_result.get("eighty_c_deduction") else None,
-                                  delta_color="off")
-                        t4.metric("📈 Effective Tax Rate", f"{tax_result['effective_rate_pct']:.1f}%")
+                        with st.form("tax_deduction_form"):
+                            if tax_regime == "Old Regime":
+                                st.markdown("##### 80C Investments (Max ₹1.5L)")
+                                _dc1, _dc2, _dc3, _dc4 = st.columns(4)
+                                _ppf   = _dc1.number_input("PPF Contribution (₹)", min_value=0.0, value=float(_saved_ded.get("ppf_contribution", 0)), step=1000.0, key="ded_ppf")
+                                _elss  = _dc2.number_input("ELSS Investment (₹)", min_value=0.0, value=float(_saved_ded.get("elss_investment", 0)), step=1000.0, key="ded_elss")
+                                _lic   = _dc3.number_input("LIC Premium (₹)", min_value=0.0, value=float(_saved_ded.get("lic_premium", 0)), step=1000.0, key="ded_lic")
+                                _hlp   = _dc4.number_input("Home Loan Principal (₹)", min_value=0.0, value=float(_saved_ded.get("home_loan_principal", 0)), step=1000.0, key="ded_hlp")
+                                _dc5, _dc6, _dc7, _dc8 = st.columns(4)
+                                _school = _dc5.number_input("School Fees (₹)", min_value=0.0, value=float(_saved_ded.get("school_fees", 0)), step=500.0, key="ded_school")
+                                _nsc_r  = _dc6.number_input("NSC Interest Reinvested (₹)", min_value=0.0, value=float(_saved_ded.get("nsc_interest_reinvested", 0)), step=100.0, key="ded_nsc")
+                                _epf    = _dc7.number_input("EPF Contribution (₹)", min_value=0.0, value=float(_saved_ded.get("epf_contribution", 0)), step=500.0, key="ded_epf")
+                                _tsfd   = _dc8.number_input("Tax-saver FD (₹)", min_value=0.0, value=float(_saved_ded.get("tax_saver_fd", 0)), step=1000.0, key="ded_tsfd")
 
-                        # India regime comparison
-                        if tax_country == "India":
+                                _eighty_c_total = min(_ppf + _elss + _lic + _hlp + _school + _nsc_r + _epf + _tsfd, 150000)
+                                st.caption(f"📊 80C total (capped at ₹1.5L): **{format_inr(_eighty_c_total)}**")
+
+                                st.markdown("##### 80D — Health Insurance")
+                                _hc1, _hc2, _hc3 = st.columns(3)
+                                _hi_self = _hc1.number_input("Health Ins — Self & Family (₹)", min_value=0.0, value=float(_saved_ded.get("health_ins_self", 0)), step=500.0, key="ded_hi_self")
+                                _hi_par  = _hc2.number_input("Health Ins — Parents (₹)", min_value=0.0, value=float(_saved_ded.get("health_ins_parents", 0)), step=500.0, key="ded_hi_par")
+                                _par_sr  = _hc3.checkbox("Parents are Senior Citizens", value=bool(_saved_ded.get("parents_senior", 0)), key="ded_par_sr")
+
+                                st.markdown("##### HRA, Home Loan Interest & Others")
+                                _oc1, _oc2, _oc3 = st.columns(3)
+                                _hra_basic = _oc1.number_input("Basic Salary p.a. (for HRA) (₹)", min_value=0.0, value=float(_saved_ded.get("hra_basic_salary", 0)), step=1000.0, key="ded_hra_basic")
+                                _hra_recv  = _oc2.number_input("HRA Received p.a. (₹)", min_value=0.0, value=float(_saved_ded.get("hra_received", 0)), step=1000.0, key="ded_hra_recv")
+                                _rent_paid = _oc3.number_input("Rent Paid p.a. (₹)", min_value=0.0, value=float(_saved_ded.get("rent_paid", 0)), step=1000.0, key="ded_rent_paid")
+                                _oc4, _oc5, _oc6 = st.columns(3)
+                                _metro     = _oc4.checkbox("Metro City (50% HRA rule)", value=bool(_saved_ded.get("metro_city", 1)), key="ded_metro")
+                                _hl_int    = _oc5.number_input("Home Loan Interest 24(b) (₹)", min_value=0.0, max_value=200000.0, value=float(_saved_ded.get("home_loan_interest", 0)), step=1000.0, key="ded_hl_int")
+                                _nps_1b    = _oc6.number_input("NPS 80CCD(1B) Self (₹)", min_value=0.0, max_value=50000.0, value=float(_saved_ded.get("nps_80ccd_1b", 0)), step=500.0, key="ded_nps_1b")
+                            else:
+                                # New regime — minimal inputs
+                                st.info("ℹ️ **New Regime**: Only Standard Deduction (₹75,000), NPS Employer (80CCD2), and Professional Tax apply.")
+                                _ppf = _elss = _lic = _hlp = _school = _nsc_r = _epf = _tsfd = 0.0
+                                _hi_self = _hi_par = _hra_basic = _hra_recv = _rent_paid = _hl_int = _nps_1b = 0.0
+                                _par_sr = False; _metro = True; _eighty_c_total = 0.0
+
+                            # Common fields for both regimes
+                            st.markdown("##### Common Deductions")
+                            _cc1, _cc2, _cc3, _cc4 = st.columns(4)
+                            _nps_emp  = _cc1.number_input("NPS Employer 80CCD(2) (₹)", min_value=0.0, value=float(_saved_ded.get("nps_employer_80ccd2", 0)), step=500.0, key="ded_nps_emp")
+                            _prof_tax = _cc2.number_input("Professional Tax (₹, max ₹2,400)", min_value=0.0, max_value=2400.0, value=float(_saved_ded.get("professional_tax", 0)), step=200.0, key="ded_prof_tax")
+                            _sb_int   = _cc3.number_input("Savings Bank Interest (80TTA/TTB) (₹)", min_value=0.0, value=float(_saved_ded.get("savings_bank_interest", 0)), step=100.0, key="ded_sb_int")
+                            _scss_int = _cc4.number_input("SCSS Interest (for 80TTB) (₹)", min_value=0.0, value=float(_saved_ded.get("scss_interest", 0)), step=100.0, key="ded_scss_int")
+
+                            st.markdown("##### TDS & Advance Tax Already Paid")
+                            _tp1, _tp2 = st.columns(2)
+                            _tds     = _tp1.number_input("TDS Already Deducted (₹)", min_value=0.0, value=float(_saved_ded.get("tds_deducted", 0)), step=1000.0, key="ded_tds")
+                            _adv_pd  = _tp2.number_input("Advance Tax Already Paid (₹)", min_value=0.0, value=float(_saved_ded.get("advance_paid", 0)), step=1000.0, key="ded_adv_paid")
+
+                            _save_ded = st.form_submit_button("💾 Save Deduction Details", type="primary", use_container_width=True)
+                            if _save_ded:
+                                _ded_payload = {
+                                    "ppf_contribution": _ppf, "elss_investment": _elss, "lic_premium": _lic,
+                                    "home_loan_principal": _hlp, "school_fees": _school, "nsc_interest_reinvested": _nsc_r,
+                                    "epf_contribution": _epf, "tax_saver_fd": _tsfd,
+                                    "health_ins_self": _hi_self, "health_ins_parents": _hi_par, "parents_senior": int(_par_sr),
+                                    "nps_80ccd_1b": _nps_1b if tax_regime == "Old Regime" else 0,
+                                    "nps_employer_80ccd2": _nps_emp,
+                                    "home_loan_interest": _hl_int, "hra_basic_salary": _hra_basic,
+                                    "hra_received": _hra_recv, "rent_paid": _rent_paid, "metro_city": int(_metro),
+                                    "professional_tax": _prof_tax, "savings_bank_interest": _sb_int,
+                                    "scss_interest": _scss_int, "tds_deducted": _tds, "advance_paid": _adv_pd,
+                                    "age": _user_age,
+                                }
+                                if upsert_tax_deductions(_user_key, _fam_id, _fy, _ded_payload):
+                                    _saved_ded = _ded_payload
+                                    st.success("✅ Deduction details saved.")
+                                    st.rerun()
+                                else:
+                                    st.error("❌ Failed to save deduction details.")
+
+                    # ─────────────────────────────────────────────────────
+                    # SECTION B — AUTO-DERIVED PASSIVE INCOME
+                    # ─────────────────────────────────────────────────────
+                    with st.expander("💰 Section B — Passive Income from Portfolio (Auto-Calculated)", expanded=False):
+                        st.caption("Income automatically derived from your investment holdings. Override any figure if needed.")
+                        if inv_df is not None and not inv_df.empty:
+                            with st.spinner("Deriving passive income from portfolio..."):
+                                _passive_entries = derive_investment_income(inv_df)
+                            if _passive_entries:
+                                st.markdown(f"🔍 Found **{len(_passive_entries)}** passive income streams from your portfolio:")
+                                _override_vals = {}
+                                for _pi_idx, _pe in enumerate(_passive_entries):
+                                    _is_exempt = "EXEMPT" in _pe.get("taxability", "").upper()
+                                    _card_border = "#10b981" if _is_exempt else "#38bdf8"
+                                    _label_color = "#10b981" if _is_exempt else "#38bdf8"
+                                    st.markdown(f"""
+                                    <div style="background:#1e293b; border-radius:8px; border-left:4px solid {_card_border};
+                                                padding:10px 14px; margin-bottom:6px;">
+                                        <div style="display:flex; justify-content:space-between; align-items:center;">
+                                            <div>
+                                                <span style="font-weight:700; color:{_label_color};">{_pe['source_name']}</span>
+                                                <span style="color:#64748b; font-size:0.78rem; margin-left:8px;">{_pe['income_type']}</span>
+                                            </div>
+                                            <div style="color:{'#10b981' if _is_exempt else '#fbbf24'}; font-weight:700;">{format_inr(_pe['annual_amount'])}/yr</div>
+                                        </div>
+                                        <div style="color:#64748b; font-size:0.75rem; margin-top:4px;">{_pe['notes']}</div>
+                                        <div style="color:#475569; font-size:0.72rem;">Taxability: {_pe['taxability']}</div>
+                                    </div>
+                                    """, unsafe_allow_html=True)
+                                    _override = st.number_input(
+                                        f"Override: {_pe['source_name']} (₹/yr)",
+                                        min_value=0.0,
+                                        value=float(_pe["annual_amount"]),
+                                        step=100.0,
+                                        key=f"passive_override_{_pi_idx}",
+                                        label_visibility="collapsed"
+                                    )
+                                    _override_vals[_pi_idx] = _override
+                                st.session_state["_passive_entries"]  = _passive_entries
+                                st.session_state["_passive_overrides"] = _override_vals
+                            else:
+                                st.info("ℹ️ No passive income streams detected in your portfolio. Add FD, FRSB Bond, SGB, or equity holdings with units to auto-detect.")
+                                st.session_state["_passive_entries"]  = []
+                                st.session_state["_passive_overrides"] = {}
+                        else:
+                            st.info("ℹ️ No portfolio holdings found. Add investments in the Portfolio section to auto-derive passive income.")
+                            st.session_state["_passive_entries"]  = []
+                            st.session_state["_passive_overrides"] = {}
+
+                    # ─────────────────────────────────────────────────────
+                    # SECTION C — CAPITAL GAINS
+                    # ─────────────────────────────────────────────────────
+                    with st.expander("📈 Section C — Capital Gains (Upload or Manual Entry)", expanded=False):
+                        st.caption("Upload your broker/AIS capital gains statement to auto-extract LTCG & STCG. Or enter manually.")
+
+                        _cg_tabs = st.tabs(["📤 Upload Document", "✏️ Manual Entry", "📋 Saved Data"])
+
+                        with _cg_tabs[0]:
+                            st.markdown("""
+                            **Supported documents:**
+                            - **Zerodha**: Console → P&L → Download Tax P&L (PDF)
+                            - **ICICI Direct**: Reports → Capital Gains → Download PDF
+                            - **CAMS / KFintech**: CAS (Consolidated Account Statement) PDF
+                            - **IT Dept AIS**: Income Tax Portal → AIS → Download JSON
+                            """)
+                            _cg_file = st.file_uploader(
+                                "Upload capital gains document",
+                                type=["pdf", "json"],
+                                key="cg_upload_file",
+                                help="Auto-detects format from Zerodha/ICICI/CAMS/AIS"
+                            )
+                            if _cg_file is not None:
+                                with st.spinner(f"Parsing {_cg_file.name}..."):
+                                    _parsed_cg = parse_capital_gains(_cg_file)
+                                if _parsed_cg.get("parse_errors"):
+                                    for _pe in _parsed_cg["parse_errors"]:
+                                        st.warning(f"⚠️ {_pe}")
+                                st.success(f"✅ Detected format: **{_parsed_cg['source']}**")
+                                st.markdown(f"**Parsed Capital Gains — {_cg_file.name}:**")
+                                _cg_display = pd.DataFrame([
+                                    {"Category": "Equity LTCG", "Amount (₹)": format_inr(_parsed_cg["equity_ltcg"]), "Tax Rate": "12.5% (above ₹1.25L)"},
+                                    {"Category": "Equity STCG", "Amount (₹)": format_inr(_parsed_cg["equity_stcg"]), "Tax Rate": "20%"},
+                                    {"Category": "Equity MF LTCG", "Amount (₹)": format_inr(_parsed_cg["equity_mf_ltcg"]), "Tax Rate": "12.5% (above ₹1.25L)"},
+                                    {"Category": "Equity MF STCG", "Amount (₹)": format_inr(_parsed_cg["equity_mf_stcg"]), "Tax Rate": "20%"},
+                                    {"Category": "Debt MF LTCG", "Amount (₹)": format_inr(_parsed_cg["debt_mf_ltcg"]), "Tax Rate": "Slab rate"},
+                                    {"Category": "Debt MF STCG", "Amount (₹)": format_inr(_parsed_cg["debt_mf_stcg"]), "Tax Rate": "Slab rate"},
+                                    {"Category": "Property LTCG", "Amount (₹)": format_inr(_parsed_cg["property_ltcg"]), "Tax Rate": "12.5% (no indexation)"},
+                                    {"Category": "Property STCG", "Amount (₹)": format_inr(_parsed_cg["property_stcg"]), "Tax Rate": "Slab rate"},
+                                    {"Category": "Other LTCG", "Amount (₹)": format_inr(_parsed_cg["other_ltcg"]), "Tax Rate": "Slab rate"},
+                                    {"Category": "Other STCG", "Amount (₹)": format_inr(_parsed_cg["other_stcg"]), "Tax Rate": "Slab rate"},
+                                ])
+                                st.dataframe(_cg_display, use_container_width=True, hide_index=True)
+                                st.markdown(f"**Total LTCG: {format_inr(_parsed_cg['total_ltcg'])} | Total STCG: {format_inr(_parsed_cg['total_stcg'])}**")
+                                if st.button("💾 Save Parsed Capital Gains", type="primary", key="save_parsed_cg"):
+                                    if upsert_capital_gains(_user_key, _fam_id, _fy, _parsed_cg):
+                                        _saved_cg = _parsed_cg
+                                        st.success("✅ Capital gains saved.")
+                                        st.rerun()
+
+                        with _cg_tabs[1]:
+                            st.markdown("Enter capital gains amounts manually (all figures in ₹):")
+                            with st.form("manual_cg_form"):
+                                _m1, _m2 = st.columns(2)
+                                _m_eq_ltcg   = _m1.number_input("Equity LTCG (Listed Stocks)", min_value=0.0, value=float(_saved_cg.get("equity_ltcg", 0)), step=1000.0, key="mcg_eq_ltcg")
+                                _m_eq_stcg   = _m2.number_input("Equity STCG (Listed Stocks)", min_value=0.0, value=float(_saved_cg.get("equity_stcg", 0)), step=1000.0, key="mcg_eq_stcg")
+                                _m3, _m4 = st.columns(2)
+                                _m_eqmf_ltcg = _m3.number_input("Equity Mutual Fund LTCG", min_value=0.0, value=float(_saved_cg.get("equity_mf_ltcg", 0)), step=1000.0, key="mcg_eqmf_ltcg")
+                                _m_eqmf_stcg = _m4.number_input("Equity Mutual Fund STCG", min_value=0.0, value=float(_saved_cg.get("equity_mf_stcg", 0)), step=1000.0, key="mcg_eqmf_stcg")
+                                _m5, _m6 = st.columns(2)
+                                _m_dmf_ltcg  = _m5.number_input("Debt MF LTCG (taxed at slab)", min_value=0.0, value=float(_saved_cg.get("debt_mf_ltcg", 0)), step=1000.0, key="mcg_dmf_ltcg")
+                                _m_dmf_stcg  = _m6.number_input("Debt MF STCG (taxed at slab)", min_value=0.0, value=float(_saved_cg.get("debt_mf_stcg", 0)), step=1000.0, key="mcg_dmf_stcg")
+                                _m7, _m8 = st.columns(2)
+                                _m_prop_ltcg = _m7.number_input("Property LTCG (12.5%, no indexation)", min_value=0.0, value=float(_saved_cg.get("property_ltcg", 0)), step=10000.0, key="mcg_prop_ltcg")
+                                _m_prop_stcg = _m8.number_input("Property STCG (slab rate)", min_value=0.0, value=float(_saved_cg.get("property_stcg", 0)), step=10000.0, key="mcg_prop_stcg")
+                                _m9, _m10 = st.columns(2)
+                                _m_oth_ltcg  = _m9.number_input("Other LTCG", min_value=0.0, value=float(_saved_cg.get("other_ltcg", 0)), step=1000.0, key="mcg_oth_ltcg")
+                                _m_oth_stcg  = _m10.number_input("Other STCG", min_value=0.0, value=float(_saved_cg.get("other_stcg", 0)), step=1000.0, key="mcg_oth_stcg")
+                                _save_mcg = st.form_submit_button("💾 Save Manual Capital Gains", type="primary", use_container_width=True)
+                                if _save_mcg:
+                                    _mcg_payload = {
+                                        "equity_ltcg": _m_eq_ltcg, "equity_stcg": _m_eq_stcg,
+                                        "equity_mf_ltcg": _m_eqmf_ltcg, "equity_mf_stcg": _m_eqmf_stcg,
+                                        "debt_mf_ltcg": _m_dmf_ltcg, "debt_mf_stcg": _m_dmf_stcg,
+                                        "property_ltcg": _m_prop_ltcg, "property_stcg": _m_prop_stcg,
+                                        "other_ltcg": _m_oth_ltcg, "other_stcg": _m_oth_stcg,
+                                        "source": "Manual", "notes": "",
+                                        "slab_income_addition": _m_dmf_ltcg + _m_dmf_stcg + _m_prop_stcg + _m_oth_ltcg + _m_oth_stcg,
+                                    }
+                                    if upsert_capital_gains(_user_key, _fam_id, _fy, _mcg_payload):
+                                        _saved_cg = _mcg_payload
+                                        st.success("✅ Capital gains saved.")
+                                        st.rerun()
+
+                        with _cg_tabs[2]:
+                            if _saved_cg:
+                                st.markdown(f"**Saved CG data for FY {_fy} (source: {_saved_cg.get('source', 'N/A')}):**")
+                                _saved_cg_display = pd.DataFrame([
+                                    {"Category": "Equity LTCG", "Amount": format_inr(float(_saved_cg.get("equity_ltcg", 0)))},
+                                    {"Category": "Equity STCG", "Amount": format_inr(float(_saved_cg.get("equity_stcg", 0)))},
+                                    {"Category": "Equity MF LTCG", "Amount": format_inr(float(_saved_cg.get("equity_mf_ltcg", 0)))},
+                                    {"Category": "Equity MF STCG", "Amount": format_inr(float(_saved_cg.get("equity_mf_stcg", 0)))},
+                                    {"Category": "Debt MF LTCG", "Amount": format_inr(float(_saved_cg.get("debt_mf_ltcg", 0)))},
+                                    {"Category": "Debt MF STCG", "Amount": format_inr(float(_saved_cg.get("debt_mf_stcg", 0)))},
+                                    {"Category": "Property LTCG", "Amount": format_inr(float(_saved_cg.get("property_ltcg", 0)))},
+                                    {"Category": "Property STCG", "Amount": format_inr(float(_saved_cg.get("property_stcg", 0)))},
+                                ])
+                                st.dataframe(_saved_cg_display, use_container_width=True, hide_index=True)
+                            else:
+                                st.info("No capital gains data saved yet for FY 2025-26.")
+
+                    # ─────────────────────────────────────────────────────
+                    # SECTION D — TAX SUMMARY
+                    # ─────────────────────────────────────────────────────
+                    st.markdown("---")
+                    _run_tax = st.button("🧮 Calculate Full Tax Liability", type="primary",
+                                         use_container_width=True, key="run_full_tax_btn")
+                    if _run_tax:
+                        if income_df.empty and not st.session_state.get("_passive_entries"):
+                            st.warning("⚠️ No income sources or passive income found. Add income sources or investments first.")
+                        else:
+                            with st.spinner("Computing full tax liability..."):
+                                _tax_ded_for_compute = dict(_saved_ded)
+                                _tax_ded_for_compute["age"] = current_user.get("age", 35)
+                                _cg_for_compute = dict(_saved_cg) if _saved_cg else {}
+                                if _cg_for_compute and "slab_income_addition" not in _cg_for_compute:
+                                    _cg_for_compute["slab_income_addition"] = (
+                                        float(_cg_for_compute.get("debt_mf_ltcg", 0)) +
+                                        float(_cg_for_compute.get("debt_mf_stcg", 0)) +
+                                        float(_cg_for_compute.get("property_stcg", 0)) +
+                                        float(_cg_for_compute.get("other_ltcg", 0)) +
+                                        float(_cg_for_compute.get("other_stcg", 0))
+                                    )
+                                _p_entries  = st.session_state.get("_passive_entries", [])
+                                _p_override = st.session_state.get("_passive_overrides", {})
+                                _tax_result = compute_full_tax(
+                                    income_df, _p_entries, _p_override, _cg_for_compute,
+                                    _tax_ded_for_compute,
+                                    tds_deducted=float(_saved_ded.get("tds_deducted", 0)),
+                                    advance_paid=float(_saved_ded.get("advance_paid", 0)),
+                                    tax_regime=tax_regime,
+                                )
+
+                            # KPI Row
+                            _tk1, _tk2, _tk3, _tk4, _tk5 = st.columns(5)
+                            _tk1.metric("💰 Gross Income", format_inr(_tax_result["gross_slab_income"]))
+                            _tk2.metric("🔽 Total Deductions", format_inr(_tax_result["total_deduction"]))
+                            _tk3.metric("📊 Taxable Income", format_inr(_tax_result["taxable_income"]))
+                            _tk4.metric("🏛️ Total Tax", format_inr(_tax_result["total_tax"]))
+                            _tk5.metric("📈 Effective Rate", f"{_tax_result['effective_rate_pct']:.1f}%",
+                                        delta=f"vs {_tax_result['compare_regime']}: {format_inr(_tax_result['compare_tax'])}",
+                                        delta_color="inverse")
+
+                            # Tax breakdown card
+                            _cg_detail = _tax_result.get("cg_tax_detail", {})
                             st.markdown(f"""
-                            <div style="background: linear-gradient(135deg, #1e293b, #0f172a); border-radius:10px; border:1px solid #334155; padding:14px 18px; margin:12px 0;">
-                                <div style="font-weight:700; color:#f1f5f9; margin-bottom:8px;">📋 Tax Regime: {tax_regime}</div>
-                                <div style="display:grid; grid-template-columns:1fr 1fr 1fr; gap:12px;">
-                                    <div><div style="color:#94a3b8; font-size:0.8rem;">Gross Income</div><div style="color:#38bdf8; font-weight:700;">{format_inr(tax_result['gross_annual_income'])}</div></div>
-                                    <div><div style="color:#94a3b8; font-size:0.8rem;">80C Deductions</div><div style="color:#34d399; font-weight:700;">{format_inr(tax_result.get('eighty_c_deduction', 0))}</div></div>
-                                    <div><div style="color:#94a3b8; font-size:0.8rem;">Taxable Income</div><div style="color:#fbbf24; font-weight:700;">{format_inr(tax_result['taxable_income'])}</div></div>
+                            <div style="background:linear-gradient(135deg,#1e293b,#0f172a); border-radius:12px;
+                                        border:1px solid #334155; padding:16px 20px; margin:12px 0;">
+                                <div style="font-weight:700; color:#f1f5f9; margin-bottom:10px; font-size:1rem;">
+                                    📋 Tax Breakdown — {tax_regime} (FY 2025-26)
+                                </div>
+                                <div style="display:grid; grid-template-columns:repeat(4,1fr); gap:12px;">
+                                    <div><div style="color:#94a3b8;font-size:0.78rem;">Slab Tax</div>
+                                         <div style="color:#38bdf8;font-weight:700;">{format_inr(_tax_result['slab_tax'])}</div></div>
+                                    <div><div style="color:#94a3b8;font-size:0.78rem;">CG Tax</div>
+                                         <div style="color:#f59e0b;font-weight:700;">{format_inr(_tax_result['cg_tax'])}</div></div>
+                                    <div><div style="color:#94a3b8;font-size:0.78rem;">TDS Deducted</div>
+                                         <div style="color:#34d399;font-weight:700;">{format_inr(_tax_result['tds_deducted'])}</div></div>
+                                    <div><div style="color:#94a3b8;font-size:0.78rem;">Balance Due</div>
+                                         <div style="color:#{'f87171' if _tax_result['balance_due'] > 0 else '34d399'};font-weight:700;">{format_inr(_tax_result['balance_due'])}</div></div>
                                 </div>
                             </div>
                             """, unsafe_allow_html=True)
 
-                        # Income breakdown
-                        if tax_result.get("income_breakdown"):
-                            st.markdown("**📊 Income Breakdown:**")
-                            inc_bd_df = pd.DataFrame(tax_result["income_breakdown"])
-                            if not inc_bd_df.empty:
-                                inc_bd_df["annual"] = inc_bd_df["annual"].apply(format_inr)
-                                st.dataframe(inc_bd_df.rename(columns={"source": "Source", "type": "Type", "annual": "Annual Amount"}),
+                            # CG Tax Detail
+                            if _cg_detail.get("total_cg_tax", 0) > 0:
+                                st.markdown("**📈 Capital Gains Tax Detail:**")
+                                _cg_table = pd.DataFrame([
+                                    {"Item": "Equity LTCG (total)", "Amount": format_inr(_cg_detail.get("total_equity_ltcg", 0)), "Note": f"Exempt: {format_inr(_cg_detail.get('ltcg_exempt',0))} | Taxable: {format_inr(_cg_detail.get('taxable_equity_ltcg',0))}"},
+                                    {"Item": "Equity LTCG Tax (12.5% + cess)", "Amount": format_inr(_cg_detail.get("tax_equity_ltcg", 0)), "Note": ""},
+                                    {"Item": "Equity STCG (total)", "Amount": format_inr(_cg_detail.get("total_equity_stcg", 0)), "Note": ""},
+                                    {"Item": "Equity STCG Tax (20% + cess)", "Amount": format_inr(_cg_detail.get("tax_equity_stcg", 0)), "Note": ""},
+                                    {"Item": "Property LTCG Tax (12.5% + cess)", "Amount": format_inr(_cg_detail.get("tax_property_ltcg", 0)), "Note": "No indexation"},
+                                    {"Item": "Debt MF / Other (slab)", "Amount": format_inr(_cg_detail.get("slab_income_addition", 0)), "Note": "Added to slab income above"},
+                                ])
+                                st.dataframe(_cg_table, use_container_width=True, hide_index=True)
+
+                            # Income breakdown
+                            _all_inc = _tax_result.get("income_breakdown", []) + _tax_result.get("passive_breakdown", [])
+                            if _all_inc:
+                                st.markdown("**📊 Full Income Breakdown:**")
+                                _inc_df = pd.DataFrame(_all_inc)
+                                _inc_df["annual"] = _inc_df["annual"].apply(format_inr)
+                                st.dataframe(_inc_df.rename(columns={"source":"Source","type":"Type","annual":"Annual","taxability":"Taxability"}),
                                              use_container_width=True, hide_index=True)
 
-                        # Savings opportunities
-                        if tax_result.get("savings_opportunities"):
-                            st.markdown("#### 💡 Tax Saving Opportunities")
-                            for opp in tax_result["savings_opportunities"]:
-                                st.markdown(f"""
-                                <div style="background:#1e293b; border-radius:8px; border-left:4px solid #a78bfa;
-                                            padding:12px 16px; margin-bottom:8px;">
-                                    <div style="font-weight:600; color:#a78bfa; font-size:0.9rem;">🏛️ {opp.get('opportunity','')}</div>
-                                    <div style="color:#94a3b8; font-size:0.83rem; margin-top:4px;">{opp.get('detail','')}</div>
+                            # Deduction breakdown
+                            _ded_det = _tax_result.get("deduction_detail", {})
+                            if _ded_det:
+                                st.markdown("**🔽 Deductions Applied:**")
+                                _ded_rows = [
+                                    {"Deduction": "Standard Deduction", "Amount": format_inr(_ded_det.get("standard_deduction", 0))},
+                                ]
+                                if tax_regime == "Old Regime":
+                                    _ded_rows += [
+                                        {"Deduction": "80C (PPF/ELSS/LIC etc.)", "Amount": format_inr(_ded_det.get("eighty_c", 0))},
+                                        {"Deduction": "80D (Health Insurance)", "Amount": format_inr(_ded_det.get("eighty_d", 0))},
+                                        {"Deduction": "80CCD(1B) NPS", "Amount": format_inr(_ded_det.get("nps_80ccd_1b", 0))},
+                                        {"Deduction": "24(b) Home Loan Interest", "Amount": format_inr(_ded_det.get("home_loan_interest_24b", 0))},
+                                        {"Deduction": "HRA Exemption", "Amount": format_inr(_ded_det.get("hra_exemption", 0))},
+                                        {"Deduction": f"{_ded_det.get('tta_ttb_label','80TTA')}", "Amount": format_inr(_ded_det.get("tta_ttb", 0))},
+                                    ]
+                                _ded_rows += [
+                                    {"Deduction": "Professional Tax", "Amount": format_inr(_ded_det.get("professional_tax", 0))},
+                                    {"Deduction": "NPS Employer 80CCD(2)", "Amount": format_inr(_ded_det.get("nps_employer_80ccd2", 0))},
+                                    {"Deduction": "**TOTAL**", "Amount": f"**{format_inr(_ded_det.get('total_deduction',0))}**"},
+                                ]
+                                st.dataframe(pd.DataFrame(_ded_rows), use_container_width=True, hide_index=True)
+
+                            # Advance Tax Schedule
+                            _adv_sched = _tax_result.get("advance_tax_schedule", [])
+                            if _adv_sched:
+                                st.markdown("#### 📅 Advance Tax Instalment Schedule (FY 2025-26)")
+                                st.caption("Advance tax is required when net tax liability exceeds ₹10,000. Failure to pay on time attracts interest u/s 234B & 234C.")
+                                _adv_df = pd.DataFrame(_adv_sched)
+                                _adv_df["instalment_amount"] = _adv_df["instalment_amount"].apply(format_inr)
+                                _adv_df["cumulative_due"]    = _adv_df["cumulative_due"].apply(format_inr)
+                                st.dataframe(
+                                    _adv_df.rename(columns={
+                                        "instalment": "Instalment",
+                                        "due_date": "Due Date",
+                                        "cumulative_pct": "Cumulative %",
+                                        "cumulative_due": "Cumulative Amount",
+                                        "instalment_amount": "Pay This Instalment",
+                                        "status": "Status",
+                                    })[["Instalment","Due Date","Cumulative %","Cumulative Amount","Pay This Instalment","Status"]],
+                                    use_container_width=True, hide_index=True
+                                )
+                            elif _tax_result["total_tax"] > 0:
+                                st.success("✅ Net tax liability < ₹10,000 after TDS/advance paid — no advance tax required.")
+
+                            # Savings Opportunities
+                            if _tax_result.get("savings_opportunities"):
+                                st.markdown("#### 💡 Tax Saving Opportunities")
+                                for _opp in _tax_result["savings_opportunities"]:
+                                    st.markdown(f"""
+                                    <div style="background:#1e293b; border-radius:8px; border-left:4px solid #a78bfa;
+                                                padding:12px 16px; margin-bottom:8px;">
+                                        <div style="font-weight:600; color:#a78bfa; font-size:0.9rem;">🏛️ {_opp.get('opportunity','')}</div>
+                                        <div style="color:#94a3b8; font-size:0.83rem; margin-top:4px;">{_opp.get('detail','')}</div>
+                                    </div>
+                                    """, unsafe_allow_html=True)
+
+                            # What's still needed info box
+                            st.markdown("""
+                            <div style="background:#0f172a; border-radius:10px; border:1px solid #1e3a5f;
+                                        padding:14px 18px; margin-top:16px;">
+                                <div style="font-weight:700; color:#38bdf8; margin-bottom:8px;">📌 Additional Information Needed for a Complete Tax Return</div>
+                                <div style="display:grid; grid-template-columns:1fr 1fr; gap:8px; color:#94a3b8; font-size:0.82rem;">
+                                    <div>✅ <b>Form 16</b> — TDS certificate from employer</div>
+                                    <div>✅ <b>FD Interest Certificates</b> — Annual interest statements from bank</div>
+                                    <div>✅ <b>26AS / AIS</b> — Download from IT portal to verify TDS</div>
+                                    <div>✅ <b>Home Loan Statement</b> — Principal & interest breakup for 80C/24b</div>
+                                    <div>✅ <b>Rental Income</b> — Net rent after 30% standard deduction + municipal taxes</div>
+                                    <div>✅ <b>Foreign Income / DTAA</b> — If NRI or foreign accounts (FEMA/DTAA compliance)</div>
+                                    <div>✅ <b>Advance Tax Challans</b> — BSR code + date + amount for each payment</div>
+                                    <div>✅ <b>MF IDCW Statements</b> — CAMS/Kfintech dividend statements if applicable</div>
                                 </div>
-                                """, unsafe_allow_html=True)
+                            </div>
+                            """, unsafe_allow_html=True)
+
+                else:
+                    # Non-India: use the legacy compute_tax_liability
+                    st.markdown("---")
+                    st.markdown("##### 🏛️ Tax Liability Calculator")
+                    _run_tax_intl = st.button("🧮 Calculate Tax Liability", type="primary", use_container_width=True, key="run_tax_btn")
+                    if _run_tax_intl:
+                        if income_df.empty:
+                            st.warning("⚠️ No income sources found. Please add at least one income source above first.")
+                        else:
+                            with st.spinner("Computing tax liability..."):
+                                tax_result = compute_tax_liability(income_df, inv_df, tax_country, tax_regime)
+                            t1, t2, t3, t4 = st.columns(4)
+                            t1.metric("💰 Gross Annual Income", format_inr(tax_result["gross_annual_income"]))
+                            t2.metric("📊 Taxable Income", format_inr(tax_result.get("taxable_income", 0)))
+                            t3.metric("🏛️ Est. Annual Tax", format_inr(tax_result["estimated_tax"]))
+                            t4.metric("📈 Effective Tax Rate", f"{tax_result['effective_rate_pct']:.1f}%")
+                            if tax_result.get("savings_opportunities"):
+                                st.markdown("#### 💡 Tax Saving Opportunities")
+                                for opp in tax_result["savings_opportunities"]:
+                                    st.markdown(f"""
+                                    <div style="background:#1e293b; border-radius:8px; border-left:4px solid #a78bfa;
+                                                padding:12px 16px; margin-bottom:8px;">
+                                        <div style="font-weight:600; color:#a78bfa; font-size:0.9rem;">🏛️ {opp.get('opportunity','')}</div>
+                                        <div style="color:#94a3b8; font-size:0.83rem; margin-top:4px;">{opp.get('detail','')}</div>
+                                    </div>
+                                    """, unsafe_allow_html=True)
 
     # ----------------------------------------------------
     # ⚙️ SETTINGS & ADMIN
