@@ -3512,10 +3512,14 @@ else:
                     # SECTION B — AUTO-DERIVED PASSIVE INCOME
                     # ─────────────────────────────────────────────────────
                     with st.expander("💰 Section B — Passive Income from Portfolio (Auto-Calculated)", expanded=False):
-                        st.caption("Income automatically derived from your investment holdings. Override any figure if needed.")
-                        if inv_df is not None and not inv_df.empty:
+                        st.caption("Income automatically derived from your investment holdings and income sources. Override any figure if needed.")
+                        
+                        has_investments = inv_df is not None and not inv_df.empty
+                        has_incomes = income_df is not None and not income_df.empty
+                        
+                        if has_investments or has_incomes:
                             with st.spinner("Deriving passive income from portfolio..."):
-                                _passive_entries = derive_investment_income(inv_df)
+                                _passive_entries = derive_investment_income(inv_df, income_sources_df=income_df)
                             if _passive_entries:
                                 st.markdown(f"🔍 Found **{len(_passive_entries)}** passive income streams from your portfolio:")
                                 _override_vals = {}

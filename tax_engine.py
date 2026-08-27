@@ -32,6 +32,7 @@ DEFAULT_RD_RATE: float = 0.068
 NSC_RATE: float = 0.0724            # Q1 2025
 SCSS_RATE: float = 0.082            # Q1 2025
 PPF_RATE: float = 0.071             # Q1 2025
+EPF_RATE: float = 0.0815            # FY 2024-25 (EPFO declared)
 
 SAVINGS_INTEREST_80TTA_EXEMPT: float = 10_000.0
 
@@ -49,14 +50,24 @@ ADVANCE_TAX_SCHEDULE: List[Dict[str, Any]] = [
     {"instalment": "4th",  "due_date": datetime.date(2026, 3, 15),  "cumulative_pct": 1.00},
 ]
 
-_FRSB_KEYWORDS   = {"frsb", "floating rate savings bond", "rbi savings bond", "goi savings bond"}
-_SGB_KEYWORDS    = {"sgb", "sovereign gold bond"}
-_FD_KEYWORDS     = {"fixed deposit", "fd", "term deposit", "bank fd"}
+# ─── Investment-type keyword sets (match against investment_type column values) ─
+# These match via substring: if any keyword is contained in the investment_type string
+_FRSB_KEYWORDS   = {"frsb", "floating rate savings bond", "rbi savings bond", "goi savings bond", "rbi frsb"}
+_SGB_KEYWORDS    = {"sgb", "sovereign gold bond", "gold bond"}
+_FD_KEYWORDS     = {"fixed deposit", "fd", "term deposit", "bank fd", "fixed deposits"}
 _RD_KEYWORDS     = {"recurring deposit", "rd"}
 _PPF_KEYWORDS    = {"ppf", "public provident fund"}
 _NSC_KEYWORDS    = {"nsc", "national savings certificate"}
 _SCSS_KEYWORDS   = {"scss", "senior citizen savings scheme"}
-_EQUITY_KEYWORDS = {"equity", "stock", "share", "nse", "bse"}
+_EPF_KEYWORDS    = {"epf", "epfo", "employee provident fund", "vpf", "provident fund"}
+_EQUITY_KEYWORDS = {"equity", "stock", "share", "nse", "bse", "equity (stocks)"}
+
+# ─── Income-source type keywords (for scanning income_sources table entries) ───
+_FRSB_INCOME_KEYWORDS = {"frsb", "floating rate", "rbi bond", "rbi savings", "goi bond", "savings bond"}
+_EPF_INCOME_KEYWORDS  = {"epf", "epfo", "provident fund", "vpf"}
+_FD_INCOME_KEYWORDS   = {"fixed deposit", "fd interest", "term deposit", "bank interest"}
+_SCSS_INCOME_KEYWORDS = {"scss", "senior citizen savings"}
+_NSC_INCOME_KEYWORDS  = {"nsc", "national savings cert"}
 
 
 def _itype_matches(investment_type: str, keywords: set) -> bool:
@@ -88,13 +99,22 @@ def _parse_rate_from_description(desc: str) -> Optional[float]:
 # 1. PASSIVE INCOME AUTO-DERIVATION
 # ─────────────────────────────────────────────────────────────────────────────
 
-def derive_investment_income(holdings_df: pd.DataFrame) -> List[Dict[str, Any]]:
-    """Scan portfolio holdings and return auto-computed passive income entries."""
+def derive_investment_income(
+    holdings_df: pd.DataFrame,
+    income_sources_df: Optional[pd.DataFrame] = None,
+) -> List[Dict[str, Any]]:
+    """
+    Scan portfolio holdings AND income sources and return auto-computed passive income entries.
+    - holdings_df: investments table DataFrame
+    - income_sources_df: income_sources table DataFrame (optional, for FRSB/EPF stored as income)
+    """
     if holdings_df is None or holdings_df.empty:
-        return []
+        holdings_df = pd.DataFrame()
 
     entries: List[Dict[str, Any]] = []
+    seen_names: set = set()  # avoid double-counting
 
+    # ── SCAN PORTFOLIO HOLDINGS ──────────────────────────────────────────────
     for _, row in holdings_df.iterrows():
         itype    = str(row.get("investment_type", "")).strip()
         desc     = str(row.get("description", "")).strip()
@@ -104,8 +124,9 @@ def derive_investment_income(holdings_df: pd.DataFrame) -> List[Dict[str, Any]]:
 
         if _itype_matches(itype, _FRSB_KEYWORDS):
             annual = round(invested * FRSB_RATE, 2)
+            label = name or "RBI FRSB Bond"
             entries.append({
-                "source_name": name or "RBI FRSB Bond",
+                "source_name": label,
                 "income_type": "Interest Income",
                 "annual_amount": annual,
                 "taxability": "Fully Taxable (Other Sources)",
@@ -114,11 +135,13 @@ def derive_investment_income(holdings_df: pd.DataFrame) -> List[Dict[str, Any]]:
                 "derivation_method": "RBI declared rate",
                 "override_allowed": True,
             })
+            seen_names.add(label.lower())
 
         elif _itype_matches(itype, _SGB_KEYWORDS):
             annual = round(invested * SGB_COUPON_RATE, 2)
+            label = name or "Sovereign Gold Bond"
             entries.append({
-                "source_name": name or "Sovereign Gold Bond",
+                "source_name": label,
                 "income_type": "Interest Income",
                 "annual_amount": annual,
                 "taxability": "Fully Taxable (Other Sources)",
@@ -127,26 +150,30 @@ def derive_investment_income(holdings_df: pd.DataFrame) -> List[Dict[str, Any]]:
                 "derivation_method": "Statutory SGB coupon",
                 "override_allowed": True,
             })
+            seen_names.add(label.lower())
 
         elif _itype_matches(itype, _FD_KEYWORDS):
             rate = _parse_rate_from_description(desc) or DEFAULT_FD_RATE
             annual = round(invested * rate, 2)
+            label = name or "Fixed Deposit"
             entries.append({
-                "source_name": name or "Fixed Deposit",
+                "source_name": label,
                 "income_type": "Interest Income",
                 "annual_amount": annual,
                 "taxability": "Fully Taxable (Other Sources). TDS @10% by bank.",
                 "payment_months": None,
-                "notes": f"Rate: {rate*100:.1f}% p.a. {'(from description)' if _parse_rate_from_description(desc) else '(estimate — update in Notes)'}",
+                "notes": f"Rate: {rate*100:.1f}% p.a. {'(from description)' if _parse_rate_from_description(desc) else '(estimate — add rate in Description field)'}",
                 "derivation_method": "Rate from description or 7% default",
                 "override_allowed": True,
             })
+            seen_names.add(label.lower())
 
         elif _itype_matches(itype, _RD_KEYWORDS):
             rate = _parse_rate_from_description(desc) or DEFAULT_RD_RATE
             annual = round(invested * rate, 2)
+            label = name or "Recurring Deposit"
             entries.append({
-                "source_name": name or "Recurring Deposit",
+                "source_name": label,
                 "income_type": "Interest Income",
                 "annual_amount": annual,
                 "taxability": "Fully Taxable (Other Sources). TDS @10% by bank.",
@@ -155,11 +182,13 @@ def derive_investment_income(holdings_df: pd.DataFrame) -> List[Dict[str, Any]]:
                 "derivation_method": "Rate from description or 6.8% default",
                 "override_allowed": True,
             })
+            seen_names.add(label.lower())
 
         elif _itype_matches(itype, _NSC_KEYWORDS):
             annual = round(invested * NSC_RATE, 2)
+            label = name or "NSC"
             entries.append({
-                "source_name": name or "NSC",
+                "source_name": label,
                 "income_type": "Interest Income",
                 "annual_amount": annual,
                 "taxability": "Taxable; re-invested interest qualifies as 80C each year",
@@ -168,11 +197,13 @@ def derive_investment_income(holdings_df: pd.DataFrame) -> List[Dict[str, Any]]:
                 "derivation_method": "Current NSC rate (Q1 2025)",
                 "override_allowed": True,
             })
+            seen_names.add(label.lower())
 
         elif _itype_matches(itype, _SCSS_KEYWORDS):
             annual = round(invested * SCSS_RATE, 2)
+            label = name or "SCSS"
             entries.append({
-                "source_name": name or "SCSS",
+                "source_name": label,
                 "income_type": "Interest Income",
                 "annual_amount": annual,
                 "taxability": "Fully Taxable. 80TTB exemption ₹50K for senior citizens.",
@@ -181,11 +212,13 @@ def derive_investment_income(holdings_df: pd.DataFrame) -> List[Dict[str, Any]]:
                 "derivation_method": "Current SCSS rate",
                 "override_allowed": True,
             })
+            seen_names.add(label.lower())
 
         elif _itype_matches(itype, _PPF_KEYWORDS):
             annual = round(invested * PPF_RATE, 2)
+            label = name or "PPF"
             entries.append({
-                "source_name": name or "PPF",
+                "source_name": label,
                 "income_type": "Interest Income (Exempt)",
                 "annual_amount": annual,
                 "taxability": "EXEMPT u/s 10(11) — EEE. Not added to taxable income.",
@@ -194,14 +227,32 @@ def derive_investment_income(holdings_df: pd.DataFrame) -> List[Dict[str, Any]]:
                 "derivation_method": "Current PPF rate",
                 "override_allowed": True,
             })
+            seen_names.add(label.lower())
+
+        elif _itype_matches(itype, _EPF_KEYWORDS):
+            # EPF interest is exempt up to 2.5L contribution per year (employer+employee)
+            annual = round(invested * EPF_RATE, 2)
+            label = name or "EPF / EPFO"
+            entries.append({
+                "source_name": label,
+                "income_type": "Interest Income (Exempt up to threshold)",
+                "annual_amount": annual,
+                "taxability": "EXEMPT u/s 10(12) up to ₹2.5L contribution p.a. Taxable above that threshold.",
+                "payment_months": [3],
+                "notes": f"EPF interest rate {EPF_RATE*100:.2f}% p.a. (FY 2024-25). Credited Mar 31. Ensure own+employer contribution ≤ ₹2.5L to keep exempt.",
+                "derivation_method": "Current EPFO declared rate",
+                "override_allowed": True,
+            })
+            seen_names.add(label.lower())
 
         elif _itype_matches(itype, _EQUITY_KEYWORDS) and units > 0:
             ticker = str(row.get("platform", "")).strip()
             div_per_unit = _fetch_equity_dividend(ticker)
             annual = round(units * div_per_unit, 2)
             if annual > 0:
+                label = name or ticker
                 entries.append({
-                    "source_name": name or ticker,
+                    "source_name": label,
                     "income_type": "Dividend Income",
                     "annual_amount": annual,
                     "taxability": "Fully Taxable (Other Sources). TDS @10% if > ₹5,000 from one company.",
@@ -210,6 +261,84 @@ def derive_investment_income(holdings_df: pd.DataFrame) -> List[Dict[str, Any]]:
                     "derivation_method": "yfinance last-12m dividends",
                     "override_allowed": True,
                 })
+                seen_names.add(label.lower())
+
+    # ── SCAN INCOME SOURCES for items that carry taxable interest/EPF income ─
+    # (Some users enter FRSB, EPFO, FD interest directly as income sources
+    #  rather than as portfolio holdings)
+    if income_sources_df is not None and not income_sources_df.empty:
+        for _, row in income_sources_df.iterrows():
+            sname  = str(row.get("source_name", "")).strip()
+            itype  = str(row.get("income_type", "")).strip()
+            amount = float(row.get("amount", 0.0))
+            freq   = str(row.get("frequency", "Monthly")).strip()
+
+            # Convert to annual
+            freq_mult = {"Monthly": 12, "Quarterly": 4, "Half-Yearly": 2, "Annual": 1, "One-Time": 1}
+            annual_amt = amount * freq_mult.get(freq, 12)
+
+            name_lower = sname.lower()
+            itype_lower = itype.lower()
+
+            # Skip if already captured from portfolio
+            if name_lower in seen_names:
+                continue
+
+            # FRSB in income sources
+            if any(k in name_lower or k in itype_lower for k in _FRSB_INCOME_KEYWORDS):
+                entries.append({
+                    "source_name": sname or "RBI FRSB Bond (Income)",
+                    "income_type": "Interest Income",
+                    "annual_amount": annual_amt,
+                    "taxability": "Fully Taxable (Other Sources)",
+                    "payment_months": list(FRSB_PAYMENT_MONTHS),
+                    "notes": f"From income sources. RBI FRSB current rate {FRSB_RATE*100:.2f}% p.a. — actual interest may differ if entered at coupon.",
+                    "derivation_method": "Income source entry (FRSB detected)",
+                    "override_allowed": True,
+                })
+                seen_names.add(name_lower)
+
+            # EPF / EPFO in income sources
+            elif any(k in name_lower or k in itype_lower for k in _EPF_INCOME_KEYWORDS):
+                entries.append({
+                    "source_name": sname or "EPF / EPFO",
+                    "income_type": "Interest Income (Exempt up to threshold)",
+                    "annual_amount": annual_amt,
+                    "taxability": "EXEMPT u/s 10(12) up to ₹2.5L contribution p.a. Taxable above that threshold.",
+                    "payment_months": [3],
+                    "notes": "From income sources. EPF interest is credited in March. Taxable only if own contribution > ₹2.5L p.a.",
+                    "derivation_method": "Income source entry (EPF/EPFO detected)",
+                    "override_allowed": True,
+                })
+                seen_names.add(name_lower)
+
+            # FD interest entered as income source
+            elif any(k in name_lower or k in itype_lower for k in _FD_INCOME_KEYWORDS):
+                entries.append({
+                    "source_name": sname or "FD Interest",
+                    "income_type": "Interest Income",
+                    "annual_amount": annual_amt,
+                    "taxability": "Fully Taxable (Other Sources). TDS @10% by bank.",
+                    "payment_months": None,
+                    "notes": "From income sources. Verify against bank interest certificate.",
+                    "derivation_method": "Income source entry (FD interest detected)",
+                    "override_allowed": True,
+                })
+                seen_names.add(name_lower)
+
+            # SCSS interest entered as income source
+            elif any(k in name_lower or k in itype_lower for k in _SCSS_INCOME_KEYWORDS):
+                entries.append({
+                    "source_name": sname or "SCSS Interest",
+                    "income_type": "Interest Income",
+                    "annual_amount": annual_amt,
+                    "taxability": "Fully Taxable. 80TTB exemption ₹50K for senior citizens.",
+                    "payment_months": [3, 6, 9, 12],
+                    "notes": "From income sources. SCSS interest is paid quarterly.",
+                    "derivation_method": "Income source entry (SCSS detected)",
+                    "override_allowed": True,
+                })
+                seen_names.add(name_lower)
 
     return entries
 
