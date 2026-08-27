@@ -123,7 +123,9 @@ def derive_investment_income(
         invested = float(row.get("investment_amount", 0.0))
         units    = float(row.get("units", 0.0))
 
-        if _itype_matches(itype, _FRSB_KEYWORDS):
+        match_text = f"{itype} {name} {desc}"
+
+        if _itype_matches(match_text, _FRSB_KEYWORDS):
             annual = round(invested * FRSB_RATE, 2)
             label = name or "RBI FRSB Bond"
             entries.append({
@@ -138,7 +140,7 @@ def derive_investment_income(
             })
             seen_names.add(label.lower())
 
-        elif _itype_matches(itype, _SGB_KEYWORDS):
+        elif _itype_matches(match_text, _SGB_KEYWORDS):
             annual = round(invested * SGB_COUPON_RATE, 2)
             label = name or "Sovereign Gold Bond"
             entries.append({
@@ -153,7 +155,7 @@ def derive_investment_income(
             })
             seen_names.add(label.lower())
 
-        elif _itype_matches(itype, _FD_KEYWORDS):
+        elif _itype_matches(match_text, _FD_KEYWORDS):
             rate = _parse_rate_from_description(desc) or DEFAULT_FD_RATE
             annual = round(invested * rate, 2)
             label = name or "Fixed Deposit"
@@ -169,7 +171,7 @@ def derive_investment_income(
             })
             seen_names.add(label.lower())
 
-        elif _itype_matches(itype, _RD_KEYWORDS):
+        elif _itype_matches(match_text, _RD_KEYWORDS):
             rate = _parse_rate_from_description(desc) or DEFAULT_RD_RATE
             annual = round(invested * rate, 2)
             label = name or "Recurring Deposit"
@@ -185,7 +187,7 @@ def derive_investment_income(
             })
             seen_names.add(label.lower())
 
-        elif _itype_matches(itype, _NSC_KEYWORDS):
+        elif _itype_matches(match_text, _NSC_KEYWORDS):
             annual = round(invested * NSC_RATE, 2)
             label = name or "NSC"
             entries.append({
@@ -200,7 +202,7 @@ def derive_investment_income(
             })
             seen_names.add(label.lower())
 
-        elif _itype_matches(itype, _SCSS_KEYWORDS):
+        elif _itype_matches(match_text, _SCSS_KEYWORDS):
             annual = round(invested * SCSS_RATE, 2)
             label = name or "SCSS"
             entries.append({
@@ -215,7 +217,7 @@ def derive_investment_income(
             })
             seen_names.add(label.lower())
 
-        elif _itype_matches(itype, _PPF_KEYWORDS):
+        elif _itype_matches(match_text, _PPF_KEYWORDS):
             annual = round(invested * PPF_RATE, 2)
             label = name or "PPF"
             entries.append({
@@ -230,7 +232,7 @@ def derive_investment_income(
             })
             seen_names.add(label.lower())
 
-        elif _itype_matches(itype, _EPF_KEYWORDS):
+        elif _itype_matches(match_text, _EPF_KEYWORDS):
             # EPF interest is exempt up to 2.5L contribution per year (employer+employee)
             annual = round(invested * EPF_RATE, 2)
             label = name or "EPF / EPFO"

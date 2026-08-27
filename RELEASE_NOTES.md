@@ -212,3 +212,4 @@
 - **Passive Income UI & Calculation**: Fixed a defect where duplicate portfolio investments (e.g. two EPF entries under the same bank) were displayed multiple times in the Tax Planner Section B. Entries are now correctly deduplicated and aggregated by source name and income type.
 - **Tax Double Counting**: Fixed an issue where auto-derived passive income sources (like FRSB bonds or EPF entered in the Income Sources tab) were double-counted in both standard Gross Salary and Passive Income calculations. 
 - **Keyword Matching**: Fixed an issue where an income source named 'Public Provident Fund' was incorrectly parsed as EPF instead of PPF due to keyword overlap.
+- **FRSB Parsing**: Fixed an issue where FRSB bonds were not recognized by the income tax calculator if categorized under generic investment types like 'Alternative Asset'. The parser now checks the name and description fields for FRSB and other fixed-income keywords.
