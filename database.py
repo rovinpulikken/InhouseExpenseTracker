@@ -2208,9 +2208,23 @@ def get_tax_deductions(username: str, family_id: int, financial_year: str = "202
         (username, fid, financial_year)
     )
     row = cursor.fetchone()
+    # Read description BEFORE closing connection (Turso libsql nullifies cursor on close)
+    try:
+        cols = [desc[0] for desc in cursor.description] if cursor.description else None
+    except Exception:
+        cols = None
     conn.close()
     if row:
-        cols = [desc[0] for desc in cursor.description]
+        if not cols:
+            cols = [
+                "id", "username", "family_id", "financial_year",
+                "ppf_contribution", "elss_investment", "lic_premium", "home_loan_principal",
+                "school_fees", "nsc_interest_reinvested", "epf_contribution", "tax_saver_fd",
+                "health_ins_self", "health_ins_parents", "parents_senior", "nps_80ccd_1b",
+                "nps_employer_80ccd2", "home_loan_interest", "hra_basic_salary", "hra_received",
+                "rent_paid", "metro_city", "professional_tax", "savings_bank_interest",
+                "scss_interest", "tds_deducted", "advance_paid", "created_at", "updated_at",
+            ]
         return dict(zip(cols, row))
     return {}
 
@@ -2268,8 +2282,20 @@ def get_capital_gains(username: str, family_id: int, financial_year: str = "2025
         (username, fid, financial_year)
     )
     row = cursor.fetchone()
+    # Read description BEFORE closing connection (Turso libsql nullifies cursor on close)
+    try:
+        cols = [desc[0] for desc in cursor.description] if cursor.description else None
+    except Exception:
+        cols = None
     conn.close()
     if row:
-        cols = [desc[0] for desc in cursor.description]
+        if not cols:
+            cols = [
+                "id", "username", "family_id", "financial_year",
+                "equity_ltcg", "equity_stcg", "equity_mf_ltcg", "equity_mf_stcg",
+                "debt_mf_ltcg", "debt_mf_stcg", "property_ltcg", "property_stcg",
+                "other_ltcg", "other_stcg", "source", "notes",
+                "created_at", "updated_at",
+            ]
         return dict(zip(cols, row))
     return {}
