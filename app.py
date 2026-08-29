@@ -4134,17 +4134,28 @@ else:
                             st.error(msg)
                             
                 with m_col2:
-                    st.markdown("##### 🗑️ Delete User Account")
+                    st.markdown("##### 🗑️ Delete User Account(s)")
                     non_admin_users = [u["username"] for u in users_list if u["username"] != "admin"]
                     if non_admin_users:
-                        target_user_del = st.selectbox("Select User to Delete", non_admin_users, key="admin_del_target")
-                        if st.button(f"🗑️ Delete User '{target_user_del}'", use_container_width=True):
-                            ok, msg = delete_user(target_user_del)
-                            if ok:
-                                st.success(msg)
+                        target_users_del = st.multiselect("Select Users to Delete", non_admin_users, key="admin_del_target")
+                        if st.button("🗑️ Delete Selected Users", use_container_width=True, disabled=not target_users_del):
+                            success_count = 0
+                            error_messages = []
+                            for target_user in target_users_del:
+                                ok, msg = delete_user(target_user)
+                                if ok:
+                                    success_count += 1
+                                else:
+                                    error_messages.append(f"{target_user}: {msg}")
+                            
+                            if success_count > 0:
+                                st.success(f"Successfully deleted {success_count} user(s).")
+                            if error_messages:
+                                for err in error_messages:
+                                    st.error(err)
+                            
+                            if success_count > 0 or error_messages:
                                 st.rerun()
-                            else:
-                                st.error(msg)
                     else:
                         st.caption("No secondary users available to delete.")
                         
