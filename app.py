@@ -4100,7 +4100,7 @@ else:
                         c_role = st.selectbox("Role", ["Member", "Admin"], help="Admins can manage users; Members can log private & family expenses.")
                         
                     if st.form_submit_button("🚀 Create User Account", type="primary", use_container_width=True):
-                        ok, msg = create_user(c_user, c_pwd, c_name, c_role, family_id=user_family_id)
+                        ok, msg = create_user(c_user, c_pwd, c_name, c_role, family_id=(user_family_id or current_user.get("family_id", 1)))
                         if ok:
                             st.success(msg)
                             st.rerun()

@@ -219,3 +219,6 @@
 - **AI Assessment Engine**: Built a dynamic, conversational AI assessment (`academy_assessment.py`) using Gemini 1.5 Pro to evaluate users' financial competence (budgeting, debt, investments) and assign personalized personas.
 - **Sandbox Simulator Interface**: Created the UI structure for an interactive Sandbox Mode to allow users to practice budgeting and rebalancing using simulated dummy data.
 - **Curated Learning Library**: Added a "Library & Courses" sub-tab featuring recommended YouTube playlists, Coursera, and Udemy courses for continued financial education.
+
+### Fixed
+- **Admin User Creation**: Fixed a `TypeError` crash that occurred when an Admin attempted to register a new household member account while in the "Personal" view mode (where `family_id` was internally set to `None`). The new user now correctly inherits the Admin's family ID as a fallback.

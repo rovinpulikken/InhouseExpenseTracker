@@ -869,7 +869,7 @@ def create_user(username: str, password: str, full_name: str, role: str = "Membe
     cursor.execute("""
         INSERT INTO users (username, password_hash, full_name, role, family_id)
         VALUES (?, ?, ?, ?, ?)
-    """, (username_clean, pwd_hash, full_name.strip(), role, int(family_id)))
+    """, (username_clean, pwd_hash, full_name.strip(), role, int(family_id) if family_id is not None else 1))
     conn.commit()
     conn.close()
     return True, f"User '{username_clean}' created successfully!"
