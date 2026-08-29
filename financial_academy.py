@@ -1,7 +1,7 @@
 import streamlit as st
 from academy_assessment import generate_next_assessment_question
 
-def render_financial_academy_tab():
+def render_financial_academy_tab(api_key=""):
     st.header("🎓 Financial Academy")
     st.markdown("Level up your financial knowledge and master the InhouseExpenseTracker.")
     
@@ -24,13 +24,13 @@ def render_financial_academy_tab():
                 st.session_state.academy_chat_history = []
                 st.session_state.academy_status = "in_progress"
                 with st.spinner("Generating first scenario..."):
-                    response = generate_next_assessment_question(st.session_state.academy_chat_history)
+                    response = generate_next_assessment_question(st.session_state.academy_chat_history, api_key)
                     if "error" in response:
                         st.error(response["error"])
                         st.session_state.academy_status = "not_started"
                     else:
                         st.session_state.academy_chat_history.append({"role": "assistant", "content": response.get("question_text", "Ready?")})
-                st.rerun()
+                        st.rerun()
                 
         elif st.session_state.academy_status == "in_progress":
             for msg in st.session_state.academy_chat_history:
@@ -44,7 +44,7 @@ def render_financial_academy_tab():
                     st.write(user_input)
                     
                 with st.spinner("Analyzing..."):
-                    response = generate_next_assessment_question(st.session_state.academy_chat_history)
+                    response = generate_next_assessment_question(st.session_state.academy_chat_history, api_key)
                     if "error" in response:
                         st.error(response["error"])
                     elif response.get("status") == "complete":

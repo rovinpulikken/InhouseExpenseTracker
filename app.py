@@ -3855,7 +3855,12 @@ else:
     # ----------------------------------------------------
     elif nav_selection == "🎓 Financial Academy":
         from financial_academy import render_financial_academy_tab
-        render_financial_academy_tab()
+        gemini_api_key = (
+            current_user.get("gemini_api_key") or
+            os.environ.get("GEMINI_API_KEY", "") or
+            st.secrets.get("GEMINI_API_KEY", "")
+        )
+        render_financial_academy_tab(gemini_api_key)
         
     elif nav_selection == "⚙️ Settings & Admin":
         sa_tab1, sa_tab2, sa_tab3 = st.tabs(["💾 Data Export", "👑 Admin", "👤 Profile"])

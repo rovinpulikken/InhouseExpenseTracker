@@ -6,13 +6,14 @@ import os
 import json
 from typing import List, Dict, Any
 
-def get_gemini_client():
+def get_gemini_client(api_key=None):
     try:
         from google import genai
     except ImportError:
         return None
         
-    api_key = os.environ.get("GEMINI_API_KEY")
+    if not api_key:
+        api_key = os.environ.get("GEMINI_API_KEY")
     if not api_key:
         try:
             import streamlit as st
@@ -24,13 +25,13 @@ def get_gemini_client():
         return genai.Client(api_key=api_key)
     return None
 
-def generate_next_assessment_question(chat_history: List[Dict[str, str]]) -> Dict[str, Any]:
+def generate_next_assessment_question(chat_history: List[Dict[str, str]], api_key: str = "") -> Dict[str, Any]:
     """
     Given the chat history of the assessment, generates the next situational question 
     or finalizes the assessment.
     chat_history format: [{"role": "user"|"assistant", "content": "..."}]
     """
-    client = get_gemini_client()
+    client = get_gemini_client(api_key)
     if not client:
         return {"error": "Google Gemini API Key is missing. Please configure it in Settings."}
         
