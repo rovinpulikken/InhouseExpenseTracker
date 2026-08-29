@@ -213,3 +213,9 @@
 - **Tax Double Counting**: Fixed an issue where auto-derived passive income sources (like FRSB bonds or EPF entered in the Income Sources tab) were double-counted in both standard Gross Salary and Passive Income calculations. 
 - **Keyword Matching**: Fixed an issue where an income source named 'Public Provident Fund' was incorrectly parsed as EPF instead of PPF due to keyword overlap.
 - **FRSB Parsing**: Fixed an issue where FRSB bonds were not recognized by the income tax calculator if categorized under generic investment types like 'Alternative Asset'. The parser now checks the name and description fields for FRSB and other fixed-income keywords.
+
+### Added
+- **Financial Academy Module**: Added a new main navigation tab called "🎓 Financial Academy" targeted at beginner and medium competence users.
+- **AI Assessment Engine**: Built a dynamic, conversational AI assessment (`academy_assessment.py`) using Gemini 1.5 Pro to evaluate users' financial competence (budgeting, debt, investments) and assign personalized personas.
+- **Sandbox Simulator Interface**: Created the UI structure for an interactive Sandbox Mode to allow users to practice budgeting and rebalancing using simulated dummy data.
+- **Curated Learning Library**: Added a "Library & Courses" sub-tab featuring recommended YouTube playlists, Coursera, and Udemy courses for continued financial education.

@@ -493,6 +493,7 @@ else:
         "💸 Transactions",
         "📈 Insights & Analytics",
         "🔮 Wealth & Planning",
+        "🎓 Financial Academy",
         "⚙️ Settings & Admin"
     ]
     
@@ -3852,6 +3853,10 @@ else:
     # ----------------------------------------------------
     # ⚙️ SETTINGS & ADMIN
     # ----------------------------------------------------
+    elif nav_selection == "🎓 Financial Academy":
+        from financial_academy import render_financial_academy_tab
+        render_financial_academy_tab()
+        
     elif nav_selection == "⚙️ Settings & Admin":
         sa_tab1, sa_tab2, sa_tab3 = st.tabs(["💾 Data Export", "👑 Admin", "👤 Profile"])
         
