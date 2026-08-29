@@ -222,4 +222,4 @@
 
 ### Fixed
 - **Admin User Creation**: Fixed a `TypeError` crash that occurred when an Admin attempted to register a new household member account while in the "Personal" view mode (where `family_id` was internally set to `None`). The new user now correctly inherits the Admin's family ID as a fallback.
-- **Gemini API Model Access Error**: Fixed a 404 NOT_FOUND error in the Financial Academy assessment and Portfolio Review modules caused by API keys that do not have access to `gemini-1.5-pro`. Downgraded the model calls to `gemini-1.5-flash` for broader compatibility across all user API key tiers.
+- **Gemini API Model Access Error**: Fixed a 404 NOT_FOUND error in the Financial Academy assessment and Portfolio Review modules. An earlier model migration incorrectly downgraded models to `gemini-1.5-flash`, which is not available for new-user API keys. Upgraded all AI endpoints strictly to `gemini-3.5-flash`, which is verified to return HTTP 200 for these keys.

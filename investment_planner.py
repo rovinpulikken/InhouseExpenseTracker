@@ -175,7 +175,7 @@ def generate_ai_wealth_advice(plan: Dict[str, Any]) -> Dict[str, Any]:
             - 'key_takeaways': list of 4 bullet string suggestions on asset allocation, tax efficiency (80C, 10(10D), LTCG), emergency fund, and retirement goal.
             """
             response = client.models.generate_content(
-                model="gemini-1.5-flash",
+                model="gemini-3.5-flash",
                 contents=prompt
             )
             if response and response.text:
@@ -305,7 +305,7 @@ def generate_ai_portfolio_suggestions(
             """
             
             response = client.models.generate_content(
-                model="gemini-1.5-flash",
+                model="gemini-3.5-flash",
                 contents=prompt,
                 config={
                     "response_mime_type": "application/json",
@@ -451,7 +451,7 @@ def generate_ai_segment_advisory(segments: Dict[str, Any], risk_profile: str) ->
             Keep the tone professional and actionable.
             """
             response = client.models.generate_content(
-                model="gemini-1.5-flash",
+                model="gemini-3.5-flash",
                 contents=prompt
             )
             if response and response.text:
@@ -585,7 +585,7 @@ def generate_ai_retirement_advisory(retirement_plan: Dict[str, Any], holdings_df
             - 'key_takeaways': list of 4 bullet points focusing on inflation impact, asset shifting near retirement (equity to debt glide path), tax-free withdrawal strategies, and SWP (Systematic Withdrawal Plan) structure.
             """
             response = client.models.generate_content(
-                model="gemini-1.5-flash",
+                model="gemini-3.5-flash",
                 contents=prompt
             )
             if response and response.text:
@@ -971,7 +971,7 @@ def generate_rebalance_advice(
             - 'sector_analysis': list of {{sector, action_type (Buy/Sell/Hold), rationale}}. Max 4 items based on current macro environment.
             - 'detailed_plan': list of strings containing a step-by-step roadmap detailing HOW the plan will meet the user's goals (if provided) or general wealth objectives. Max 5 steps. MUST BE INCLUDED.
             """
-            resp = client.models.generate_content(model="gemini-1.5-flash", contents=prompt)
+            resp = client.models.generate_content(model="gemini-3.5-flash", contents=prompt)
             if resp and resp.text:
                 import json
                 import re
@@ -1079,7 +1079,7 @@ def generate_new_money_advice(
             - 'detailed_plan': list of strings containing a step-by-step roadmap detailing HOW the deployment plan will meet the user's goals (if provided) or general wealth objectives. Max 5 steps. MUST BE INCLUDED.
             Keep instruments same.
             """
-            resp = client.models.generate_content(model="gemini-1.5-flash", contents=prompt)
+            resp = client.models.generate_content(model="gemini-3.5-flash", contents=prompt)
             if resp and resp.text:
                 import json
                 import re
