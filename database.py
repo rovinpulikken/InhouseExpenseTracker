@@ -2299,3 +2299,14 @@ def get_capital_gains(username: str, family_id: int, financial_year: str = "2025
             ]
         return dict(zip(cols, row))
     return {}
+
+def get_admin_gemini_api_key() -> str:
+    """Retrieves the gemini_api_key of the super admin if available."""
+    conn = get_connection()
+    cursor = conn.cursor()
+    cursor.execute("SELECT gemini_api_key FROM users WHERE username = 'admin'")
+    row = cursor.fetchone()
+    conn.close()
+    if row and row[0]:
+        return row[0]
+    return ""

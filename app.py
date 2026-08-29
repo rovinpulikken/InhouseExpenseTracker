@@ -99,7 +99,8 @@ from database import (
     verify_security_answer,
     set_recovery_otp,
     verify_recovery_otp,
-    clear_recovery_otp
+    clear_recovery_otp,
+    get_admin_gemini_api_key
 )
 from debt_simulator import simulate_debt_payoff
 from email_utils import send_otp_email
@@ -932,7 +933,7 @@ else:
                 if uploaded_file and uploaded_file.name.lower().endswith('.pdf'):
                     pdf_password = st.text_input("PDF Password (if protected)", type="password", help="Enter password if your bank statement is password protected")
 
-                gemini_api_key = current_user.get("gemini_api_key") or os.environ.get("GEMINI_API_KEY", "") or st.secrets.get("GEMINI_API_KEY", "")
+                gemini_api_key = current_user.get("gemini_api_key") or get_admin_gemini_api_key() or os.environ.get("GEMINI_API_KEY", "") or st.secrets.get("GEMINI_API_KEY", "")
                 
                 if uploaded_file:
                     if st.button("🚀 Parse & Auto-Categorize Statement", type="primary", use_container_width=True):
@@ -2932,6 +2933,7 @@ else:
             # Ensure API key is available in this scope
             gemini_api_key = (
                 current_user.get("gemini_api_key") or
+                get_admin_gemini_api_key() or
                 os.environ.get("GEMINI_API_KEY", "") or
                 st.secrets.get("GEMINI_API_KEY", "")
             )
@@ -3857,6 +3859,7 @@ else:
         from financial_academy import render_financial_academy_tab
         gemini_api_key = (
             current_user.get("gemini_api_key") or
+            get_admin_gemini_api_key() or
             os.environ.get("GEMINI_API_KEY", "") or
             st.secrets.get("GEMINI_API_KEY", "")
         )
