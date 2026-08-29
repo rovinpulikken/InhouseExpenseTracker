@@ -102,6 +102,13 @@ from database import (
     clear_recovery_otp,
     get_admin_gemini_api_key
 )
+from sandbox_data import (
+    sandbox_get_expenses_df,
+    sandbox_get_user_investments_df,
+    sandbox_get_budget_status,
+    mock_success
+)
+
 from debt_simulator import simulate_debt_payoff
 from email_utils import send_otp_email
 from cpi_data import (
@@ -434,6 +441,16 @@ else:
     # LOGGED IN USER & SIDEBAR SETUP
     # ----------------------------------------------------
     current_user = st.session_state["user"]
+
+    if st.session_state.get("is_sandbox_mode", False):
+        global get_expenses_df, get_user_investments_df, get_budget_status, insert_expenses, insert_investment, update_investments_df, get_debts, get_portfolio_snapshots_deltas
+        get_expenses_df = sandbox_get_expenses_df
+        get_user_investments_df = sandbox_get_user_investments_df
+        get_budget_status = sandbox_get_budget_status
+        insert_expenses = mock_success
+        insert_investment = mock_success
+        update_investments_df = mock_success
+
     user_family_id = current_user.get("family_id", 1)
     user_family_name = current_user.get("family_name", "Primary Household")
     user_family_code = current_user.get("family_code", "PRIMARY-1001")
@@ -716,6 +733,11 @@ else:
         st.rerun()
 
     # ----------------------------------------------------
+    # Global Sandbox Banner
+    if st.session_state.get("is_sandbox_mode", False):
+        st.error("🎮 **SANDBOX MODE ACTIVE**: Data is simulated. Your real financial data is safe and hidden.")
+
+    # ----------------------------------------------------
     # Helper: Detect Duplicates in DataFrame
     def detect_and_flag_duplicates(df_import, username, view_mode, family_id):
         existing_expenses = get_expenses_df(fy="All FYs", username=username, view_mode=view_mode, family_id=family_id)
@@ -744,6 +766,8 @@ else:
     # ----------------------------------------------------
     if nav_selection == "🏠 Dashboard":
         st.header("🏠 Dashboard Overview")
+        if st.session_state.get("is_sandbox_mode", False):
+            st.info("🎯 **Sandbox Mission**: Review the simulated expenses below. Try changing the time filter to see how the dashboard updates.")
         st.write(f"Welcome back, **{current_user['username']}**!")
         
         # Consolidated Dashboard KPI Boxes
