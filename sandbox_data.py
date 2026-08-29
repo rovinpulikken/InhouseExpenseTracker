@@ -7,10 +7,10 @@ def mock_success(*args, **kwargs):
 def sandbox_get_expenses_df(fy=None, username=None, view_mode="Personal", family_id=None):
     # Return mock expenses
     data = [
-        {"id": 1, "date": "2026-08-01", "expense_date": "2026-08-01", "category": "Rent", "description": "Monthly Rent", "amount": 25000, "visibility": "Personal", "username": username or "sandbox_user"},
-        {"id": 2, "date": "2026-08-05", "expense_date": "2026-08-05", "category": "Groceries", "description": "Supermarket", "amount": 8000, "visibility": "Personal", "username": username or "sandbox_user"},
-        {"id": 3, "date": "2026-08-10", "expense_date": "2026-08-10", "category": "Utilities", "description": "Electricity", "amount": 2000, "visibility": "Personal", "username": username or "sandbox_user"},
-        {"id": 4, "date": "2026-08-15", "expense_date": "2026-08-15", "category": "Dining Out", "description": "Restaurant", "amount": 3000, "visibility": "Personal", "username": username or "sandbox_user"},
+        {"id": 1, "date": "2026-08-01", "expense_date": "2026-08-01", "category": "Rent", "description": "Monthly Rent", "amount": 25000, "visibility": "Personal", "source_note": "", "username": username or "sandbox_user"},
+        {"id": 2, "date": "2026-08-05", "expense_date": "2026-08-05", "category": "Groceries", "description": "Supermarket", "amount": 8000, "visibility": "Personal", "source_note": "", "username": username or "sandbox_user"},
+        {"id": 3, "date": "2026-08-10", "expense_date": "2026-08-10", "category": "Utilities", "description": "Electricity", "amount": 2000, "visibility": "Personal", "source_note": "", "username": username or "sandbox_user"},
+        {"id": 4, "date": "2026-08-15", "expense_date": "2026-08-15", "category": "Dining Out", "description": "Restaurant", "amount": 3000, "visibility": "Personal", "source_note": "", "username": username or "sandbox_user"},
     ]
     df = pd.DataFrame(data)
     # add 'date' formatted just in case
@@ -20,8 +20,8 @@ def sandbox_get_expenses_df(fy=None, username=None, view_mode="Personal", family
 
 def sandbox_get_user_investments_df(username, view_mode="Personal", family_id=None):
     data = [
-        {"id": 1, "investment_name": "Nifty 50 Index", "broker_name": "Zerodha", "asset_class": "Equity", "amount_invested": 50000, "maturity_date": None, "current_value": 55000, "is_pledged": 0, "is_tax_saving": 0, "notes": "", "visibility": "Personal", "username": username},
-        {"id": 2, "investment_name": "Fixed Deposit", "broker_name": "SBI", "asset_class": "Debt", "amount_invested": 100000, "maturity_date": "2028-01-01", "current_value": 105000, "is_pledged": 0, "is_tax_saving": 0, "notes": "", "visibility": "Personal", "username": username},
+        {"id": 1, "investment_name": "Nifty 50 Index", "broker_name": "Zerodha", "asset_class": "Equity", "amount_invested": 50000, "maturity_date": None, "current_value": 55000, "is_pledged": 0, "is_tax_saving": 0, "notes": "", "visibility": "Personal", "source_note": "", "username": username},
+        {"id": 2, "investment_name": "Fixed Deposit", "broker_name": "SBI", "asset_class": "Debt", "amount_invested": 100000, "maturity_date": "2028-01-01", "current_value": 105000, "is_pledged": 0, "is_tax_saving": 0, "notes": "", "visibility": "Personal", "source_note": "", "username": username},
     ]
     df = pd.DataFrame(data)
     # compute returns
