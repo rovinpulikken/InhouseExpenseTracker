@@ -42,5 +42,5 @@ def sandbox_get_budget_status(fy=None, username=None, view_mode="Personal", fami
         {"Category": "Rent", "Spent": 25000},
         {"Category": "Utilities", "Spent": 2000}
     ]
-    return pd.DataFrame(budget_data), pd.DataFrame(unbudgeted_data)
+    return pd.DataFrame(budget_data)
 
