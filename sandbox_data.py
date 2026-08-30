@@ -31,7 +31,7 @@ def sandbox_get_user_investments_df(username, view_mode="Personal", family_id=No
     df['is_tax_saving'] = df['is_tax_saving'].astype(bool)
     return df
 
-def sandbox_get_budget_status(username, view_mode="Personal", family_id=None):
+def sandbox_get_budget_status(fy=None, username=None, view_mode="Personal", family_id=None):
     # Returns (budget_df, unbudgeted_df)
     # We'll just return some mock data
     budget_data = [
