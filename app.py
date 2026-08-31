@@ -3955,8 +3955,6 @@ else:
                                     st.markdown(f"""
                                     <div style="background:#0f172a; border-radius:10px; border:1px solid #1e293b;
                                                 border-left:4px solid {_pc}; padding:14px 18px; margin-bottom:10px;">
-
-                                        <!-- Header row -->
                                         <div style="display:flex; justify-content:space-between; align-items:flex-start; flex-wrap:wrap; gap:8px; margin-bottom:8px;">
                                             <div style="display:flex; align-items:center; gap:8px; flex-wrap:wrap;">
                                                 <span style="font-weight:700; color:#f1f5f9; font-size:0.95rem;">{_rec['title']}</span>
@@ -3974,20 +3972,14 @@ else:
                                                 <div style="font-size:1.1rem; font-weight:800; color:#4ade80;">{_save_disp}</div>
                                             </div>
                                         </div>
-
-                                        <!-- Current holding -->
                                         <div style="background:#1e293b; border-radius:6px; padding:8px 12px; margin-bottom:8px;">
                                             <span style="color:#64748b; font-size:0.75rem; font-weight:600; text-transform:uppercase; letter-spacing:0.05em;">Current Portfolio</span><br>
                                             <span style="color:#cbd5e1; font-size:0.83rem;">{_rec['current_holding']}</span>
                                         </div>
-
-                                        <!-- Recommended action -->
                                         <div style="background:#0d2137; border-radius:6px; padding:8px 12px; margin-bottom:8px; border-left:2px solid #38bdf8;">
                                             <span style="color:#38bdf8; font-size:0.75rem; font-weight:600; text-transform:uppercase; letter-spacing:0.05em;">Recommended Action</span><br>
                                             <span style="color:#e2e8f0; font-size:0.83rem;">{_rec['action']}</span>
                                         </div>
-
-                                        <!-- Rationale + Risk -->
                                         <div style="display:grid; grid-template-columns:1fr 1fr; gap:8px;">
                                             <div style="background:#0a1628; border-radius:5px; padding:7px 10px;">
                                                 <span style="color:#a78bfa; font-size:0.72rem; font-weight:600;">⚖️ Legal Basis</span><br>
