@@ -784,20 +784,53 @@ def india_old_regime_tax(taxable_income: float) -> float:
 # 6. ADVANCE TAX SCHEDULE
 # ─────────────────────────────────────────────────────────────────────────────
 
+def _months_overdue(due_date: datetime.date, today: datetime.date) -> int:
+    """
+    Count the number of full or partial months elapsed since due_date up to today.
+    Returns 0 if today <= due_date (not yet due).
+    Per IT Act, even a part of a month counts as a full month.
+    """
+    if today <= due_date:
+        return 0
+    # months = full months + 1 if any days remain in the partial month
+    m = (today.year - due_date.year) * 12 + (today.month - due_date.month)
+    # If today's day > due_date's day, the partial month is already captured
+    # If today's day <= due_date's day, we're still within the same month boundary
+    if today.day > due_date.day:
+        m += 1
+    return max(m, 1)  # at minimum 1 month if any day has passed
+
+
 def compute_advance_tax_schedule(
     total_tax_liability: float,
     tds_deducted: float = 0.0,
     advance_already_paid: float = 0.0,
 ) -> List[Dict[str, Any]]:
-    """Compute advance tax instalment schedule for FY 2025-26."""
+    """
+    Compute advance tax instalment schedule for FY 2025-26, including:
+      - 234C interest: 1% per month on shortfall at each instalment due date
+        (shortfall = cumulative_due - advance_already_paid, if positive and date is past)
+      - 234B interest: 1% per month on overall shortfall from Apr 1 to today
+        (applies when total advance paid < 90% of net liability by Mar 31)
+
+    Returns list of instalment rows PLUS two summary keys at the end:
+      'interest_234C_total' and 'interest_234B_total'.
+    These are embedded in the last row dict as _summary keys for the caller to extract.
+    """
     today = datetime.date.today()
     net_liability = max(0.0, total_tax_liability - tds_deducted)
     if net_liability < 10_000:
         return []
 
+    # ── 234C: per-instalment interest ────────────────────────────────────────
+    # Rule: if cumulative advance paid < cumulative due at each instalment due date,
+    # interest = 1% × shortfall × months overdue (rounded up to nearest month)
+    # The "shortfall" for 234C is assessed per instalment independently.
+    # For simplicity (common practice): shortfall = (cum_due - advance_already_paid)
+    # capped at zero from below, measured at each due date.
     schedule = []
     prev_cum = 0.0
-    cumulative_paid = advance_already_paid
+    total_234c = 0.0
 
     for item in ADVANCE_TAX_SCHEDULE:
         due_date = item["due_date"]
@@ -805,8 +838,19 @@ def compute_advance_tax_schedule(
         inst_amt = round(cum_due - prev_cum, 2)
         days_rem = (due_date - today).days
 
+        # 234C fine calculation (only for past due dates)
+        fine_234c = 0.0
+        fine_note = ""
+        if today > due_date:
+            shortfall = max(0.0, cum_due - advance_already_paid)
+            if shortfall > 0:
+                months = _months_overdue(due_date, today)
+                fine_234c = round(shortfall * 0.01 * months, 2)
+                fine_note = f"1% × ₹{shortfall:,.0f} × {months}m"
+            total_234c += fine_234c
+
         if days_rem < 0:
-            status = "⚠️ Overdue" if cumulative_paid < cum_due else "✅ Paid"
+            status = "⚠️ Overdue" if advance_already_paid < cum_due else "✅ Paid"
         elif days_rem == 0:
             status = "🔔 Due Today"
         else:
@@ -820,14 +864,365 @@ def compute_advance_tax_schedule(
             "instalment_amount": inst_amt,
             "status":            status,
             "days_remaining":    days_rem,
+            "interest_234c":     fine_234c,
+            "fine_note":         fine_note,
         })
         prev_cum = cum_due
+
+    # ── 234B: overall advance tax shortfall interest ─────────────────────────
+    # Applies if total advance tax paid < 90% of net liability by 31 Mar
+    # Interest = 1% per month on deficit, from 1 Apr of assessment year to today
+    fy_end = datetime.date(2026, 3, 31)
+    assessment_start = datetime.date(2026, 4, 1)
+    required_90pct   = net_liability * 0.90
+    interest_234b    = 0.0
+    deficit_234b     = 0.0
+    months_234b      = 0
+
+    if advance_already_paid < required_90pct and today >= assessment_start:
+        deficit_234b  = round(net_liability - advance_already_paid, 2)
+        months_234b   = _months_overdue(assessment_start - datetime.timedelta(days=1), today)
+        interest_234b = round(deficit_234b * 0.01 * months_234b, 2)
+
+    # Attach summary to last row (caller will pop and display separately)
+    if schedule:
+        schedule[-1]["_234c_total"]   = round(total_234c, 2)
+        schedule[-1]["_234b_total"]   = round(interest_234b, 2)
+        schedule[-1]["_234b_deficit"] = deficit_234b
+        schedule[-1]["_234b_months"]  = months_234b
+        schedule[-1]["_today"]        = today.strftime("%d %b %Y")
+        schedule[-1]["_net_liability"]= net_liability
 
     return schedule
 
 
 # ─────────────────────────────────────────────────────────────────────────────
-# 7. MASTER COMPUTE
+# 7. PORTFOLIO-AWARE TAX-SAVING REBALANCE RECOMMENDATIONS
+# ─────────────────────────────────────────────────────────────────────────────
+
+def compute_tax_saving_rebalance(
+    holdings_df: pd.DataFrame,
+    tax_result: Dict[str, Any],
+    deductions: Dict[str, Any],
+    tax_regime: str = "New Regime",
+) -> List[Dict[str, Any]]:
+    """
+    Analyse the user's actual investment holdings and tax computation result to
+    generate priority-ranked, portfolio-specific rebalancing recommendations
+    that maximise tax efficiency.
+
+    Returns a list of recommendation dicts, sorted by estimated tax saving (desc).
+    Each dict has keys:
+        title, section, priority, current_holding, action,
+        tax_saving (float, ₹/yr), tax_saving_str, rationale, risk_note
+    """
+    recs: List[Dict[str, Any]] = []
+
+    if holdings_df is None:
+        holdings_df = pd.DataFrame()
+
+    # ── Derive marginal tax rate from effective rate (proxy) ─────────────────
+    eff_rate = float(tax_result.get("effective_rate_pct", 20.0)) / 100.0
+    taxable_income = float(tax_result.get("taxable_income", 0.0))
+
+    # Better marginal rate estimate from slab
+    if taxable_income > 1_500_000:
+        marginal_rate = 0.30
+    elif taxable_income > 1_200_000:
+        marginal_rate = 0.20
+    elif taxable_income > 900_000:
+        marginal_rate = 0.15
+    elif taxable_income > 700_000:
+        marginal_rate = 0.10
+    elif taxable_income > 400_000:
+        marginal_rate = 0.05
+    else:
+        marginal_rate = max(eff_rate, 0.05)
+
+    # With 4% cess
+    marginal_rate_cess = round(marginal_rate * 1.04, 4)
+
+    is_old_regime = (tax_regime == "Old Regime")
+    total_tax = float(tax_result.get("total_tax", 0.0))
+    cg_detail = tax_result.get("cg_tax_detail", {})
+    ded_detail = tax_result.get("deduction_detail", {})
+
+    # ── Classify holdings ────────────────────────────────────────────────────
+    if not holdings_df.empty and "investment_type" in holdings_df.columns:
+        def _itype(row):
+            return str(row.get("investment_type", "")).lower().strip()
+
+        def _amount(row):
+            return float(row.get("investment_amount", 0.0) or 0.0)
+
+        def _curr_val(row):
+            return float(row.get("current_value", 0.0) or 0.0)
+
+        def _match(row, keywords):
+            t = f"{_itype(row)} {str(row.get('description',''))} {str(row.get('resolved_name',''))} {str(row.get('platform',''))}".lower()
+            return any(k in t for k in keywords)
+
+        fd_rows    = [r for _, r in holdings_df.iterrows() if _match(r, _FD_KEYWORDS)]
+        rd_rows    = [r for _, r in holdings_df.iterrows() if _match(r, _RD_KEYWORDS)]
+        ppf_rows   = [r for _, r in holdings_df.iterrows() if _match(r, _PPF_KEYWORDS)]
+        epf_rows   = [r for _, r in holdings_df.iterrows() if _match(r, _EPF_KEYWORDS)]
+        nsc_rows   = [r for _, r in holdings_df.iterrows() if _match(r, _NSC_KEYWORDS)]
+        scss_rows  = [r for _, r in holdings_df.iterrows() if _match(r, _SCSS_KEYWORDS)]
+        sgb_rows   = [r for _, r in holdings_df.iterrows() if _match(r, _SGB_KEYWORDS)]
+        frsb_rows  = [r for _, r in holdings_df.iterrows() if _match(r, _FRSB_KEYWORDS)]
+        elss_rows  = [r for _, r in holdings_df.iterrows() if _match(r, {"elss", "equity linked", "tax saver fund", "tax saving fund"})]
+        nps_rows   = [r for _, r in holdings_df.iterrows() if _match(r, {"nps", "national pension", "pension system", "tier 1", "tier-1"})]
+        equity_rows= [r for _, r in holdings_df.iterrows() if _match(r, _EQUITY_KEYWORDS)]
+        debt_mf_rows=[r for _, r in holdings_df.iterrows() if _match(r, {"debt mutual fund", "debt mf", "liquid fund", "ultra short", "short duration", "bond fund", "gilt", "overnight fund"})]
+
+        total_invested = float(holdings_df["investment_amount"].sum()) if "investment_amount" in holdings_df.columns else 0.0
+        total_curr_val = float(holdings_df["current_value"].sum()) if "current_value" in holdings_df.columns else 0.0
+
+        fd_total   = sum(_amount(r) for r in fd_rows)
+        rd_total   = sum(_amount(r) for r in rd_rows)
+        scss_total = sum(_amount(r) for r in scss_rows)
+        ppf_total  = sum(_amount(r) for r in ppf_rows)
+        elss_total = sum(_amount(r) for r in elss_rows)
+        nps_total  = sum(_amount(r) for r in nps_rows)
+        sgb_total  = sum(_amount(r) for r in sgb_rows)
+        equity_total = sum(_curr_val(r) for r in equity_rows)
+
+        # ── Taxable FD / RD interest burden ──────────────────────────────────
+        fd_rd_total = fd_total + rd_total
+        if fd_rd_total > 0:
+            fd_rate_avg = DEFAULT_FD_RATE
+            fd_annual_interest = round(fd_rd_total * fd_rate_avg, 0)
+            fd_tax_burden = round(fd_annual_interest * marginal_rate_cess, 0)
+
+            # Sub-recommendation A: shift portion to Tax-Saver FD (80C benefit)
+            if is_old_regime:
+                eighty_c_used = float(ded_detail.get("eighty_c", 0.0))
+                eighty_c_gap  = max(0.0, 150_000.0 - eighty_c_used)
+                if eighty_c_gap > 0 and elss_total == 0:
+                    shift_amt  = min(fd_rd_total, eighty_c_gap)
+                    tax_saving = round(shift_amt * marginal_rate_cess, 0)
+                    recs.append({
+                        "title":           "Shift FD into Tax-Saver FD or ELSS",
+                        "section":         "80C",
+                        "priority":        "High" if tax_saving > 10_000 else "Medium",
+                        "current_holding": f"₹{fd_rd_total:,.0f} in FD/RD — interest fully taxable at {marginal_rate*100:.0f}% slab rate. Annual tax burden: ~₹{fd_tax_burden:,.0f}.",
+                        "action":          f"Redirect ₹{shift_amt:,.0f} (80C gap) into a Tax-Saver FD (5-yr lock-in, 6.5-7.5% p.a.) or ELSS Mutual Fund. This uses up your remaining 80C limit and converts principal from taxable to deductible.",
+                        "tax_saving":      tax_saving,
+                        "tax_saving_str":  f"~₹{tax_saving:,.0f}/yr",
+                        "rationale":       "u/s 80C — up to ₹1.5L deductible from taxable income",
+                        "risk_note":       "Tax-Saver FD: 5-yr lock-in, low risk. ELSS: 3-yr lock-in, market risk, historically higher returns.",
+                    })
+
+            # Sub-recommendation B: shift taxable FD into Debt MF (tax-deferred growth)
+            if fd_rd_total > 200_000:
+                debt_shift = min(fd_rd_total * 0.30, 500_000)
+                # Debt MF: STCG taxed at slab (same as FD) but growth compounds without annual TDS drag
+                tds_drag_saving = round(fd_rd_total * fd_rate_avg * 0.10 * 0.70, 0)  # TDS reinvestment compounding benefit
+                recs.append({
+                    "title":           "Shift Taxable FD into Debt Mutual Funds",
+                    "section":         "Debt Rebalance",
+                    "priority":        "Medium",
+                    "current_holding": f"₹{fd_rd_total:,.0f} in FD/RD. Bank deducts TDS @10% annually, reducing compounding.",
+                    "action":          f"Move ₹{debt_shift:,.0f} into a Debt MF (Ultra-Short or Short Duration). No annual TDS — growth compounds tax-deferred until redemption. Taxed at slab on redemption, same as FD, but no interim TDS drag.",
+                    "tax_saving":      tds_drag_saving,
+                    "tax_saving_str":  f"~₹{tds_drag_saving:,.0f}/yr (TDS compounding benefit)",
+                    "rationale":       "Debt MF: no annual TDS; tax only on redemption. FD: bank deducts TDS each year, reducing corpus.",
+                    "risk_note":       "Debt MF NAV can fluctuate slightly. No capital guarantee unlike FD. Choose funds rated AAA.",
+                })
+
+        # ── ELSS gap (Old Regime only) ────────────────────────────────────────
+        if is_old_regime:
+            eighty_c_used = float(ded_detail.get("eighty_c", 0.0))
+            eighty_c_gap  = max(0.0, 150_000.0 - eighty_c_used)
+            if eighty_c_gap > 0 and elss_total == 0 and fd_rd_total == 0:
+                # Only show standalone ELSS recommendation if no FD shift was recommended
+                tax_saving = round(eighty_c_gap * marginal_rate_cess, 0)
+                recs.append({
+                    "title":           "Invest in ELSS Mutual Funds",
+                    "section":         "80C",
+                    "priority":        "High" if tax_saving > 10_000 else "Medium",
+                    "current_holding": f"80C utilised: ₹{eighty_c_used:,.0f} / ₹1,50,000. Gap: ₹{eighty_c_gap:,.0f}.",
+                    "action":          f"Invest ₹{eighty_c_gap:,.0f} in ELSS (Equity Linked Savings Scheme). 3-year lock-in, no portfolio holding detected. Market-linked growth + full 80C benefit.",
+                    "tax_saving":      tax_saving,
+                    "tax_saving_str":  f"~₹{tax_saving:,.0f}/yr",
+                    "rationale":       "u/s 80C — deductible up to ₹1.5L. ELSS has shortest lock-in among 80C options.",
+                    "risk_note":       "Equity market risk. 3-year lock-in per SIP instalment. Recommend SIP rather than lumpsum.",
+                })
+
+        # ── PPF: EEE instrument not in portfolio ─────────────────────────────
+        if ppf_total == 0 and is_old_regime:
+            eighty_c_used = float(ded_detail.get("eighty_c", 0.0))
+            ppf_room = max(0.0, min(150_000.0 - eighty_c_used, 150_000.0))
+            if ppf_room > 0:
+                tax_saving = round(ppf_room * marginal_rate_cess, 0)
+                recs.append({
+                    "title":           "Open / Top-Up PPF Account",
+                    "section":         "80C (EEE)",
+                    "priority":        "High" if tax_saving > 8_000 else "Medium",
+                    "current_holding": "No PPF investment detected in your portfolio.",
+                    "action":          f"Invest up to ₹{ppf_room:,.0f} in PPF. PPF is EEE — contribution deductible u/s 80C, interest earned is tax-free u/s 10(11), maturity proceeds are tax-free.",
+                    "tax_saving":      tax_saving,
+                    "tax_saving_str":  f"~₹{tax_saving:,.0f}/yr",
+                    "rationale":       "EEE instrument — Exempt-Exempt-Exempt. Current PPF rate 7.1% p.a., fully tax-free.",
+                    "risk_note":       "15-year lock-in (partial withdrawal from year 7). Sovereign-backed, zero default risk.",
+                })
+
+        # ── NPS 80CCD(1B): ₹50K extra deduction ─────────────────────────────
+        if is_old_regime:
+            nps_1b_used = float(deductions.get("nps_80ccd_1b", 0.0))
+            nps_gap = max(0.0, 50_000.0 - nps_1b_used)
+            if nps_gap > 0 and nps_total == 0:
+                tax_saving = round(nps_gap * marginal_rate_cess, 0)
+                recs.append({
+                    "title":           "Invest in NPS Tier-1 (80CCD(1B))",
+                    "section":         "80CCD(1B)",
+                    "priority":        "High" if tax_saving > 5_000 else "Medium",
+                    "current_holding": f"No NPS Tier-1 detected. 80CCD(1B) used: ₹{nps_1b_used:,.0f} / ₹50,000.",
+                    "action":          f"Invest ₹{nps_gap:,.0f} in NPS Tier-1. This is OVER AND ABOVE the ₹1.5L 80C limit — an additional exclusive deduction. Choose Aggressive (75% equity) or Moderate (50% equity) allocation.",
+                    "tax_saving":      tax_saving,
+                    "tax_saving_str":  f"~₹{tax_saving:,.0f}/yr",
+                    "rationale":       "u/s 80CCD(1B) — exclusive ₹50K deduction, not part of 80C. Reduces taxable income directly.",
+                    "risk_note":       "Partial lock-in until age 60. On exit, 60% lumpsum is tax-free; 40% must be used to buy annuity (taxable). Market-linked returns.",
+                })
+
+        # ── LTCG Harvesting: annual reset ────────────────────────────────────
+        taxable_equity_ltcg = float(cg_detail.get("taxable_equity_ltcg", 0.0))
+        total_equity_ltcg   = float(cg_detail.get("total_equity_ltcg", 0.0))
+        if taxable_equity_ltcg > 0:
+            ltcg_tax = float(cg_detail.get("tax_equity_ltcg", 0.0))
+            # Harvesting saves the LTCG tax by resetting cost base
+            recs.append({
+                "title":           "LTCG Harvesting — Reset Cost Base",
+                "section":         "LTCG Harvesting",
+                "priority":        "High" if ltcg_tax > 5_000 else "Medium",
+                "current_holding": f"Taxable Equity LTCG: ₹{taxable_equity_ltcg:,.0f} (above ₹1.25L exempt). Generating tax of ~₹{ltcg_tax:,.0f}.",
+                "action":          "Book gains in equity/equity MF positions at fiscal year-end (Feb–Mar). Re-enter the same position immediately. This resets your cost base to current price, so future LTCG starts fresh from ₹0. Use the annual ₹1.25L exemption every year.",
+                "tax_saving":      ltcg_tax,
+                "tax_saving_str":  f"~₹{ltcg_tax:,.0f}/yr",
+                "rationale":       "Equity LTCG exempt up to ₹1.25L per year u/s 112A. Annual harvesting prevents accumulation of taxable gains.",
+                "risk_note":       "Re-entry has market timing risk (price may move between sell and buy). Best done for long-term core holdings. STT applicable on each transaction.",
+            })
+
+        # ── STCG → Hold to qualify for LTCG ─────────────────────────────────
+        equity_stcg = float((tax_result.get("cg_tax_detail") or {}).get("equity_stcg", 0.0))
+        if equity_stcg == 0:
+            # Try from saved CG data passed in context
+            pass
+        stcg_tax = float(cg_detail.get("tax_equity_stcg", 0.0))
+        if stcg_tax > 0:
+            # STCG rate 20% vs LTCG 12.5% — holding > 1 yr saves the diff
+            stcg_to_ltcg_saving = round(float(cg_detail.get("taxable_equity_stcg", 0.0)) * (0.20 - 0.125), 0)
+            if stcg_to_ltcg_saving > 500:
+                recs.append({
+                    "title":           "Hold Short-Term Positions to Qualify for LTCG",
+                    "section":         "LTCG vs STCG",
+                    "priority":        "Medium",
+                    "current_holding": f"Equity STCG taxed @ 20% (+ cess). Estimated STCG tax: ~₹{stcg_tax:,.0f}.",
+                    "action":          "Identify equity / equity MF positions held < 12 months. Defer sale past the 1-year mark to convert STCG (20%) into LTCG (12.5%). Review your portfolio holding periods in broker console before booking profits.",
+                    "tax_saving":      stcg_to_ltcg_saving,
+                    "tax_saving_str":  f"~₹{stcg_to_ltcg_saving:,.0f}/yr",
+                    "rationale":       "STCG rate u/s 111A = 20% + cess. LTCG rate u/s 112A = 12.5% + cess (above ₹1.25L). Holding > 365 days cuts rate by 7.5 ppts.",
+                    "risk_note":       "Market risk during holding period. Use stop-losses. Do not hold just for tax if fundamentals deteriorate.",
+                })
+
+        # ── SCSS / RD over-allocation in taxable debt ────────────────────────
+        if scss_total > 500_000:
+            scss_interest = round(scss_total * SCSS_RATE, 0)
+            scss_tax      = round(scss_interest * marginal_rate_cess, 0)
+            redirect_amt  = scss_total * 0.20
+            recs.append({
+                "title":           "Diversify Away from SCSS (Reduce Taxable Interest)",
+                "section":         "Debt Rebalance",
+                "priority":        "Low",
+                "current_holding": f"₹{scss_total:,.0f} in SCSS @ {SCSS_RATE*100:.1f}% p.a. Annual interest ~₹{scss_interest:,.0f}, tax drag ~₹{scss_tax:,.0f}/yr.",
+                "action":          f"On maturity / partial withdrawal, redirect ₹{redirect_amt:,.0f} into SGB (Sovereign Gold Bond). SGB coupon (2.5%) is taxable but redemption gain after 8 yrs is fully exempt u/s 47(viic). Also consider PPF for EEE benefits.",
+                "tax_saving":      round(redirect_amt * (SCSS_RATE - 0.025) * marginal_rate_cess, 0),
+                "tax_saving_str":  f"Reduces taxable interest by ~₹{round(redirect_amt * (SCSS_RATE - 0.025), 0):,.0f}/yr",
+                "rationale":       "SGB redemption (after 8 yrs) fully exempt u/s 47(viic). SCSS interest is fully taxable, with 80TTB exemption of only ₹50K for seniors.",
+                "risk_note":       "SCSS is sovereign-backed and ideal for seniors. This is only for excess allocation. SGB has 8-yr lock-in; secondary market liquidity is limited.",
+            })
+
+        # ── Health Insurance (80D) gap ────────────────────────────────────────
+        if is_old_regime:
+            hi_self = float(deductions.get("health_ins_self", 0.0))
+            if hi_self == 0:
+                tax_saving_80d = round(25_000 * marginal_rate_cess, 0)
+                recs.append({
+                    "title":           "Buy Health Insurance — Claim 80D Deduction",
+                    "section":         "80D",
+                    "priority":        "High",
+                    "current_holding": "No health insurance premium entered in your deductions.",
+                    "action":          "Purchase a health insurance policy for self & family. Premium up to ₹25,000 (₹50,000 for senior citizens) is deductible u/s 80D. Choose a ₹10L+ family floater.",
+                    "tax_saving":      tax_saving_80d,
+                    "tax_saving_str":  f"~₹{tax_saving_80d:,.0f}/yr",
+                    "rationale":       "u/s 80D — health insurance premium deductible. Self+family: ₹25K; parents: additional ₹25K (₹50K if senior).",
+                    "risk_note":       "This is financial planning, not just tax — medical inflation in India runs at 12–15% p.a.",
+                })
+
+        # ── SGB: no gold allocation in portfolio ─────────────────────────────
+        if sgb_total == 0 and equity_total > 500_000:
+            gold_target = round(equity_total * 0.10, 0)
+            recs.append({
+                "title":           "Add Sovereign Gold Bond (SGB) for Tax-Free Gold Exposure",
+                "section":         "Gold / Diversification",
+                "priority":        "Low",
+                "current_holding": f"No SGB detected. Equity portfolio: ₹{equity_total:,.0f}. No gold allocation.",
+                "action":          f"Invest ~₹{gold_target:,.0f} (10% of equity) in SGB. You earn 2.5% p.a. taxable coupon + gold price appreciation. Redemption gain after 8 years is completely tax-free u/s 47(viic).",
+                "tax_saving":      0.0,
+                "tax_saving_str":  "Redemption gain fully exempt after 8 yrs",
+                "rationale":       "SGB capital gains on redemption: 100% exempt u/s 47(viic). Physical gold/gold MF: LTCG at 12.5% after 2 yrs.",
+                "risk_note":       "Gold price is volatile. SGB has 8-yr lock-in (exit window every 6 months from year 5). Not recommended if you may need liquidity.",
+            })
+
+        # ── High FD % of portfolio warning ───────────────────────────────────
+        if total_invested > 0 and fd_rd_total / max(total_invested, 1) > 0.35:
+            fd_pct = fd_rd_total / total_invested * 100
+            excess_fd = fd_rd_total - total_invested * 0.25
+            excess_tax = round(excess_fd * DEFAULT_FD_RATE * marginal_rate_cess, 0)
+            recs.append({
+                "title":           "Reduce FD Over-Concentration",
+                "section":         "Portfolio Rebalance",
+                "priority":        "Medium",
+                "current_holding": f"FD/RD = {fd_pct:.0f}% of portfolio (₹{fd_rd_total:,.0f}). Recommended ceiling: 25%.",
+                "action":          f"Redeploy ₹{excess_fd:,.0f} excess FD into PPF (80C/EEE), ELSS (80C/equity growth), or Debt MF (tax-deferred). This shifts income from annually-taxed interest to tax-deferred or exempt growth.",
+                "tax_saving":      excess_tax,
+                "tax_saving_str":  f"~₹{excess_tax:,.0f}/yr on excess portion",
+                "rationale":       "FD interest is taxable as 'Other Sources' every year (accrual basis). Optimal fixed-income allocation: 20-25% of portfolio.",
+                "risk_note":       "Only redeploy on maturity to avoid premature withdrawal penalties. Build ₹3–6 month emergency fund in FD/liquid fund first.",
+            })
+
+    else:
+        # No holdings — generic recommendations
+        if is_old_regime:
+            recs.append({
+                "title":           "Add Investments to Unlock Full 80C Benefit",
+                "section":         "80C",
+                "priority":        "High",
+                "current_holding": "No portfolio holdings found.",
+                "action":          "Invest ₹1,50,000 in PPF, ELSS, or Tax-Saver FD to claim full 80C deduction.",
+                "tax_saving":      round(150_000 * marginal_rate_cess, 0),
+                "tax_saving_str":  f"~₹{round(150_000 * marginal_rate_cess, 0):,.0f}/yr",
+                "rationale":       "u/s 80C — ₹1.5L deductible from taxable income.",
+                "risk_note":       "Choose instrument based on risk appetite and liquidity needs.",
+            })
+
+    # ── Sort by tax saving descending, then priority ──────────────────────────
+    priority_order = {"High": 0, "Medium": 1, "Low": 2}
+    recs.sort(key=lambda x: (-x["tax_saving"], priority_order.get(x["priority"], 3)))
+
+    # Deduplicate by title
+    seen_titles: set = set()
+    deduped = []
+    for r in recs:
+        if r["title"] not in seen_titles:
+            deduped.append(r)
+            seen_titles.add(r["title"])
+
+    return deduped
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# 8. MASTER COMPUTE
 # ─────────────────────────────────────────────────────────────────────────────
 
 def compute_full_tax(

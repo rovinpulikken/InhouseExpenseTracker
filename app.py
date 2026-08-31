@@ -2929,6 +2929,7 @@ else:
                 derive_investment_income, parse_capital_gains,
                 compute_deductions, compute_cg_tax,
                 compute_advance_tax_schedule, compute_full_tax,
+                compute_tax_saving_rebalance,
                 FRSB_RATE, FRSB_RATE_EFFECTIVE,
             )
 
@@ -3800,26 +3801,89 @@ else:
                             # Advance Tax Schedule
                             _adv_sched = _tax_result.get("advance_tax_schedule", [])
                             if _adv_sched:
+                                # ── Extract summary metadata from last row ──
+                                _last = _adv_sched[-1]
+                                _total_234c    = _last.get("_234c_total", 0.0)
+                                _total_234b    = _last.get("_234b_total", 0.0)
+                                _deficit_234b  = _last.get("_234b_deficit", 0.0)
+                                _months_234b   = _last.get("_234b_months", 0)
+                                _as_of_date    = _last.get("_today", "")
+                                _net_liab      = _last.get("_net_liability", 0.0)
+                                _total_fine    = round(_total_234c + _total_234b, 2)
+
                                 st.markdown("#### 📅 Advance Tax Instalment Schedule (FY 2025-26)")
-                                st.caption("Advance tax is required when net tax liability exceeds ₹10,000. Failure to pay on time attracts interest u/s 234B & 234C.")
-                                _adv_df = pd.DataFrame(_adv_sched)
-                                _adv_df["instalment_amount"] = _adv_df["instalment_amount"].apply(format_inr)
-                                _adv_df["cumulative_due"]    = _adv_df["cumulative_due"].apply(format_inr)
+                                st.caption(f"As of **{_as_of_date}** · Advance tax is required when net tax liability exceeds ₹10,000. Failure to pay on time attracts interest u/s 234B & 234C @ 1% per month.")
+
+                                # ── Build display dataframe (exclude internal _ keys) ──
+                                _display_rows = []
+                                for _row in _adv_sched:
+                                    _display_rows.append({
+                                        "Instalment":        _row["instalment"],
+                                        "Due Date":          _row["due_date"],
+                                        "Cumul. %":          _row["cumulative_pct"],
+                                        "Cumul. Amount":     format_inr(_row["cumulative_due"]),
+                                        "Pay This Time":     format_inr(_row["instalment_amount"]),
+                                        "Status":            _row["status"],
+                                        "Interest 234C":     format_inr(_row.get("interest_234c", 0.0)),
+                                        "Calc Basis (234C)": _row.get("fine_note", "—"),
+                                    })
                                 st.dataframe(
-                                    _adv_df.rename(columns={
-                                        "instalment": "Instalment",
-                                        "due_date": "Due Date",
-                                        "cumulative_pct": "Cumulative %",
-                                        "cumulative_due": "Cumulative Amount",
-                                        "instalment_amount": "Pay This Instalment",
-                                        "status": "Status",
-                                    })[["Instalment","Due Date","Cumulative %","Cumulative Amount","Pay This Instalment","Status"]],
+                                    pd.DataFrame(_display_rows),
                                     use_container_width=True, hide_index=True
                                 )
-                            elif _tax_result["total_tax"] > 0:
+
+                                # ── Fine Summary Cards ──────────────────────
+                                if _total_fine > 0:
+                                    st.markdown("##### ⚠️ Penal Interest Summary (u/s 234B & 234C)")
+                                    _fc1, _fc2, _fc3 = st.columns(3)
+                                    _fc1.metric(
+                                        "🔴 Interest u/s 234C",
+                                        format_inr(_total_234c),
+                                        help="1% per month on each instalment shortfall (rounded up to full months)"
+                                    )
+                                    _fc2.metric(
+                                        "🟠 Interest u/s 234B",
+                                        format_inr(_total_234b),
+                                        help=f"1% per month on deficit ₹{_deficit_234b:,.0f} for {_months_234b} month(s) since 01 Apr 2026 — applies when < 90% of net tax paid as advance tax"
+                                    )
+                                    _fc3.metric(
+                                        "💸 Total Penal Interest",
+                                        format_inr(_total_fine),
+                                        delta=f"+{format_inr(_total_fine)} over base tax",
+                                        delta_color="inverse"
+                                    )
+
+                                    # Detailed breakdown box
+                                    _fine_detail_parts = []
+                                    if _total_234c > 0:
+                                        _fine_detail_parts.append(
+                                            f"<b>234C:</b> Each instalment where cumulative paid < cumulative due attracts 1% × shortfall × months overdue. "
+                                            f"Total 234C interest = <b>{format_inr(_total_234c)}</b>."
+                                        )
+                                    if _total_234b > 0:
+                                        _fine_detail_parts.append(
+                                            f"<b>234B:</b> Net tax liability = ₹{_net_liab:,.0f}. "
+                                            f"Since advance tax paid < 90% threshold, interest on full deficit ₹{_deficit_234b:,.0f} "
+                                            f"@ 1%/month × {_months_234b} month(s) from 01 Apr 2026 = <b>{format_inr(_total_234b)}</b>."
+                                        )
+                                    if _fine_detail_parts:
+                                        st.markdown(
+                                            f"""<div style="background:#1e1c2e; border-radius:8px; border-left:4px solid #f97316;
+                                                        padding:12px 16px; margin-top:8px; font-size:0.83rem; color:#cbd5e1;">
+                                                {'<br>'.join(_fine_detail_parts)}
+                                                <br><span style="color:#64748b; font-size:0.78rem;">Rates per Income Tax Act s.234B & s.234C. 
+                                                Computed as of {_as_of_date}. Pay via Challan 280 (ITNS 280) to clear dues.</span>
+                                            </div>""",
+                                            unsafe_allow_html=True
+                                        )
+                                else:
+                                    st.success("✅ No penal interest — advance tax paid on schedule.")
+
+
+                            if not _adv_sched and _tax_result.get("total_tax", 0) > 0:
                                 st.success("✅ Net tax liability < ₹10,000 after TDS/advance paid — no advance tax required.")
 
-                            # Savings Opportunities
+                             # Savings Opportunities
                             if _tax_result.get("savings_opportunities"):
                                 st.markdown("#### 💡 Tax Saving Opportunities")
                                 for _opp in _tax_result["savings_opportunities"]:
@@ -3830,6 +3894,117 @@ else:
                                         <div style="color:#94a3b8; font-size:0.83rem; margin-top:4px;">{_opp.get('detail','')}</div>
                                     </div>
                                     """, unsafe_allow_html=True)
+
+                            # ── SECTION E — PORTFOLIO REBALANCING FOR TAX EFFICIENCY ──
+                            st.markdown("---")
+                            st.markdown("#### ♻️ Portfolio Rebalancing for Tax Efficiency")
+                            st.caption("Based on your actual investment holdings and tax profile — quantified, priority-ranked actions to reduce your tax liability.")
+
+                            with st.spinner("Analysing portfolio for tax-saving rebalancing opportunities..."):
+                                _rebal_recs = compute_tax_saving_rebalance(
+                                    inv_df,
+                                    _tax_result,
+                                    _tax_ded_for_compute,
+                                    tax_regime,
+                                )
+
+                            if _rebal_recs:
+                                # ── Summary Banner ──────────────────────────
+                                _high_recs   = [r for r in _rebal_recs if r["priority"] == "High"]
+                                _total_saving = sum(r["tax_saving"] for r in _rebal_recs)
+                                _high_saving  = sum(r["tax_saving"] for r in _high_recs)
+
+                                _banner_color = "#dc2626" if _high_saving > 20_000 else "#d97706"
+                                st.markdown(f"""
+                                <div style="background:linear-gradient(135deg,#1a0a2e,#0d1b2a); border-radius:12px;
+                                            border:1px solid {_banner_color}; padding:16px 20px; margin:8px 0 16px;">
+                                    <div style="display:flex; justify-content:space-between; align-items:center; flex-wrap:wrap; gap:12px;">
+                                        <div>
+                                            <div style="font-size:1.1rem; font-weight:700; color:#f1f5f9;">
+                                                🎯 {len(_rebal_recs)} rebalancing move{"s" if len(_rebal_recs)!=1 else ""} identified
+                                            </div>
+                                            <div style="color:#94a3b8; font-size:0.85rem; margin-top:4px;">
+                                                {len(_high_recs)} high-priority action{"s" if len(_high_recs)!=1 else ""} · Based on your actual portfolio holdings
+                                            </div>
+                                        </div>
+                                        <div style="text-align:right;">
+                                            <div style="font-size:0.78rem; color:#94a3b8;">Estimated total tax saving</div>
+                                            <div style="font-size:1.6rem; font-weight:800; color:#4ade80;">~{format_inr(_total_saving)}/yr</div>
+                                        </div>
+                                    </div>
+                                </div>
+                                """, unsafe_allow_html=True)
+
+                                # ── Priority colour map ──────────────────────
+                                _PCOLOR = {"High": "#ef4444", "Medium": "#f59e0b", "Low": "#22c55e"}
+                                _PBADGE = {"High": "🔴", "Medium": "🟡", "Low": "🟢"}
+                                _SCOLOR = {
+                                    "80C": "#818cf8", "80C (EEE)": "#a78bfa", "80CCD(1B)": "#c084fc",
+                                    "80D": "#fb7185", "LTCG Harvesting": "#34d399", "LTCG vs STCG": "#2dd4bf",
+                                    "Debt Rebalance": "#60a5fa", "Portfolio Rebalance": "#f97316",
+                                    "Gold / Diversification": "#fbbf24",
+                                }
+
+                                for _rec in _rebal_recs:
+                                    _pc   = _PCOLOR.get(_rec["priority"], "#94a3b8")
+                                    _pb   = _PBADGE.get(_rec["priority"], "⚪")
+                                    _sc   = _SCOLOR.get(_rec["section"], "#64748b")
+                                    _save = _rec["tax_saving"]
+                                    _save_disp = _rec["tax_saving_str"]
+
+                                    st.markdown(f"""
+                                    <div style="background:#0f172a; border-radius:10px; border:1px solid #1e293b;
+                                                border-left:4px solid {_pc}; padding:14px 18px; margin-bottom:10px;">
+
+                                        <!-- Header row -->
+                                        <div style="display:flex; justify-content:space-between; align-items:flex-start; flex-wrap:wrap; gap:8px; margin-bottom:8px;">
+                                            <div style="display:flex; align-items:center; gap:8px; flex-wrap:wrap;">
+                                                <span style="font-weight:700; color:#f1f5f9; font-size:0.95rem;">{_rec['title']}</span>
+                                                <span style="background:{_sc}22; color:{_sc}; border:1px solid {_sc}44;
+                                                            border-radius:4px; padding:1px 7px; font-size:0.72rem; font-weight:600;">
+                                                    {_rec['section']}
+                                                </span>
+                                                <span style="background:{_pc}22; color:{_pc}; border:1px solid {_pc}44;
+                                                            border-radius:4px; padding:1px 7px; font-size:0.72rem; font-weight:600;">
+                                                    {_pb} {_rec['priority']} Priority
+                                                </span>
+                                            </div>
+                                            <div style="text-align:right; flex-shrink:0;">
+                                                <div style="font-size:0.72rem; color:#64748b;">Est. Tax Saving</div>
+                                                <div style="font-size:1.1rem; font-weight:800; color:#4ade80;">{_save_disp}</div>
+                                            </div>
+                                        </div>
+
+                                        <!-- Current holding -->
+                                        <div style="background:#1e293b; border-radius:6px; padding:8px 12px; margin-bottom:8px;">
+                                            <span style="color:#64748b; font-size:0.75rem; font-weight:600; text-transform:uppercase; letter-spacing:0.05em;">Current Portfolio</span><br>
+                                            <span style="color:#cbd5e1; font-size:0.83rem;">{_rec['current_holding']}</span>
+                                        </div>
+
+                                        <!-- Recommended action -->
+                                        <div style="background:#0d2137; border-radius:6px; padding:8px 12px; margin-bottom:8px; border-left:2px solid #38bdf8;">
+                                            <span style="color:#38bdf8; font-size:0.75rem; font-weight:600; text-transform:uppercase; letter-spacing:0.05em;">Recommended Action</span><br>
+                                            <span style="color:#e2e8f0; font-size:0.83rem;">{_rec['action']}</span>
+                                        </div>
+
+                                        <!-- Rationale + Risk -->
+                                        <div style="display:grid; grid-template-columns:1fr 1fr; gap:8px;">
+                                            <div style="background:#0a1628; border-radius:5px; padding:7px 10px;">
+                                                <span style="color:#a78bfa; font-size:0.72rem; font-weight:600;">⚖️ Legal Basis</span><br>
+                                                <span style="color:#94a3b8; font-size:0.78rem;">{_rec['rationale']}</span>
+                                            </div>
+                                            <div style="background:#1a0e0e; border-radius:5px; padding:7px 10px;">
+                                                <span style="color:#fb923c; font-size:0.72rem; font-weight:600;">⚠️ Risk / Liquidity</span><br>
+                                                <span style="color:#94a3b8; font-size:0.78rem;">{_rec['risk_note']}</span>
+                                            </div>
+                                        </div>
+                                    </div>
+                                    """, unsafe_allow_html=True)
+
+                                # ── Disclaimer ────────────────────────────────
+                                st.caption("⚠️ These are algorithmic suggestions based on your portfolio data and Indian tax law (FY 2025-26). Consult a SEBI-registered advisor or CA before making investment decisions.")
+                            else:
+                                st.success("✅ Your portfolio is well-optimised for tax efficiency. No high-impact rebalancing moves detected.")
 
                             # What's still needed info box
                             st.markdown("""

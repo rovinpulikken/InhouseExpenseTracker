@@ -1,5 +1,51 @@
 # Release Notes
 
+## v1.7.2 (2026-08-31)
+### Added
+- **Section E — Portfolio Rebalancing for Tax Efficiency** (Tax Planner tab):
+  A new section appears after "Calculate Full Tax Liability" that analyses the user's **actual investment holdings** and generates **priority-ranked, quantified rebalancing recommendations** to reduce tax liability. Features:
+  - **Summary banner**: Total potential saving across all moves (e.g. *"5 rebalancing moves identified · ~₹38,000/yr"*) with colour coding by urgency.
+  - **Per-recommendation rich cards** showing:
+    - 🔴/🟡/🟢 Priority badge + section tag (80C, LTCG Harvesting, Debt Rebalance, etc.)
+    - *Current Portfolio* — what you currently hold and its tax problem
+    - *Recommended Action* — specific, ₹-quantified action to take
+    - *Legal Basis* — exact IT Act section (u/s 80C, 112A, 47(viic), etc.)
+    - *Risk / Liquidity* — lock-in, market risk, and caveats
+    - *Estimated Tax Saving* — computed using your actual marginal slab rate
+  - **Portfolio-aware logic** (only shows a recommendation if the gap actually exists):
+    - FD → Tax-Saver FD / ELSS shift (80C gap × marginal rate)
+    - FD → Debt MF (eliminates annual TDS drag on compounding)
+    - No ELSS detected → ELSS recommendation
+    - No PPF detected → PPF EEE recommendation
+    - No NPS Tier-1 → 80CCD(1B) ₹50K exclusive deduction
+    - Taxable Equity LTCG > ₹1.25L → annual harvesting to reset cost base
+    - Equity STCG present → hold > 12 months to convert 20% → 12.5%
+    - SCSS > ₹5L → partial redirect to SGB (exempt redemption gain)
+    - No health insurance → 80D ₹25K deduction (dual: tax + medical)
+    - No SGB with large equity → gold diversification (exempt redemption)
+    - FD/RD > 35% of portfolio → over-concentration warning
+  - Sorts by estimated tax saving (highest first), then priority.
+  - Deduplicates recommendations to avoid showing the same title twice.
+  - Disclaimer note: algorithmic suggestions — consult CA/SEBI RIA.
+
+- **New `compute_tax_saving_rebalance()` function** in `tax_engine.py`:
+  Accepts `holdings_df`, `tax_result`, `deductions`, `tax_regime` and returns a list of structured recommendation dicts. Uses proper marginal rate estimation from taxable income slabs (New Regime FY 2025-26) with 4% cess. Handles empty portfolio gracefully.
+
+## v1.7.1 (2026-08-31)
+### Added
+- **Advance Tax Fine Calculation (u/s 234B & 234C)** — The Advance Tax Instalment Schedule now uses the **current date** (real-time, not static) to compute penal interest:
+  - **Section 234C (per-instalment interest)**: For each overdue instalment, calculates `1% × shortfall × months_overdue` (months rounded up to nearest full month per IT Act). The "Calc Basis (234C)" column shows the exact formula used.
+  - **Section 234B (overall shortfall interest)**: If total advance tax paid < 90% of net liability by 31 Mar, computes `1% × deficit × months_since_1Apr`. Applies from 01 Apr 2026 onwards.
+  - **Fine Summary Cards**: Three metric cards display Interest u/s 234C, Interest u/s 234B, and Total Penal Interest with a colour-coded breakdown box explaining the legal basis and Challan 280 payment instructions.
+  - New helper `_months_overdue()` function correctly handles partial months (per IT Act, any part of a month = full month).
+  - Table now shows "As of [today's date]" in caption for transparency.
+
+### Changed
+- **Advance Tax Schedule table** now includes two new columns: `Interest 234C` (computed fine per instalment) and `Calc Basis (234C)` (formula string).
+- "No advance tax required" notice moved to standalone block that fires whenever schedule is empty and total tax > 0.
+
+---
+
 ## v1.7.0 (2026-08-27)
 ### Added
 - **`tax_engine.py` — New Standalone Tax Engine Module**:
