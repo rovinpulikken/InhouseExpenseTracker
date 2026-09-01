@@ -1,5 +1,28 @@
 # Release Notes
 
+## v1.7.4 (2026-09-01)
+### Fixed
+- **AIS "format not supported" error** — Completely rewrote the AIS parsing pipeline:
+  - **`_parse_ais_json()`**: Now handles 3 real AIS JSON schema variants:
+    - *Schema A* (`partBDetails[]` → category → data → transactions) — the actual IT portal export format
+    - *Schema B* (`aisDetail.data[]`) — flat structure variant
+    - *Schema C* (`capitalGains[]`) — legacy/simplified format (old behaviour)
+    - Prefers `gainAmount`/`capitalGain` over `txnAmt` (sale proceeds) when available
+    - Uses SFT codes (SFT-017=equity, SFT-018=MF) for asset classification
+    - Considers `holdingPeriod`, `gainType`, description keywords for LTCG/STCG split
+    - When only sale proceeds are found, shows an overestimate warning
+    - On JSON parse failure: explains the encryption issue (password = PAN + DOB)
+  - **NEW `_parse_ais_zip()`**: Detects encrypted AIS ZIP files, returns a clear step-by-step decryption guide instead of silently failing
+  - **NEW `_parse_ais_pdf()`**: Parses AIS PDFs (downloadable from IT portal) for capital gains entries in 'Sale of Securities', 'Mutual Fund', 'Long/Short Term Capital Gains' sections. Warns that PDF shows sale proceeds, not net gains.
+  - **NEW `_ais_classify()`**: Shared helper that maps description + SFT code → (asset bucket, is_ltcg)
+- **Auto-detection expanded**:
+  - ZIP files → `ais_zip` parser (encrypted AIS)
+  - AIS PDF detection: looks for `annual information statement`, `taxpayer information summary`, `sft information` + PAN/AY markers
+- **UI improvements** (Capital Gains → Upload tab):
+  - File uploader now accepts `.zip` in addition to `.pdf` and `.json`
+  - Updated instructions distinguish AIS PDF (no decrypt needed) vs AIS JSON (decrypt first)
+  - New collapsible "ℹ️ About AIS files" info box explaining encryption, password format (PAN+DOB DDMMYYYY), AIS Offline Utility steps, and the sale-proceeds vs net-gains distinction
+
 ## v1.7.3 (2026-09-01)
 ### Fixed
 - **ICICI Direct consolidated PDF: "Unrecognised format" error** — Completely rewrote `_parse_icici_pdf()` in `tax_engine.py` with 4 progressive extraction strategies:

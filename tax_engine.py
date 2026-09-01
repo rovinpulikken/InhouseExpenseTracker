@@ -465,11 +465,20 @@ def parse_capital_gains(uploaded_file, file_type_hint: str = "auto") -> Dict[str
     if file_type_hint == "auto":
         if fname.endswith(".json"):
             file_type_hint = "ais"
+        elif fname.endswith(".zip"):
+            # AIS downloads from IT portal come as encrypted ZIP
+            file_type_hint = "ais_zip"
         elif fname.endswith(".pdf"):
-            # Read first 2 pages for detection (ICICI consolidated PDFs have header on page 2)
+            # Read first 2 pages for detection
             sample = _extract_pdf_text(raw_bytes, max_pages=2).lower()
             if "zerodha" in sample or "kite" in sample:
                 file_type_hint = "zerodha"
+            elif any(k in sample for k in (
+                "annual information statement", "ais", "taxpayer information summary",
+                "income tax department", "incometax.gov", "part b",
+                "tds / tcs", "tds/tcs", "sft information",
+            )) and any(k in sample for k in ("pan:", "pan no", "assessment year", "ay ")):
+                file_type_hint = "ais_pdf"
             elif any(k in sample for k in (
                 "icici direct", "icici securities", "icicidirect",
                 "capital gain report", "profit & loss report",
@@ -486,6 +495,8 @@ def parse_capital_gains(uploaded_file, file_type_hint: str = "auto") -> Dict[str
 
     parsers = {
         "ais":         _parse_ais_json,
+        "ais_zip":     _parse_ais_zip,
+        "ais_pdf":     _parse_ais_pdf,
         "zerodha":     _parse_zerodha_pdf,
         "icici":       _parse_icici_pdf,
         "cams":        _parse_cams_pdf,
@@ -711,46 +722,286 @@ def _parse_cams_pdf(raw_bytes: bytes, r: Dict[str, Any]) -> Dict[str, Any]:
     return _sum_totals(r)
 
 
+def _ais_classify(description: str, info_code: str) -> tuple:
+    """
+    Classify an AIS transaction into (asset_bucket, is_ltcg).
+    Returns (bucket_key_prefix, is_long_term) where bucket_key_prefix is
+    one of: 'equity', 'equity_mf', 'debt_mf', 'property', 'other'.
+    is_long_term is None when holding period is unknown (sale proceeds only).
+    """
+    desc  = description.lower()
+    code  = str(info_code).upper()
+
+    # SFT codes: 017=equity securities, 018=mutual funds
+    is_equity_sft = code in ("SFT-017", "SFT017", "17")
+    is_mf_sft     = code in ("SFT-018", "SFT018", "18")
+
+    is_mf      = is_mf_sft or any(k in desc for k in ("mutual fund", "mf unit", "folio", "nav", "redemption of unit"))
+    is_equity  = (is_equity_sft and not is_mf) or any(k in desc for k in ("listed share", "equity share", "listed security", "sale of share", "listed debenture"))
+    is_debt    = any(k in desc for k in ("debt", "bond", "debenture", "gilt", "overnight", "liquid fund")) and not is_equity
+    is_prop    = any(k in desc for k in ("immovable property", "land", "house", "real estate", "building"))
+
+    is_ltcg = None
+    if any(k in desc for k in ("long term", "ltcg", "long-term", "112a")):
+        is_ltcg = True
+    elif any(k in desc for k in ("short term", "stcg", "short-term", "111a")):
+        is_ltcg = False
+
+    if is_prop:
+        return "property", is_ltcg
+    elif is_debt:
+        return "debt_mf", is_ltcg
+    elif is_mf:
+        return "equity_mf", is_ltcg
+    elif is_equity:
+        return "equity", is_ltcg
+    else:
+        return "other", is_ltcg
+
+
 def _parse_ais_json(raw_bytes: bytes, r: Dict[str, Any]) -> Dict[str, Any]:
+    """
+    Parse an AIS JSON from the Income Tax portal.
+    Handles multiple schema versions:
+      - Schema A: partBDetails[] -> category -> data[] -> transactions[]
+      - Schema B: aisDetail.data[] (flat)
+      - Schema C: capitalGains[] (legacy/simplified)
+      - Schema D: aisSummary.items[] (summary-only)
+    Note: AIS reports *sale proceeds*, not gains. When a gain amount is
+    present (some AIS exports include it), it's used directly. Otherwise
+    we report sale proceeds and mark it as approximate.
+    """
     import json
     r["source"] = "IT Dept AIS"
+
     try:
         data = json.loads(raw_bytes.decode("utf-8", errors="replace"))
     except json.JSONDecodeError as e:
-        r["parse_errors"].append(f"AIS JSON parse error: {e}")
+        r["parse_errors"].append(
+            f"AIS JSON parse error: {e}. "
+            "Note: AIS files downloaded from the IT portal are encrypted (password = PAN + DOB in DDMMYYYY). "
+            "Decrypt first using the AIS Offline Utility, then re-upload the decrypted JSON."
+        )
         return r
 
+    raw_rows = []
+    found_any = False
+
+    # ── Schema A: partBDetails (most common real AIS export) ─────────────────
+    part_b = data.get("partBDetails") or data.get("partB") or []
+    if isinstance(part_b, dict):
+        part_b = [part_b]
+    for category in part_b:
+        cat_name = str(category.get("category", category.get("name", ""))).lower()
+        # Only process capital gains / SFT / securities categories
+        if not any(k in cat_name for k in ("capital", "sft", "securit", "mutual fund", "other information")):
+            # Also check sub-items in case structure is different
+            if "data" not in category and "items" not in category:
+                continue
+        items = category.get("data") or category.get("items") or category.get("transactions") or []
+        if isinstance(items, dict):
+            items = [items]
+        for item in items:
+            info_code = str(item.get("informationCode", item.get("code", "")))
+            description = str(item.get("description", item.get("desc", "")))
+            # Transactions within this item
+            txns = item.get("transactions") or item.get("data") or []
+            if not isinstance(txns, list):
+                txns = [txns]
+            if not txns:
+                # Sometimes the item itself IS the transaction
+                txns = [item]
+            for txn in txns:
+                desc_full = str(txn.get("description", description))
+                code_full  = str(txn.get("informationCode", info_code))
+                # Amount: prefer gainAmount / capitalGain over txnAmt (which is sale proceeds)
+                gain_amt   = float(txn.get("gainAmount") or txn.get("capitalGain") or
+                                   txn.get("gain_amount") or 0)
+                sale_amt   = float(txn.get("amount") or txn.get("txnAmt") or
+                                   txn.get("saleAmount") or txn.get("informationValue") or 0)
+                holding    = str(txn.get("holdingPeriod", txn.get("holding_period", ""))).lower()
+                gain_type  = str(txn.get("gainType", txn.get("gain_type", ""))).upper()
+
+                use_amt   = gain_amt if gain_amt else sale_amt
+                if use_amt == 0:
+                    continue
+                is_gain   = bool(gain_amt)  # True if we have actual gain, False if sale proceeds
+                bucket, is_ltcg = _ais_classify(desc_full, code_full)
+
+                # Refine is_ltcg from explicit fields
+                if "LTCG" in gain_type or "LONG" in gain_type or "long" in holding:
+                    is_ltcg = True
+                elif "STCG" in gain_type or "SHORT" in gain_type or "short" in holding:
+                    is_ltcg = False
+
+                # Default unknown holding to LTCG for equities (most common for CG reports)
+                if is_ltcg is None:
+                    is_ltcg = True
+
+                key = f"{bucket}_{'ltcg' if is_ltcg else 'stcg'}"
+                if key in r:
+                    r[key] = round(r[key] + use_amt, 2)
+                    found_any = True
+                    raw_rows.append({"source": "partBDetails", "code": code_full,
+                                     "desc": desc_full, "amount": use_amt,
+                                     "is_gain": is_gain, "bucket": key})
+
+    if found_any:
+        r["raw_rows"] = raw_rows
+        if any(not row["is_gain"] for row in raw_rows):
+            r["parse_errors"].append(
+                "⚠️ AIS only reports sale proceeds (not net capital gain). "
+                "These figures are OVERESTIMATES — subtract your purchase cost. "
+                "Use your broker's P&L statement for accurate LTCG/STCG figures."
+            )
+        return _sum_totals(r)
+
+    # ── Schema B: aisDetail (flat structure) ─────────────────────────────────
+    ais_detail = data.get("aisDetail") or data.get("ais_detail") or {}
+    items_b = (ais_detail.get("data") or ais_detail.get("items") or
+               (ais_detail if isinstance(ais_detail, list) else []))
+    for item in items_b:
+        info_code   = str(item.get("informationCode", ""))
+        description = str(item.get("description", ""))
+        use_amt = float(item.get("gainAmount") or item.get("amount") or item.get("txnAmt") or 0)
+        if use_amt == 0:
+            continue
+        bucket, is_ltcg = _ais_classify(description, info_code)
+        if is_ltcg is None:
+            is_ltcg = True
+        key = f"{bucket}_{'ltcg' if is_ltcg else 'stcg'}"
+        if key in r:
+            r[key] = round(r[key] + use_amt, 2)
+            found_any = True
+            raw_rows.append({"source": "aisDetail", "code": info_code,
+                             "desc": description, "amount": use_amt, "bucket": key})
+
+    if found_any:
+        r["raw_rows"] = raw_rows
+        r["parse_errors"].append(
+            "⚠️ AIS reports sale proceeds, not net gains. These figures may be overestimates. "
+            "Reconcile with your broker's P&L for accurate capital gains."
+        )
+        return _sum_totals(r)
+
+    # ── Schema C: capitalGains[] (legacy / simplified format) ────────────────
     cg_list = (data.get("capitalGains") or
                data.get("annualInformationStatement", {}).get("capitalGains") or [])
-
-    raw_rows = []
     for entry in cg_list:
         asset  = str(entry.get("assetType", entry.get("asset_type", ""))).lower()
         gain_t = str(entry.get("gainType", entry.get("gain_type", ""))).upper()
         amount = float(entry.get("amount", entry.get("gainAmount", 0)) or 0)
-        raw_rows.append({"asset": asset, "gain_type": gain_t, "amount": amount})
+        is_ltcg = "LTCG" in gain_t or "LONG" in gain_t
+        bucket, _ = _ais_classify(asset, "")
+        key = f"{bucket}_{'ltcg' if is_ltcg else 'stcg'}"
+        if key in r and amount:
+            r[key] = round(r[key] + amount, 2)
+            found_any = True
+            raw_rows.append({"source": "capitalGains", "desc": asset,
+                             "amount": amount, "bucket": key})
 
-        is_ltcg   = "LTCG" in gain_t
-        is_equity = "equity" in asset and "mutual" not in asset and "fund" not in asset
-        is_mf     = "mutual fund" in asset or ("equity" in asset and "fund" in asset)
-        is_debt   = "debt" in asset or "bond" in asset
-        is_prop   = "property" in asset or "land" in asset or "house" in asset
+    if found_any:
+        r["raw_rows"] = raw_rows
+        return _sum_totals(r)
 
-        if is_equity:
-            r["equity_ltcg" if is_ltcg else "equity_stcg"] += amount
-        elif is_mf:
-            r["equity_mf_ltcg" if is_ltcg else "equity_mf_stcg"] += amount
-        elif is_debt:
-            r["debt_mf_ltcg" if is_ltcg else "debt_mf_stcg"] += amount
-        elif is_prop:
-            r["property_ltcg" if is_ltcg else "property_stcg"] += amount
-        else:
-            r["other_ltcg" if is_ltcg else "other_stcg"] += amount
+    # ── Nothing found ─────────────────────────────────────────────────────────
+    r["parse_errors"].append(
+        "AIS JSON uploaded but no capital gains data found. "
+        "Possible reasons: \n"
+        "1. The file is still encrypted (AIS downloads are password-protected — "
+        "decrypt using AIS Offline Utility first, password = PAN + DOB in DDMMYYYY). \n"
+        "2. The AIS JSON does not contain capital gains entries for this FY. \n"
+        "3. Use your broker's P&L statement (PDF) for more reliable extraction."
+    )
+    return _sum_totals(r)
 
-    r["raw_rows"] = raw_rows
-    for k in ["equity_ltcg","equity_stcg","equity_mf_ltcg","equity_mf_stcg",
-              "debt_mf_ltcg","debt_mf_stcg","property_ltcg","property_stcg","other_ltcg","other_stcg"]:
-        r[k] = round(r[k], 2)
+
+def _parse_ais_zip(raw_bytes: bytes, r: Dict[str, Any]) -> Dict[str, Any]:
+    """Handle encrypted AIS ZIP — explain decryption requirement clearly."""
+    r["source"] = "IT Dept AIS (Encrypted)"
+    r["parse_errors"].append(
+        "AIS ZIP file detected. The AIS download from the Income Tax portal is "
+        "password-protected. \n"
+        "To use it: \n"
+        "1. Open AIS Offline Utility (download from incometax.gov.in → Resources). \n"
+        "2. Import this ZIP and enter your password (PAN in CAPS + DOB as DDMMYYYY, e.g. ABCDE1234F01011985). \n"
+        "3. Export the decrypted JSON from the utility. \n"
+        "4. Upload the exported JSON here. \n"
+        "Alternatively, upload your broker's P&L PDF (Zerodha/ICICI/CAMS) for direct extraction."
+    )
+    return r
+
+
+def _parse_ais_pdf(raw_bytes: bytes, r: Dict[str, Any]) -> Dict[str, Any]:
+    """
+    Parse AIS PDF downloaded from the Income Tax portal.
+    The AIS PDF contains summary tables by category (TDS, SFT, Other).
+    Capital gains data is under 'Other Information' or 'Sale of Securities'.
+    Since AIS PDFs show sale proceeds (not net gains), we flag this clearly.
+    """
+    r["source"] = "IT Dept AIS (PDF)"
+    text = _extract_pdf_text(raw_bytes)
+    if not text:
+        r["parse_errors"].append("Could not extract text from AIS PDF.")
+        return r
+
+    flat = re.sub(r"\s+", " ", text)   # collapse whitespace
+    lines = text.splitlines()
+    found_any = False
+
+    def _grab_amount(pattern: str, txt: str) -> float:
+        m = re.search(pattern, txt, re.IGNORECASE)
+        if not m:
+            return 0.0
+        tail = txt[m.end():m.end() + 300]
+        nm = re.search(r"([\d,]+\.\d{2})", tail)
+        if nm:
+            try:
+                return float(nm.group(1).replace(",", ""))
+            except ValueError:
+                return 0.0
+        return 0.0
+
+    # AIS PDF patterns for capital gains entries
+    _AIS_PDF_PATTERNS = [
+        # Sale of listed securities (SFT-017)
+        (r"sale\s+of\s+(?:listed\s+)?(?:securities|shares|equity)[^\n]{0,60}long[\s\-]?term", "equity_ltcg"),
+        (r"sale\s+of\s+(?:listed\s+)?(?:securities|shares|equity)[^\n]{0,60}short[\s\-]?term", "equity_stcg"),
+        (r"long[\s\-]?term[^\n]{0,60}sale\s+of\s+(?:securities|shares|equity)", "equity_ltcg"),
+        (r"short[\s\-]?term[^\n]{0,60}sale\s+of\s+(?:securities|shares|equity)", "equity_stcg"),
+        # Mutual fund (SFT-018)
+        (r"mutual\s+fund[^\n]{0,60}long[\s\-]?term",  "equity_mf_ltcg"),
+        (r"mutual\s+fund[^\n]{0,60}short[\s\-]?term", "equity_mf_stcg"),
+        (r"long[\s\-]?term[^\n]{0,60}mutual\s+fund",  "equity_mf_ltcg"),
+        (r"short[\s\-]?term[^\n]{0,60}mutual\s+fund", "equity_mf_stcg"),
+        # Generic LTCG/STCG labels in AIS summary tables
+        (r"capital\s+gains?[^\n]{0,40}long[\s\-]?term",  "equity_ltcg"),
+        (r"capital\s+gains?[^\n]{0,40}short[\s\-]?term", "equity_stcg"),
+        (r"long[\s\-]?term\s+capital\s+gains?",           "equity_ltcg"),
+        (r"short[\s\-]?term\s+capital\s+gains?",          "equity_stcg"),
+        # Immovable property
+        (r"immovable\s+property[^\n]{0,60}long[\s\-]?term",  "property_ltcg"),
+        (r"immovable\s+property[^\n]{0,60}short[\s\-]?term", "property_stcg"),
+    ]
+    for pat, key in _AIS_PDF_PATTERNS:
+        v = _grab_amount(pat, flat)
+        if v > 0 and r.get(key, 0) == 0:
+            r[key] = v
+            found_any = True
+
+    if found_any:
+        r["parse_errors"].append(
+            "⚠️ AIS PDF shows sale consideration (not net capital gain). "
+            "Subtract your purchase cost to get actual gains. "
+            "For accurate LTCG/STCG, use your broker's P&L statement instead."
+        )
+    else:
+        r["parse_errors"].append(
+            "AIS PDF detected but capital gains figures not found in expected format. "
+            "The AIS PDF may only show TDS/interest data and not capital gains. \n"
+            "For capital gains, use: Zerodha Console P&L PDF, ICICI Capital Gains PDF, "
+            "or CAMS Consolidated Account Statement PDF."
+        )
     return _sum_totals(r)
 
 

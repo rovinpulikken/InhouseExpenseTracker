@@ -3601,15 +3601,30 @@ else:
                             st.markdown("""
                             **Supported documents:**
                             - **Zerodha**: Console → P&L → Download Tax P&L (PDF)
-                            - **ICICI Direct**: Reports → Capital Gains → Download PDF
+                            - **ICICI Direct**: Reports → Capital Gains → Download PDF  *(Consolidated / Scrip-wise supported)*
                             - **CAMS / KFintech**: CAS (Consolidated Account Statement) PDF
-                            - **IT Dept AIS**: Income Tax Portal → AIS → Download JSON
+                            - **IT Dept AIS PDF**: Income Tax Portal → AIS → Download PDF *(shows sale proceeds, not net gains)*
+                            - **IT Dept AIS JSON**: Decrypt using AIS Offline Utility first → upload decrypted JSON
                             """)
+                            with st.expander("ℹ️ About AIS files — important note", expanded=False):
+                                st.info("""
+**AIS files from the Income Tax portal are encrypted.**
+
+The file you download (ZIP or JSON) uses password = **PAN (uppercase) + DOB (DDMMYYYY)** — e.g. `ABCDE1234F15081985`.
+
+To use it:
+1. Download **AIS Offline Utility** from incometax.gov.in → Resources
+2. Import your downloaded file and enter the password above
+3. Export the **decrypted JSON** from the utility
+4. Upload that exported JSON here
+
+**Also note:** AIS shows *sale proceeds* — not net capital gains. Your broker's P&L PDF (Zerodha / ICICI / CAMS) gives more accurate LTCG/STCG figures.
+                                """)
                             _cg_file = st.file_uploader(
                                 "Upload capital gains document",
-                                type=["pdf", "json"],
+                                type=["pdf", "json", "zip"],
                                 key="cg_upload_file",
-                                help="Auto-detects format from Zerodha/ICICI/CAMS/AIS"
+                                help="Auto-detects: Zerodha PDF, ICICI PDF, CAMS PDF, AIS PDF, AIS JSON (decrypted), AIS ZIP"
                             )
                             if _cg_file is not None:
                                 with st.spinner(f"Parsing {_cg_file.name}..."):
