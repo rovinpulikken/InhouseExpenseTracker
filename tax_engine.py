@@ -947,17 +947,18 @@ def _parse_ais_pdf(raw_bytes: bytes, r: Dict[str, Any]) -> Dict[str, Any]:
 
     # ── helpers ──────────────────────────────────────────────────────────────
     def _first_amt(pattern: str, txt: str, flags=re.IGNORECASE | re.DOTALL) -> float:
-        """Return the first ₹ amount (X,XX,XXX.XX or plain digits) after match."""
-        m = re.search(pattern, txt, flags)
-        if not m:
-            return 0.0
-        tail = txt[m.end(): m.end() + 400]
-        nm = re.search(r"[\u20b9Rs\s]*([0-9]{1,3}(?:,[0-9]{2,3})*(?:\.[0-9]{1,2})?)", tail)
-        if nm:
-            try:
-                return float(nm.group(1).replace(",", ""))
-            except ValueError:
-                return 0.0
+        """Return the first ₹ amount > 100 after match to avoid matching 'Count' columns."""
+        for m in re.finditer(pattern, txt, flags):
+            tail = txt[m.end(): m.end() + 600]
+            # Find all numbers in the tail
+            nums = re.findall(r"(?:[\u20b9Rs]\s*)?([0-9]{1,3}(?:,[0-9]{2,3})*(?:\.[0-9]{1,2})?)", tail)
+            for n in nums:
+                clean_n = n.replace(",", "")
+                if clean_n.replace(".", "").isdigit():
+                    val = float(clean_n)
+                    # Typically capital gains/sale proceeds are > 100. A single digit (like 5 or 12) is usually a 'Count'.
+                    if val > 100:
+                        return val
         return 0.0
 
     def _set(key: str, val: float):
@@ -971,12 +972,12 @@ def _parse_ais_pdf(raw_bytes: bytes, r: Dict[str, Any]) -> Dict[str, Any]:
     # SFT-018 = sale/purchase of mutual fund units
     # SFT-011 = cash deposits, SFT-012 = credit card — skip those
     for pat, key in [
-        # SFT-017 variants: "SFT017", "SFT-017", "SFT 017", code "17"
-        (r"SFT[\s\-]?017\b",  "equity_ltcg"),
-        (r"\bcode[\s:]+017\b", "equity_ltcg"),
+        # SFT-017 variants: "SFT017", "SFT-017", "SFT 017", code "17", "SFT - 017"
+        (r"SFT[\s\-]*017\b",  "equity_ltcg"),
+        (r"\bcode[\s\-:]*017\b", "equity_ltcg"),
         # SFT-018 variants
-        (r"SFT[\s\-]?018\b",   "equity_mf_ltcg"),
-        (r"\bcode[\s:]+018\b",  "equity_mf_ltcg"),
+        (r"SFT[\s\-]*018\b",   "equity_mf_ltcg"),
+        (r"\bcode[\s\-:]*018\b",  "equity_mf_ltcg"),
         # SFT-016 = interest on savings (not CG — skip)
     ]:
         _set(key, _first_amt(pat, flat))
@@ -986,7 +987,7 @@ def _parse_ais_pdf(raw_bytes: bytes, r: Dict[str, Any]) -> Dict[str, Any]:
     # or "Sale of units of Mutual Fund" — no holding-period qualifiers.
     _DESC_PATTERNS = [
         # Equity / listed securities
-        (r"sale\s+(?:and\s+purchase\s+)?of\s+(?:listed\s+)?(?:securities|shares|equity\s+shares?)",
+        (r"sale\s+(?:and\s+purchase\s+)?of\s+(?:securities\s+and\s+units\s+of\s+mutual\s+fund|listed\s+securities|securities|shares|equity)",
          "equity_ltcg"),
         (r"purchase\s+and\s+sale\s+of\s+(?:listed\s+)?(?:securities|shares)",
          "equity_ltcg"),
@@ -1064,23 +1065,23 @@ def _parse_ais_pdf(raw_bytes: bytes, r: Dict[str, Any]) -> Dict[str, Any]:
     # AIS PDF patterns for capital gains entries
     _AIS_PDF_PATTERNS = [
         # Sale of listed securities (SFT-017)
-        (r"sale\s+of\s+(?:listed\s+)?(?:securities|shares|equity)[^\n]{0,60}long[\s\-]?term", "equity_ltcg"),
-        (r"sale\s+of\s+(?:listed\s+)?(?:securities|shares|equity)[^\n]{0,60}short[\s\-]?term", "equity_stcg"),
-        (r"long[\s\-]?term[^\n]{0,60}sale\s+of\s+(?:securities|shares|equity)", "equity_ltcg"),
-        (r"short[\s\-]?term[^\n]{0,60}sale\s+of\s+(?:securities|shares|equity)", "equity_stcg"),
+        (r"sale\s+of\s+(?:listed\s+)?(?:securities|shares|equity).{0,120}?long[\s\-]?term", "equity_ltcg"),
+        (r"sale\s+of\s+(?:listed\s+)?(?:securities|shares|equity).{0,120}?short[\s\-]?term", "equity_stcg"),
+        (r"long[\s\-]?term.{0,120}?sale\s+of\s+(?:securities|shares|equity)", "equity_ltcg"),
+        (r"short[\s\-]?term.{0,120}?sale\s+of\s+(?:securities|shares|equity)", "equity_stcg"),
         # Mutual fund (SFT-018)
-        (r"mutual\s+fund[^\n]{0,60}long[\s\-]?term",  "equity_mf_ltcg"),
-        (r"mutual\s+fund[^\n]{0,60}short[\s\-]?term", "equity_mf_stcg"),
-        (r"long[\s\-]?term[^\n]{0,60}mutual\s+fund",  "equity_mf_ltcg"),
-        (r"short[\s\-]?term[^\n]{0,60}mutual\s+fund", "equity_mf_stcg"),
+        (r"mutual\s+fund.{0,120}?long[\s\-]?term",  "equity_mf_ltcg"),
+        (r"mutual\s+fund.{0,120}?short[\s\-]?term", "equity_mf_stcg"),
+        (r"long[\s\-]?term.{0,120}?mutual\s+fund",  "equity_mf_ltcg"),
+        (r"short[\s\-]?term.{0,120}?mutual\s+fund", "equity_mf_stcg"),
         # Generic LTCG/STCG labels in AIS summary tables
-        (r"capital\s+gains?[^\n]{0,40}long[\s\-]?term",  "equity_ltcg"),
-        (r"capital\s+gains?[^\n]{0,40}short[\s\-]?term", "equity_stcg"),
+        (r"capital\s+gains?.{0,120}?long[\s\-]?term",  "equity_ltcg"),
+        (r"capital\s+gains?.{0,120}?short[\s\-]?term", "equity_stcg"),
         (r"long[\s\-]?term\s+capital\s+gains?",           "equity_ltcg"),
         (r"short[\s\-]?term\s+capital\s+gains?",          "equity_stcg"),
         # Immovable property
-        (r"immovable\s+property[^\n]{0,60}long[\s\-]?term",  "property_ltcg"),
-        (r"immovable\s+property[^\n]{0,60}short[\s\-]?term", "property_stcg"),
+        (r"immovable\s+property.{0,120}?long[\s\-]?term",  "property_ltcg"),
+        (r"immovable\s+property.{0,120}?short[\s\-]?term", "property_stcg"),
     ]
     for pat, key in _AIS_PDF_PATTERNS:
         v = _first_amt(pat, flat)
