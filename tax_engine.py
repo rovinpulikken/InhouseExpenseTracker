@@ -470,15 +470,34 @@ def parse_capital_gains(uploaded_file, file_type_hint: str = "auto") -> Dict[str
             file_type_hint = "ais_zip"
         elif fname.endswith(".pdf"):
             # Read first 2 pages for detection
-            sample = _extract_pdf_text(raw_bytes, max_pages=2).lower()
+            sample = _extract_pdf_text(raw_bytes, max_pages=3).lower()
+
             if "zerodha" in sample or "kite" in sample:
                 file_type_hint = "zerodha"
+
+            # AIS / IT Portal PDF detection — check BEFORE ICICI/CAMS
+            # Primary: highly specific AIS phrases (very unlikely in broker PDFs)
             elif any(k in sample for k in (
-                "annual information statement", "ais", "taxpayer information summary",
-                "income tax department", "incometax.gov", "part b",
-                "tds / tcs", "tds/tcs", "sft information",
-            )) and any(k in sample for k in ("pan:", "pan no", "assessment year", "ay ")):
+                "annual information statement",
+                "taxpayer information summary",
+                "sft information",
+                "tds / tcs information",
+                "tds/tcs information",
+                "incometax.gov.in",
+            )):
                 file_type_hint = "ais_pdf"
+
+            # Secondary: IT dept PDF with PAN/AY markers — broader match
+            elif any(k in sample for k in (
+                "income tax department", "income-tax department",
+                "income tax india", "efiling.incometax",
+            )) and any(k in sample for k in (
+                "pan ", "pan:", "pan no",
+                "assessment year", "assessment yr",
+                "financial year", "form 26as", "form26as",
+            )):
+                file_type_hint = "ais_pdf"
+
             elif any(k in sample for k in (
                 "icici direct", "icici securities", "icicidirect",
                 "capital gain report", "profit & loss report",
@@ -486,12 +505,15 @@ def parse_capital_gains(uploaded_file, file_type_hint: str = "auto") -> Dict[str
                 "equity capital gain", "scrip wise", "scrip-wise",
             )):
                 file_type_hint = "icici"
+
             elif "cams" in sample or "kfintech" in sample or "consolidated account statement" in sample:
                 file_type_hint = "cams"
+
             else:
                 file_type_hint = "generic_pdf"
         else:
             file_type_hint = "generic_pdf"
+
 
     parsers = {
         "ais":         _parse_ais_json,
@@ -503,6 +525,7 @@ def parse_capital_gains(uploaded_file, file_type_hint: str = "auto") -> Dict[str
         "generic_pdf": _parse_generic_pdf,
     }
     parser = parsers.get(file_type_hint, _parse_generic_pdf)
+    result["detected_format"] = file_type_hint   # expose for UI diagnostics
     return parser(raw_bytes, result)
 
 

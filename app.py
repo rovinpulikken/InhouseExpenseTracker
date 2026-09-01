@@ -3620,6 +3620,30 @@ To use it:
 
 **Also note:** AIS shows *sale proceeds* — not net capital gains. Your broker's P&L PDF (Zerodha / ICICI / CAMS) gives more accurate LTCG/STCG figures.
                                 """)
+                            _fmt_override = st.selectbox(
+                                "📂 Format override (if auto-detect is wrong)",
+                                options=[
+                                    "Auto-detect",
+                                    "IT Dept AIS — PDF",
+                                    "IT Dept AIS — JSON (decrypted)",
+                                    "IT Dept AIS — ZIP (encrypted)",
+                                    "ICICI Direct PDF",
+                                    "Zerodha PDF",
+                                    "CAMS / KFintech PDF",
+                                ],
+                                index=0,
+                                key="cg_fmt_override",
+                                help="Use this if the file is detected incorrectly"
+                            )
+                            _fmt_map = {
+                                "Auto-detect":                    "auto",
+                                "IT Dept AIS — PDF":             "ais_pdf",
+                                "IT Dept AIS — JSON (decrypted)": "ais",
+                                "IT Dept AIS — ZIP (encrypted)":  "ais_zip",
+                                "ICICI Direct PDF":               "icici",
+                                "Zerodha PDF":                    "zerodha",
+                                "CAMS / KFintech PDF":            "cams",
+                            }
                             _cg_file = st.file_uploader(
                                 "Upload capital gains document",
                                 type=["pdf", "json", "zip"],
@@ -3627,12 +3651,15 @@ To use it:
                                 help="Auto-detects: Zerodha PDF, ICICI PDF, CAMS PDF, AIS PDF, AIS JSON (decrypted), AIS ZIP"
                             )
                             if _cg_file is not None:
+                                _hint = _fmt_map.get(_fmt_override, "auto")
                                 with st.spinner(f"Parsing {_cg_file.name}..."):
-                                    _parsed_cg = parse_capital_gains(_cg_file)
+                                    _parsed_cg = parse_capital_gains(_cg_file, file_type_hint=_hint)
+                                _detected = _parsed_cg.get("detected_format", "unknown")
+                                _src      = _parsed_cg.get("source", "Unknown")
+                                st.success(f"✅ Detected as: **{_detected}** → parsed as **{_src}**")
                                 if _parsed_cg.get("parse_errors"):
                                     for _pe in _parsed_cg["parse_errors"]:
                                         st.warning(f"⚠️ {_pe}")
-                                st.success(f"✅ Detected format: **{_parsed_cg['source']}**")
                                 st.markdown(f"**Parsed Capital Gains — {_cg_file.name}:**")
                                 _cg_display = pd.DataFrame([
                                     {"Category": "Equity LTCG", "Amount (₹)": format_inr(_parsed_cg["equity_ltcg"]), "Tax Rate": "12.5% (above ₹1.25L)"},
@@ -3653,6 +3680,7 @@ To use it:
                                         _saved_cg = _parsed_cg
                                         st.success("✅ Capital gains saved.")
                                         st.rerun()
+
 
                         with _cg_tabs[1]:
                             st.markdown("Enter capital gains amounts manually (all figures in ₹):")

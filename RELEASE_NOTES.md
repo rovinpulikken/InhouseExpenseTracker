@@ -1,5 +1,19 @@
 # Release Notes
 
+## v1.7.5 (2026-09-01)
+### Fixed
+- **AIS format not detected (again)** — Two bugs in the AIS PDF detection logic:
+  1. `"ais"` (3-letter substring) was in the keyword list — too vague, missed real AIS PDFs and caused false-positives in other PDFs. Removed.
+  2. The `AND` condition required both an AIS-phrase AND a PAN/AY marker in the same `or` group, but `"ay "` (with trailing space) missed common formats like `"AY:"` or `"AY\n"`. Fixed.
+- **Detection rewrite**: Two-tier AIS PDF detection now used:
+  - *Primary*: Single-condition match on highly specific phrases only found in AIS (`annual information statement`, `taxpayer information summary`, `sft information`, `tds / tcs information`, `incometax.gov.in`) — no false positives
+  - *Secondary*: Broader IT dept markers (`income tax department`, `income-tax department`, `efiling.incometax`) combined with flexible PAN/AY identifiers (`pan `, `pan:`, `assessment year`, `form 26as`)
+- Detection now reads **3 pages** (up from 2) to handle longer AIS PDFs
+### Added
+- **Manual format override** — New selectbox in Capital Gains → Upload tab: "Format override (if auto-detect is wrong)" lets user force AIS PDF / AIS JSON / AIS ZIP / ICICI / Zerodha / CAMS parsing without relying on auto-detection
+- **Detected format badge** — UI now shows both the auto-detected format code AND the parser source (e.g., "Detected as: `ais_pdf` → parsed as: IT Dept AIS (PDF)") for full transparency
+- **`detected_format` field in result** — `parse_capital_gains()` now stores the format hint in `result["detected_format"]` for UI diagnostics
+
 ## v1.7.4 (2026-09-01)
 ### Fixed
 - **AIS "format not supported" error** — Completely rewrote the AIS parsing pipeline:
