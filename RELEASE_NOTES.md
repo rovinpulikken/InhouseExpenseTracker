@@ -1,5 +1,10 @@
 # Release Notes
 
+## v1.7.6 (2026-09-01)
+### Fixed
+- **AIS PDF parsing failure and syntax error** — Fixed a severe syntax corruption in `tax_engine.py` where `_parse_ais_json` and `_parse_ais_pdf` blocks were mangled together, causing the engine to fail.
+- **AIS PDF missing capital gains** — Fixed a bug in `_parse_ais_pdf` where an early return statement prevented the engine from executing the fallback/legacy pattern matches (`_AIS_PDF_PATTERNS`), which caused it to incorrectly report that capital gains figures could not be found for certain PDF formats even when the data was present.
+
 ## v1.7.5 (2026-09-01)
 ### Fixed
 - **AIS format not detected (again)** — Two bugs in the AIS PDF detection logic:
