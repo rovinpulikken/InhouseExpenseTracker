@@ -466,10 +466,16 @@ def parse_capital_gains(uploaded_file, file_type_hint: str = "auto") -> Dict[str
         if fname.endswith(".json"):
             file_type_hint = "ais"
         elif fname.endswith(".pdf"):
-            sample = _extract_pdf_text(raw_bytes, max_pages=1).lower()
+            # Read first 2 pages for detection (ICICI consolidated PDFs have header on page 2)
+            sample = _extract_pdf_text(raw_bytes, max_pages=2).lower()
             if "zerodha" in sample or "kite" in sample:
                 file_type_hint = "zerodha"
-            elif "icici direct" in sample or "icici securities" in sample:
+            elif any(k in sample for k in (
+                "icici direct", "icici securities", "icicidirect",
+                "capital gain report", "profit & loss report",
+                "profit and loss report", "p&l report",
+                "equity capital gain", "scrip wise", "scrip-wise",
+            )):
                 file_type_hint = "icici"
             elif "cams" in sample or "kfintech" in sample or "consolidated account statement" in sample:
                 file_type_hint = "cams"
@@ -521,21 +527,168 @@ def _parse_zerodha_pdf(raw_bytes: bytes, r: Dict[str, Any]) -> Dict[str, Any]:
 
 
 def _parse_icici_pdf(raw_bytes: bytes, r: Dict[str, Any]) -> Dict[str, Any]:
+    """
+    Multi-strategy parser for ICICI Direct PDFs:
+      Strategy 1 — Section-header scan (consolidated P&L / Capital Gains report)
+      Strategy 2 — Summary table scan (scrip-wise / trade-wise summary page)
+      Strategy 3 — Row-level accumulation (scan every line for STCG/LTCG amounts)
+      Strategy 4 — Generic LTCG/STCG keyword scan (last resort)
+    Applies strategies in order; stops as soon as at least one value is populated.
+    """
     r["source"] = "ICICI Direct"
     text = _extract_pdf_text(raw_bytes)
     if not text:
         r["parse_errors"].append("Could not extract text from ICICI Direct PDF.")
         return r
 
+    # ── Normalise text: collapse multiple spaces/newlines for easier matching ──
+    flat = re.sub(r"[\r\n]+", "\n", text)
+    flat_s = re.sub(r" {2,}", " ", flat)   # single-space version
+
+    def _try_amount(s: str) -> float:
+        """Parse a ₹ amount string; return 0 on failure."""
+        s = s.replace(",", "").replace("₹", "").replace("Rs", "").strip()
+        try:
+            return float(s)
+        except ValueError:
+            return 0.0
+
+    def _first_number_after(pattern: str, text_block: str, flags=re.IGNORECASE | re.DOTALL) -> float:
+        """Return the first currency-looking number after a regex match."""
+        m = re.search(pattern, text_block, flags)
+        if not m:
+            return 0.0
+        tail = text_block[m.end():m.end() + 200]
+        nm = re.search(r"([\d,]+\.\d{2})", tail)
+        return _try_amount(nm.group(1)) if nm else 0.0
+
+    populated = lambda: any(r[k] for k in (
+        "equity_stcg", "equity_ltcg", "equity_mf_stcg", "equity_mf_ltcg",
+        "debt_mf_stcg", "debt_mf_ltcg",
+    ))
+
+    # ─────────────────────────────────────────────────────────────────────────
+    # Strategy 1 — Section-header scan
+    # ICICI consolidated reports have section headers like:
+    #   "Short Term Capital Gain" / "Long Term Capital Gain"
+    # followed by a summary line with the net gain amount.
+    # ─────────────────────────────────────────────────────────────────────────
+    _S1_PATTERNS = [
+        # Equity STCG section
+        (r"short[\s\-]?term\s+capital\s+gain[^\n]*equity", "equity_stcg"),
+        (r"equity[^\n]*short[\s\-]?term\s+capital\s+gain",  "equity_stcg"),
+        (r"stcg[^\n]*equity",                                 "equity_stcg"),
+        (r"equity[^\n]*stcg",                                 "equity_stcg"),
+        # Equity LTCG section
+        (r"long[\s\-]?term\s+capital\s+gain[^\n]*equity",   "equity_ltcg"),
+        (r"equity[^\n]*long[\s\-]?term\s+capital\s+gain",   "equity_ltcg"),
+        (r"ltcg[^\n]*equity",                                 "equity_ltcg"),
+        (r"equity[^\n]*ltcg",                                 "equity_ltcg"),
+        # MF STCG
+        (r"short[\s\-]?term[^\n]*mutual\s*fund",             "equity_mf_stcg"),
+        (r"mutual\s*fund[^\n]*stcg",                          "equity_mf_stcg"),
+        (r"stcg[^\n]*mutual\s*fund",                          "equity_mf_stcg"),
+        # MF LTCG
+        (r"long[\s\-]?term[^\n]*mutual\s*fund",              "equity_mf_ltcg"),
+        (r"mutual\s*fund[^\n]*ltcg",                          "equity_mf_ltcg"),
+        (r"ltcg[^\n]*mutual\s*fund",                          "equity_mf_ltcg"),
+        # Debt MF
+        (r"debt[^\n]*stcg",                                   "debt_mf_stcg"),
+        (r"stcg[^\n]*debt",                                   "debt_mf_stcg"),
+        (r"debt[^\n]*ltcg",                                   "debt_mf_ltcg"),
+        (r"ltcg[^\n]*debt",                                   "debt_mf_ltcg"),
+    ]
+    for pat, key in _S1_PATTERNS:
+        v = _first_number_after(pat, flat_s)
+        if v > 0 and r[key] == 0.0:
+            r[key] = v
+
+    if populated():
+        return _sum_totals(r)
+
+    # ─────────────────────────────────────────────────────────────────────────
+    # Strategy 2 — Summary table scan
+    # ICICI consolidated PDFs include a summary table:
+    #   "Net Short Term Gain / (Loss)   12,345.67"
+    #   "Net Long Term Gain / (Loss)    56,789.01"
+    # Also handles:
+    #   "Total Short Term"  /  "Total Long Term"
+    #   "Net Gain (Short Term)"  /  "Net Gain (Long Term)"
+    # ─────────────────────────────────────────────────────────────────────────
+    _S2_PATTERNS = [
+        (r"net\s+short[\s\-]?term\s+(?:gain|capital)[^\n]*",  "equity_stcg"),
+        (r"total\s+short[\s\-]?term\s+(?:gain|capital)[^\n]*", "equity_stcg"),
+        (r"net\s+gain\s*\(\s*short[^)]*\)",                    "equity_stcg"),
+        (r"short\s+term\s+(?:net\s+)?(?:gain|profit)[^\n]*",   "equity_stcg"),
+        (r"net\s+long[\s\-]?term\s+(?:gain|capital)[^\n]*",   "equity_ltcg"),
+        (r"total\s+long[\s\-]?term\s+(?:gain|capital)[^\n]*",  "equity_ltcg"),
+        (r"net\s+gain\s*\(\s*long[^)]*\)",                     "equity_ltcg"),
+        (r"long\s+term\s+(?:net\s+)?(?:gain|profit)[^\n]*",    "equity_ltcg"),
+    ]
+    for pat, key in _S2_PATTERNS:
+        v = _first_number_after(pat, flat_s)
+        if v > 0 and r[key] == 0.0:
+            r[key] = v
+
+    if populated():
+        return _sum_totals(r)
+
+    # ─────────────────────────────────────────────────────────────────────────
+    # Strategy 3 — Row-level accumulation
+    # Scan every line; if a line contains a holding-period marker and a number,
+    # accumulate into the appropriate bucket.  Works for scrip-wise statements
+    # where each row is one scrip with a "Short" or "Long" label.
+    # ─────────────────────────────────────────────────────────────────────────
+    _NUM_RE = re.compile(r"([\-]?[\d,]+\.\d{2})")
+    for line in flat.splitlines():
+        ll = line.lower()
+        # Skip header lines
+        if any(h in ll for h in ("purchase", "sale", "quantity", "date", "scrip", "description", "symbol")):
+            continue
+        nums = _NUM_RE.findall(line)
+        if not nums:
+            continue
+        # Last numeric on the line is usually the gain/loss
+        val = _try_amount(nums[-1])
+        if val == 0.0:
+            continue
+        is_mf   = any(k in ll for k in ("mutual fund", "mf", "nav", "folio"))
+        is_debt  = any(k in ll for k in ("debt", "bond", "gilt", "liquid", "overnight"))
+        is_stcg  = any(k in ll for k in ("short", "stcg", "111a"))
+        is_ltcg  = any(k in ll for k in ("long", "ltcg", "112a"))
+        if is_stcg and not is_ltcg:
+            bucket = "debt_mf_stcg" if is_debt else ("equity_mf_stcg" if is_mf else "equity_stcg")
+            r[bucket] = round(r[bucket] + val, 2)
+        elif is_ltcg and not is_stcg:
+            bucket = "debt_mf_ltcg" if is_debt else ("equity_mf_ltcg" if is_mf else "equity_ltcg")
+            r[bucket] = round(r[bucket] + val, 2)
+
+    if populated():
+        return _sum_totals(r)
+
+    # ─────────────────────────────────────────────────────────────────────────
+    # Strategy 4 — Generic LTCG/STCG keyword scan (last resort)
+    # ─────────────────────────────────────────────────────────────────────────
     for pat, key in [
-        (r"stcg.*?total.*?([\d,]+\.?\d*)", "equity_stcg"),
-        (r"ltcg.*?total.*?([\d,]+\.?\d*)", "equity_ltcg"),
-        (r"mutual\s*fund.*?stcg.*?([\d,]+\.?\d*)", "equity_mf_stcg"),
-        (r"mutual\s*fund.*?ltcg.*?([\d,]+\.?\d*)", "equity_mf_ltcg"),
+        (r"(?:net\s+)?(?:total\s+)?stcg[^\n]{0,60}([\d,]+\.\d{2})",  "equity_stcg"),
+        (r"(?:net\s+)?(?:total\s+)?ltcg[^\n]{0,60}([\d,]+\.\d{2})",  "equity_ltcg"),
+        (r"short[\s\-]?term[^\n]{0,80}([\d,]+\.\d{2})",               "equity_stcg"),
+        (r"long[\s\-]?term[^\n]{0,80}([\d,]+\.\d{2})",                "equity_ltcg"),
     ]:
-        m = re.search(pat, text, re.IGNORECASE | re.DOTALL)
+        if r[key.replace("equity_", "") if False else key] != 0.0:  # don't overwrite
+            continue
+        m = re.search(pat, flat, re.IGNORECASE)
         if m:
-            r[key] = max(0.0, _parse_amount(m.group(1)))
+            v = _try_amount(m.group(1))
+            if v > 0:
+                r[key] = v
+
+    if not populated():
+        r["parse_errors"].append(
+            "ICICI Direct PDF parsed but no STCG/LTCG figures found. "
+            "Please verify the PDF is a Capital Gains / P&L statement, "
+            "or enter figures manually below."
+        )
     return _sum_totals(r)
 
 

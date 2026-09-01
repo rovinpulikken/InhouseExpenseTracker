@@ -1,5 +1,16 @@
 # Release Notes
 
+## v1.7.3 (2026-09-01)
+### Fixed
+- **ICICI Direct consolidated PDF: "Unrecognised format" error** — Completely rewrote `_parse_icici_pdf()` in `tax_engine.py` with 4 progressive extraction strategies:
+  1. **Section-header scan** — matches `Short Term Capital Gain / equity`, `LTCG / Mutual Fund`, etc. (handles consolidated P&L reports)
+  2. **Summary table scan** — matches `Net Short Term Gain / (Loss)`, `Total Long Term Gain`, `Net Gain (Short Term)` style summary rows
+  3. **Row-level accumulation** — scans every line for holding-period markers (`Short`, `Long`, `STCG`, `LTCG`) + amounts; accumulates into correct bucket (equity, MF, debt)
+  4. **Generic keyword scan** — last-resort fallback for any remaining STCG/LTCG references
+  Each strategy is tried in order; stops as soon as at least one value is populated.
+- **ICICI PDF auto-detection expanded** — Detection now reads **2 pages** (ICICI consolidated PDFs sometimes have their header on page 2), and recognises additional keywords: `icicidirect`, `capital gain report`, `profit & loss report`, `p&l report`, `equity capital gain`, `scrip wise`, `scrip-wise`.
+- **Improved error message** — When ICICI PDF is detected but figures still aren't found, the error message now says "ICICI Direct PDF parsed but no STCG/LTCG figures found. Please verify the PDF is a Capital Gains / P&L statement, or enter figures manually below." — instead of the generic "Unrecognised format" message.
+
 ## v1.7.2 (2026-08-31)
 ### Added
 - **Section E — Portfolio Rebalancing for Tax Efficiency** (Tax Planner tab):
