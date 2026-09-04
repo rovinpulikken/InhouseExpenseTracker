@@ -5,6 +5,7 @@
 - **AIS PDF parsing failure and syntax error** — Fixed a severe syntax corruption in `tax_engine.py` where `_parse_ais_json` and `_parse_ais_pdf` blocks were mangled together, causing the engine to fail.
 - **AIS PDF missing capital gains** — Fixed a bug in `_parse_ais_pdf` where an early return statement prevented the engine from executing the fallback/legacy pattern matches (`_AIS_PDF_PATTERNS`), which caused it to incorrectly report that capital gains figures could not be found for certain PDF formats even when the data was present.
 - **AIS PDF robust value extraction** — Enhanced the number extraction logic (`_first_amt`) and regex patterns in `_parse_ais_pdf` to be extremely resilient to tabular spacing and line breaks introduced by PDF parsers. It now skips small 'Count' values and correctly zeroes in on the actual transaction amount, even if the label and value are widely separated or broken across lines.
+- **AIS PDF diagnostic mode** — When the AIS PDF parser still cannot find capital gains data, the UI now shows a **"Debug: Raw PDF text extracted"** expander that reveals exactly what text was extracted from the PDF. This makes it trivial to diagnose the exact textual format and fix the regex patterns.
 
 ## v1.7.5 (2026-09-01)
 ### Fixed

@@ -1102,6 +1102,10 @@ def _parse_ais_pdf(raw_bytes: bytes, r: Dict[str, Any]) -> Dict[str, Any]:
             "For capital gains, use: Zerodha Console P&L PDF, ICICI Capital Gains PDF, "
             "or CAMS Consolidated Account Statement PDF."
         )
+        # ── Diagnostic: expose the raw extracted text so the UI can show it ──
+        # This helps identify what the PDF text actually looks like so regexes
+        # can be tuned to match it.
+        r["debug_text"] = text[:4000]   # first 4000 chars is enough to diagnose
     return _sum_totals(r)
 
 

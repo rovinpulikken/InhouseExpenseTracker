@@ -3660,6 +3660,14 @@ To use it:
                                 if _parsed_cg.get("parse_errors"):
                                     for _pe in _parsed_cg["parse_errors"]:
                                         st.warning(f"⚠️ {_pe}")
+                                if _parsed_cg.get("debug_text"):
+                                    with st.expander("🔍 Debug: Raw PDF text extracted (share this to help fix parsing)", expanded=True):
+                                        st.caption(
+                                            "The parser could not recognise the capital gains section in this PDF. "
+                                            "The raw text below is what was actually extracted — share it so the "
+                                            "correct regex patterns can be added."
+                                        )
+                                        st.code(_parsed_cg["debug_text"], language="text")
                                 st.markdown(f"**Parsed Capital Gains — {_cg_file.name}:**")
                                 _cg_display = pd.DataFrame([
                                     {"Category": "Equity LTCG", "Amount (₹)": format_inr(_parsed_cg["equity_ltcg"]), "Tax Rate": "12.5% (above ₹1.25L)"},
