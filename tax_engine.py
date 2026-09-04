@@ -509,6 +509,11 @@ def parse_capital_gains(uploaded_file, file_type_hint: str = "auto") -> Dict[str
             elif "cams" in sample or "kfintech" in sample or "consolidated account statement" in sample:
                 file_type_hint = "cams"
 
+            elif any(k in sample for k in (
+                "anandrathi", "anand rathi", "client report - rovin"
+            )):
+                file_type_hint = "anand_rathi"
+
             else:
                 file_type_hint = "generic_pdf"
         else:
@@ -522,6 +527,7 @@ def parse_capital_gains(uploaded_file, file_type_hint: str = "auto") -> Dict[str
         "zerodha":     _parse_zerodha_pdf,
         "icici":       _parse_icici_pdf,
         "cams":        _parse_cams_pdf,
+        "anand_rathi": _parse_anand_rathi_pdf,
         "generic_pdf": _parse_generic_pdf,
     }
     parser = parsers.get(file_type_hint, _parse_generic_pdf)
@@ -742,6 +748,57 @@ def _parse_cams_pdf(raw_bytes: bytes, r: Dict[str, Any]) -> Dict[str, Any]:
         m = re.search(pat, text, re.IGNORECASE | re.DOTALL)
         if m:
             r[key] = max(0.0, _parse_amount(m.group(1)))
+    return _sum_totals(r)
+
+
+def _parse_anand_rathi_pdf(raw_bytes: bytes, r: Dict[str, Any]) -> Dict[str, Any]:
+    r["source"] = "Anand Rathi Wealth PDF"
+    text = _extract_pdf_text(raw_bytes)
+    if not text:
+        r["parse_errors"].append("Could not extract text from Anand Rathi PDF.")
+        return r
+
+    found_any = False
+
+    def parse_val(v):
+        v = v.replace("(", "-").replace(")", "")
+        if not v or v.strip() == "-": return 0.0
+        try:
+            return float(v.replace(",", ""))
+        except ValueError:
+            return 0.0
+
+    for line in text.splitlines():
+        ll = line.strip()
+        if ll.startswith("Equity Mutual Fund"):
+            parts = ll.split()
+            if len(parts) >= 2:
+                r["equity_mf_ltcg"] += parse_val(parts[-2])
+                r["equity_mf_stcg"] += parse_val(parts[-1])
+                found_any = True
+        elif ll.startswith("Non-PP Structured Products"):
+            parts = ll.split()
+            if len(parts) >= 2:
+                r["other_ltcg"] += parse_val(parts[-2])
+                r["other_stcg"] += parse_val(parts[-1])
+                found_any = True
+        elif ll.startswith("Listed Equity"):
+            parts = ll.split()
+            if len(parts) >= 2:
+                r["equity_ltcg"] += parse_val(parts[-2])
+                r["equity_stcg"] += parse_val(parts[-1])
+                found_any = True
+        elif ll.startswith("Debt Mutual Fund"):
+            parts = ll.split()
+            if len(parts) >= 2:
+                r["debt_mf_ltcg"] += parse_val(parts[-2])
+                r["debt_mf_stcg"] += parse_val(parts[-1])
+                found_any = True
+
+    if not found_any:
+        r["parse_errors"].append("Anand Rathi format detected but no summary lines (e.g. 'Equity Mutual Fund') were found. Try entering manually.")
+        r["debug_text"] = text[:4000]
+
     return _sum_totals(r)
 
 

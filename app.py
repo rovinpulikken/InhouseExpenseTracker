@@ -3630,6 +3630,7 @@ To use it:
                                     "ICICI Direct PDF",
                                     "Zerodha PDF",
                                     "CAMS / KFintech PDF",
+                                    "Anand Rathi PDF",
                                 ],
                                 index=0,
                                 key="cg_fmt_override",
@@ -3643,6 +3644,7 @@ To use it:
                                 "ICICI Direct PDF":               "icici",
                                 "Zerodha PDF":                    "zerodha",
                                 "CAMS / KFintech PDF":            "cams",
+                                "Anand Rathi PDF":                "anand_rathi",
                             }
                             _cg_file = st.file_uploader(
                                 "Upload capital gains document",
