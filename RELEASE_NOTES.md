@@ -6,6 +6,7 @@
 - **AIS PDF missing capital gains** — Fixed a bug in `_parse_ais_pdf` where an early return statement prevented the engine from executing the fallback/legacy pattern matches (`_AIS_PDF_PATTERNS`), which caused it to incorrectly report that capital gains figures could not be found for certain PDF formats even when the data was present.
 - **AIS PDF robust value extraction** — Enhanced the number extraction logic (`_first_amt`) and regex patterns in `_parse_ais_pdf` to be extremely resilient to tabular spacing and line breaks introduced by PDF parsers. It now skips small 'Count' values and correctly zeroes in on the actual transaction amount, even if the label and value are widely separated or broken across lines.
 - **AIS PDF diagnostic mode** — When the AIS PDF parser still cannot find capital gains data, the UI now shows a **"Debug: Raw PDF text extracted"** expander that reveals exactly what text was extracted from the PDF. This makes it trivial to diagnose the exact textual format and fix the regex patterns.
+- **`NameError: _parse_ais_zip`** — The `_parse_ais_zip` function was referenced in the parser dispatcher but never defined, causing a crash for all capital gains uploads. Added the full implementation: tries to open the ZIP, attempts to read an unencrypted JSON/PDF inside it, and if encrypted, returns a step-by-step decryption guide (PAN + DOB password).
 
 ## v1.7.5 (2026-09-01)
 ### Fixed

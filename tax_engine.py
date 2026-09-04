@@ -914,6 +914,55 @@ def _parse_ais_json(raw_bytes: bytes, r: Dict[str, Any]) -> Dict[str, Any]:
         pass # Not implemented fully in this snippet, add if needed.
     return _sum_totals(r)
 
+
+def _parse_ais_zip(raw_bytes: bytes, r: Dict[str, Any]) -> Dict[str, Any]:
+    """
+    Handle encrypted AIS ZIP files downloaded from the IT portal.
+
+    These ZIPs are password-protected (password = PAN in UPPERCASE + DOB in DDMMYYYY).
+    We cannot decrypt them directly here, so we return a clear guide to the user.
+    """
+    import zipfile, io
+    r["source"] = "AIS ZIP (Encrypted)"
+    try:
+        zf = zipfile.ZipFile(io.BytesIO(raw_bytes))
+        names = zf.namelist()
+    except zipfile.BadZipFile:
+        r["parse_errors"].append(
+            "This file is not a valid ZIP archive. "
+            "If you downloaded an AIS ZIP from the IT portal, ensure the file was not corrupted."
+        )
+        return _sum_totals(r)
+
+    json_files = [n for n in names if n.lower().endswith(".json")]
+    pdf_files  = [n for n in names if n.lower().endswith(".pdf")]
+
+    # Try to read an unencrypted file first
+    for fname in json_files + pdf_files:
+        try:
+            data = zf.read(fname)
+            if fname.lower().endswith(".json"):
+                return _parse_ais_json(data, r)
+            else:
+                return _parse_ais_pdf(data, r)
+        except RuntimeError:
+            # Encrypted — fall through to guide
+            break
+
+    # If we reach here the ZIP is encrypted
+    r["parse_errors"].append(
+        "🔒 This AIS ZIP is password-protected (encrypted).\n\n"
+        "To decrypt it:\n"
+        "  1. Open the AIS Offline Utility (download from incometax.gov.in → AIS/TIS → Offline Utility).\n"
+        "  2. Import this ZIP file into the utility.\n"
+        "  3. Enter your password: PAN (UPPERCASE) + Date of Birth (DDMMYYYY).\n"
+        "     Example: ABCDE1234F + 15 Jan 1990 → ABCDE1234F15011990\n"
+        "  4. Export the decrypted AIS as JSON, then re-upload the JSON here.\n\n"
+        "Alternatively, log in to incometax.gov.in → AIS → Download → PDF (no password needed for PDF)."
+    )
+    return _sum_totals(r)
+
+
 def _parse_ais_pdf(raw_bytes: bytes, r: Dict[str, Any]) -> Dict[str, Any]:
     """
     Parse AIS PDF downloaded from the Income Tax portal.
