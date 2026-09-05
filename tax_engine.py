@@ -1113,6 +1113,19 @@ def _parse_ais_json(raw_bytes: bytes, r: Dict[str, Any], ais_pan: str = None, ai
     capital_gains = data.get("capitalGains") or []
     for item in capital_gains:
         pass # Not implemented fully in this snippet, add if needed.
+        
+    if not found_any:
+        # Debugging aid to help users understand why their AIS/TIS was empty
+        cat_names = []
+        if isinstance(data.get("partBDetails"), list):
+            cat_names = [str(c.get("category", c.get("name", ""))) for c in data.get("partBDetails", [])]
+        
+        r["parse_errors"].append(
+            f"The JSON was read successfully, but no known income streams (Salary, Capital Gains, Interest, Dividends, Rent) were found. "
+            f"\n\nDebug Info: JSON root keys: {list(data.keys())}. " + (f"Categories found: {cat_names}" if cat_names else "") +
+            "\nIf this is a TIS (Taxpayer Information Summary) file, please upload the AIS (Annual Information Statement) file instead."
+        )
+
     return _sum_totals(r)
 
 
