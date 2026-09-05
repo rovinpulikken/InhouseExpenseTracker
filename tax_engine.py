@@ -399,6 +399,7 @@ def _empty_cg() -> Dict[str, Any]:
         "debt_mf_ltcg": 0.0, "debt_mf_stcg": 0.0,
         "property_ltcg": 0.0, "property_stcg": 0.0,
         "other_ltcg": 0.0, "other_stcg": 0.0,
+        "interest_fd": 0.0, "interest_bonds": 0.0,
         "source": "manual", "raw_rows": [],
         "parse_errors": [],
         "total_ltcg": 0.0, "total_stcg": 0.0,
@@ -604,11 +605,54 @@ def _parse_icici_pdf(raw_bytes: bytes, r: Dict[str, Any]) -> Dict[str, Any]:
 
     populated = lambda: any(r[k] for k in (
         "equity_stcg", "equity_ltcg", "equity_mf_stcg", "equity_mf_ltcg",
-        "debt_mf_stcg", "debt_mf_ltcg",
+        "debt_mf_stcg", "debt_mf_ltcg", "other_ltcg", "other_stcg"
     ))
 
     # ─────────────────────────────────────────────────────────────────────────
-    # Strategy 1 — Section-header scan
+    # Strategy 1 — "Summary of Income and Tax Statements" table scan
+    # ICICI new consolidated reports have a direct summary table
+    # ─────────────────────────────────────────────────────────────────────────
+    lines = flat.splitlines()
+    current_section = None
+    for line in lines:
+        ll = line.strip()
+        if ll.startswith("Long Term Capital Gain"):
+            current_section = "LTCG"
+            continue
+        elif ll.startswith("Short Term Capital Gain"):
+            current_section = "STCG"
+            continue
+        elif ll == "Interest" or ll.startswith("Product Type"):
+            current_section = "INTEREST"
+            continue
+        elif ll.startswith("Total Business Income") or ll.startswith("Speculation Income") or ll.startswith("Summary of Income"):
+            current_section = None
+            continue
+            
+        if current_section in ("LTCG", "STCG"):
+            parts = ll.split()
+            if len(parts) >= 2 and parts[-1].replace(".","").replace(",","").replace("(","").replace(")","").isdigit():
+                val = _try_amount(parts[-1])
+                if ll.startswith("Equity STT") or ll.startswith("Mutual Fund Equity"):
+                    if current_section == "LTCG": r["equity_ltcg"] += val
+                    else: r["equity_stcg"] += val
+                elif ll.startswith("Bonds") or ll.startswith("Mutual Fund Non-Equity"):
+                    if current_section == "LTCG": r["other_ltcg"] += val
+                    else: r["other_stcg"] += val
+        elif current_section == "INTEREST":
+            parts = ll.split()
+            if len(parts) >= 2 and parts[-1].replace(".","").replace(",","").replace("(","").replace(")","").isdigit():
+                val = _try_amount(parts[-1])
+                if ll.startswith("FIXED DEPOSITS"):
+                    r["interest_fd"] += val
+                elif ll.startswith("CORPORATE BONDS"):
+                    r["interest_bonds"] += val
+
+    if populated():
+        return _sum_totals(r)
+
+    # ─────────────────────────────────────────────────────────────────────────
+    # Strategy 2 — Section-header scan
     # ICICI consolidated reports have section headers like:
     #   "Short Term Capital Gain" / "Long Term Capital Gain"
     # followed by a summary line with the net gain amount.

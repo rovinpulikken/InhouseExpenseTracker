@@ -3670,6 +3670,12 @@ To use it:
                                             "correct regex patterns can be added."
                                         )
                                         st.code(_parsed_cg["debug_text"], language="text")
+
+                                _int_fd = _parsed_cg.get("interest_fd", 0)
+                                _int_bonds = _parsed_cg.get("interest_bonds", 0)
+                                if _int_fd > 0 or _int_bonds > 0:
+                                    st.info(f"**Detected Interest Income:** The parser extracted ₹{_int_fd + _int_bonds:,.2f} in interest from your broker statement. Please ensure you manually enter this in the **Deductions & Passive Income** section, as it is not automatically saved here to prevent duplicates with your AIS data.")
+
                                 st.markdown(f"**Parsed Capital Gains — {_cg_file.name}:** (Edit figures below if categorization is wrong)")
                                 _cg_display = pd.DataFrame([
                                     {"Category": "Equity LTCG", "Amount (₹)": float(_parsed_cg["equity_ltcg"]), "Tax Rate": "12.5% (above ₹1.25L)", "Key": "equity_ltcg"},
