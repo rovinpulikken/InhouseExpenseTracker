@@ -3673,8 +3673,43 @@ To use it:
 
                                 _int_fd = _parsed_cg.get("interest_fd", 0)
                                 _int_bonds = _parsed_cg.get("interest_bonds", 0)
-                                if _int_fd > 0 or _int_bonds > 0:
+                                if (_int_fd > 0 or _int_bonds > 0) and _src != "IT Dept AIS":
                                     st.info(f"**Detected Interest Income:** The parser extracted ₹{_int_fd + _int_bonds:,.2f} in interest from your broker statement. Please ensure you manually enter this in the **Deductions & Passive Income** section, as it is not automatically saved here to prevent duplicates with your AIS data.")
+                                
+                                _ais_salary = _parsed_cg.get("salary", 0)
+                                _ais_dividend = _parsed_cg.get("dividend", 0)
+                                _ais_int_sb = _parsed_cg.get("interest_sb", 0)
+                                _ais_int_fd = _parsed_cg.get("interest_fd", 0)
+                                _ais_rent = _parsed_cg.get("rent", 0)
+                                
+                                if _src == "IT Dept AIS":
+                                    if any(v > 0 for v in [_ais_salary, _ais_dividend, _ais_int_sb, _ais_int_fd, _ais_rent]):
+                                        st.markdown("### 📥 AIS Extracted Passive & Salary Income")
+                                        st.info("The AIS contains other income streams. Review the figures below and click **Accept & Auto-fill** to apply them to your profile.")
+                                        _ais_df = pd.DataFrame([
+                                            {"Income Type": "Salary", "Amount (₹)": float(_ais_salary), "Key": "salary_income"},
+                                            {"Income Type": "Dividend", "Amount (₹)": float(_ais_dividend), "Key": "dividend_income"},
+                                            {"Income Type": "Savings Interest", "Amount (₹)": float(_ais_int_sb), "Key": "interest_income"},
+                                            {"Income Type": "Deposit Interest", "Amount (₹)": float(_ais_int_fd), "Key": "fd_interest"},
+                                            {"Income Type": "Rental Income", "Amount (₹)": float(_ais_rent), "Key": "rental_income"},
+                                        ])
+                                        _edited_ais_df = st.data_editor(
+                                            _ais_df,
+                                            use_container_width=True,
+                                            hide_index=True,
+                                            column_config={
+                                                "Income Type": st.column_config.TextColumn("Income Type", disabled=True),
+                                                "Amount (₹)": st.column_config.NumberColumn("Amount (₹)", min_value=0.0, step=1000.0, format="₹%d"),
+                                                "Key": None
+                                            },
+                                            key="ais_income_editor"
+                                        )
+                                        if st.button("✅ Accept & Auto-fill", type="primary", key="accept_ais_income"):
+                                            for _, row in _edited_ais_df.iterrows():
+                                                st.session_state[row["Key"]] = float(row["Amount (₹)"])
+                                            save_inputs(_user_key, _fam_id, _fy)
+                                            st.success("✅ Income fields updated successfully!")
+                                            st.rerun()
 
                                 st.markdown(f"**Parsed Capital Gains — {_cg_file.name}:** (Edit figures below if categorization is wrong)")
                                 _cg_display = pd.DataFrame([

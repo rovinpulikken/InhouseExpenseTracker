@@ -400,6 +400,7 @@ def _empty_cg() -> Dict[str, Any]:
         "property_ltcg": 0.0, "property_stcg": 0.0,
         "other_ltcg": 0.0, "other_stcg": 0.0,
         "interest_fd": 0.0, "interest_bonds": 0.0,
+        "salary": 0.0, "dividend": 0.0, "interest_sb": 0.0, "rent": 0.0,
         "source": "manual", "raw_rows": [],
         "parse_errors": [],
         "total_ltcg": 0.0, "total_stcg": 0.0,
@@ -917,8 +918,8 @@ def _parse_ais_json(raw_bytes: bytes, r: Dict[str, Any]) -> Dict[str, Any]:
         part_b = [part_b]
     for category in part_b:
         cat_name = str(category.get("category", category.get("name", ""))).lower()
-        # Only process capital gains / SFT / securities categories
-        if not any(k in cat_name for k in ("capital", "sft", "securit", "mutual fund", "other information")):
+        # Only process capital gains / SFT / securities / income categories
+        if not any(k in cat_name for k in ("capital", "sft", "securit", "mutual fund", "other information", "salary", "dividend", "interest", "rent", "tds", "tcs")):
             # Also check sub-items in case structure is different
             if "data" not in category and "items" not in category:
                 continue
@@ -950,6 +951,32 @@ def _parse_ais_json(raw_bytes: bytes, r: Dict[str, Any]) -> Dict[str, Any]:
                 if use_amt == 0:
                     continue
                 is_gain   = bool(gain_amt)  # True if we have actual gain, False if sale proceeds
+
+                # Check for other income streams
+                c_upper = code_full.upper()
+                d_lower = desc_full.lower()
+                
+                if "192" in c_upper or "salary" in d_lower:
+                    r["salary"] = round(r.get("salary", 0) + use_amt, 2)
+                    found_any = True
+                    continue
+                elif "SFT-014" in c_upper or "SFT014" in c_upper or "dividend" in d_lower:
+                    r["dividend"] = round(r.get("dividend", 0) + use_amt, 2)
+                    found_any = True
+                    continue
+                elif "SFT-016" in c_upper or "SFT016" in c_upper or "savings" in d_lower:
+                    r["interest_sb"] = round(r.get("interest_sb", 0) + use_amt, 2)
+                    found_any = True
+                    continue
+                elif "SFT-015" in c_upper or "SFT015" in c_upper or "194A" in c_upper or ("interest" in d_lower and "deposit" in d_lower):
+                    r["interest_fd"] = round(r.get("interest_fd", 0) + use_amt, 2)
+                    found_any = True
+                    continue
+                elif "194I" in c_upper or "194IB" in c_upper or "194-I" in c_upper or "rent" in d_lower:
+                    r["rent"] = round(r.get("rent", 0) + use_amt, 2)
+                    found_any = True
+                    continue
+
                 bucket, is_ltcg = _ais_classify(desc_full, code_full)
 
                 # Refine is_ltcg from explicit fields
@@ -990,6 +1017,32 @@ def _parse_ais_json(raw_bytes: bytes, r: Dict[str, Any]) -> Dict[str, Any]:
         use_amt = float(item.get("gainAmount") or item.get("amount") or item.get("txnAmt") or 0)
         if use_amt == 0:
             continue
+            
+        # Check for other income streams
+        c_upper = info_code.upper()
+        d_lower = description.lower()
+        
+        if "192" in c_upper or "salary" in d_lower:
+            r["salary"] = round(r.get("salary", 0) + use_amt, 2)
+            found_any = True
+            continue
+        elif "SFT-014" in c_upper or "SFT014" in c_upper or "dividend" in d_lower:
+            r["dividend"] = round(r.get("dividend", 0) + use_amt, 2)
+            found_any = True
+            continue
+        elif "SFT-016" in c_upper or "SFT016" in c_upper or "savings" in d_lower:
+            r["interest_sb"] = round(r.get("interest_sb", 0) + use_amt, 2)
+            found_any = True
+            continue
+        elif "SFT-015" in c_upper or "SFT015" in c_upper or "194A" in c_upper or ("interest" in d_lower and "deposit" in d_lower):
+            r["interest_fd"] = round(r.get("interest_fd", 0) + use_amt, 2)
+            found_any = True
+            continue
+        elif "194I" in c_upper or "194IB" in c_upper or "194-I" in c_upper or "rent" in d_lower:
+            r["rent"] = round(r.get("rent", 0) + use_amt, 2)
+            found_any = True
+            continue
+            
         bucket, is_ltcg = _ais_classify(description, info_code)
         if is_ltcg is None:
             is_ltcg = True
