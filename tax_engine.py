@@ -510,7 +510,7 @@ def parse_capital_gains(uploaded_file, file_type_hint: str = "auto") -> Dict[str
                 file_type_hint = "cams"
 
             elif any(k in sample for k in (
-                "anandrathi", "anand rathi", "client report - rovin"
+                "anandrathi", "anand rathi", "rathi.com", "@rathi.com"
             )):
                 file_type_hint = "anand_rathi"
 
