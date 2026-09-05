@@ -445,7 +445,7 @@ def _parse_amount(s: str) -> float:
         return 0.0
 
 
-def parse_capital_gains(uploaded_file, file_type_hint: str = "auto") -> Dict[str, Any]:
+def parse_capital_gains(uploaded_file, file_type_hint: str = "auto", ais_pan: str = None, ais_dob: str = None) -> Dict[str, Any]:
     """
     Parse a capital gains document (Zerodha/ICICI/CAMS/AIS/generic PDF) and return
     structured CG breakdown.
@@ -534,6 +534,8 @@ def parse_capital_gains(uploaded_file, file_type_hint: str = "auto") -> Dict[str
     }
     parser = parsers.get(file_type_hint, _parse_generic_pdf)
     result["detected_format"] = file_type_hint   # expose for UI diagnostics
+    if file_type_hint in ("ais", "ais_zip"):
+        return parser(raw_bytes, result, ais_pan=ais_pan, ais_dob=ais_dob)
     return parser(raw_bytes, result)
 
 
@@ -1069,12 +1071,12 @@ def _parse_ais_json(raw_bytes: bytes, r: Dict[str, Any]) -> Dict[str, Any]:
     return _sum_totals(r)
 
 
-def _parse_ais_zip(raw_bytes: bytes, r: Dict[str, Any]) -> Dict[str, Any]:
+def _parse_ais_zip(raw_bytes: bytes, r: Dict[str, Any], ais_pan: str = None, ais_dob: str = None) -> Dict[str, Any]:
     """
     Handle encrypted AIS ZIP files downloaded from the IT portal.
 
     These ZIPs are password-protected (password = PAN in UPPERCASE + DOB in DDMMYYYY).
-    We cannot decrypt them directly here, so we return a clear guide to the user.
+    We can decrypt them if ais_pan and ais_dob are provided.
     """
     import zipfile, io
     r["source"] = "AIS ZIP (Encrypted)"
@@ -1087,6 +1089,11 @@ def _parse_ais_zip(raw_bytes: bytes, r: Dict[str, Any]) -> Dict[str, Any]:
             "If you downloaded an AIS ZIP from the IT portal, ensure the file was not corrupted."
         )
         return _sum_totals(r)
+        
+    if ais_pan and ais_dob:
+        # ZIP password is PAN (uppercase) + DOB
+        pwd = (ais_pan.upper() + ais_dob).encode('utf-8')
+        zf.setpassword(pwd)
 
     json_files = [n for n in names if n.lower().endswith(".json")]
     pdf_files  = [n for n in names if n.lower().endswith(".pdf")]
@@ -1096,7 +1103,7 @@ def _parse_ais_zip(raw_bytes: bytes, r: Dict[str, Any]) -> Dict[str, Any]:
         try:
             data = zf.read(fname)
             if fname.lower().endswith(".json"):
-                return _parse_ais_json(data, r)
+                return _parse_ais_json(data, r, ais_pan=ais_pan, ais_dob=ais_dob)
             else:
                 return _parse_ais_pdf(data, r)
         except RuntimeError:

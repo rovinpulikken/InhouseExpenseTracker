@@ -3652,10 +3652,19 @@ To use it:
                                 key="cg_upload_file",
                                 help="Auto-detects: Zerodha PDF, ICICI PDF, CAMS PDF, AIS PDF, AIS JSON (decrypted), AIS ZIP"
                             )
+                            ais_pan = None
+                            ais_dob = None
+                            if _cg_file is not None and _cg_file.name.lower().endswith(('.zip', '.json')):
+                                with st.expander("Encrypted AIS JSON/ZIP Options (Optional)", expanded=True):
+                                    st.caption("If you are uploading an encrypted AIS file directly from the Income Tax portal, enter your PAN and DOB to decrypt it automatically.")
+                                    col_pan, col_dob = st.columns(2)
+                                    ais_pan = col_pan.text_input("PAN", key="ais_pan_input", help="Used to decrypt AIS. Not saved anywhere.").strip().upper()
+                                    ais_dob = col_dob.text_input("DOB (DDMMYYYY)", key="ais_dob_input", help="e.g. 01011990").strip()
+                            
                             if _cg_file is not None:
                                 _hint = _fmt_map.get(_fmt_override, "auto")
                                 with st.spinner(f"Parsing {_cg_file.name}..."):
-                                    _parsed_cg = parse_capital_gains(_cg_file, file_type_hint=_hint)
+                                    _parsed_cg = parse_capital_gains(_cg_file, file_type_hint=_hint, ais_pan=ais_pan, ais_dob=ais_dob)
                                 _detected = _parsed_cg.get("detected_format", "unknown")
                                 _src      = _parsed_cg.get("source", "Unknown")
                                 st.success(f"✅ Detected as: **{_detected}** → parsed as **{_src}**")
