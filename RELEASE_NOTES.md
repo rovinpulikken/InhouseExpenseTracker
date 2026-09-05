@@ -8,6 +8,7 @@
 - **AIS PDF diagnostic mode** — When the AIS PDF parser still cannot find capital gains data, the UI now shows a **"Debug: Raw PDF text extracted"** expander that reveals exactly what text was extracted from the PDF. This makes it trivial to diagnose the exact textual format and fix the regex patterns.
 - **`NameError: _parse_ais_zip`** — The `_parse_ais_zip` function was referenced in the parser dispatcher but never defined, causing a crash for all capital gains uploads. Added the full implementation: tries to open the ZIP, attempts to read an unencrypted JSON/PDF inside it, and if encrypted, returns a step-by-step decryption guide (PAN + DOB password).
 ### Added
+- **Editable Capital Gains UI** — The parsed capital gains summary table (shown after uploading an ICICI, Anand Rathi, or Zerodha PDF) is now a fully interactive `st.data_editor` grid. Instead of silently calculating taxes, users can now manually adjust the extracted amounts to fix any categorization issues (e.g., reallocating Structured Products out of the slab rate bucket) before saving the figures.
 - **Anand Rathi Wealth PDF Support** — Added a dedicated parser (`_parse_anand_rathi_pdf`) to handle Anand Rathi Capital Gain and Loss Statement PDFs. It auto-detects the format and successfully extracts summary figures for Equity Mutual Funds, Debt Mutual Funds, Listed Equity, and Non-PP Structured Products (mapped to Other Capital Gains). Users can also manually force this format using the new "Anand Rathi PDF" option in the override dropdown.
 
 ## v1.7.5 (2026-09-01)

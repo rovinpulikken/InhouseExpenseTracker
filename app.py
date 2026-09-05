@@ -2930,7 +2930,7 @@ else:
                 compute_deductions, compute_cg_tax,
                 compute_advance_tax_schedule, compute_full_tax,
                 compute_tax_saving_rebalance,
-                FRSB_RATE, FRSB_RATE_EFFECTIVE,
+                FRSB_RATE, FRSB_RATE_EFFECTIVE, _sum_totals,
             )
 
             st.markdown("### 💡 Smart Investment Advisor & Tax Planner")
@@ -3670,22 +3670,44 @@ To use it:
                                             "correct regex patterns can be added."
                                         )
                                         st.code(_parsed_cg["debug_text"], language="text")
-                                st.markdown(f"**Parsed Capital Gains — {_cg_file.name}:**")
+                                st.markdown(f"**Parsed Capital Gains — {_cg_file.name}:** (Edit figures below if categorization is wrong)")
                                 _cg_display = pd.DataFrame([
-                                    {"Category": "Equity LTCG", "Amount (₹)": format_inr(_parsed_cg["equity_ltcg"]), "Tax Rate": "12.5% (above ₹1.25L)"},
-                                    {"Category": "Equity STCG", "Amount (₹)": format_inr(_parsed_cg["equity_stcg"]), "Tax Rate": "20%"},
-                                    {"Category": "Equity MF LTCG", "Amount (₹)": format_inr(_parsed_cg["equity_mf_ltcg"]), "Tax Rate": "12.5% (above ₹1.25L)"},
-                                    {"Category": "Equity MF STCG", "Amount (₹)": format_inr(_parsed_cg["equity_mf_stcg"]), "Tax Rate": "20%"},
-                                    {"Category": "Debt MF LTCG", "Amount (₹)": format_inr(_parsed_cg["debt_mf_ltcg"]), "Tax Rate": "Slab rate"},
-                                    {"Category": "Debt MF STCG", "Amount (₹)": format_inr(_parsed_cg["debt_mf_stcg"]), "Tax Rate": "Slab rate"},
-                                    {"Category": "Property LTCG", "Amount (₹)": format_inr(_parsed_cg["property_ltcg"]), "Tax Rate": "12.5% (no indexation)"},
-                                    {"Category": "Property STCG", "Amount (₹)": format_inr(_parsed_cg["property_stcg"]), "Tax Rate": "Slab rate"},
-                                    {"Category": "Other LTCG", "Amount (₹)": format_inr(_parsed_cg["other_ltcg"]), "Tax Rate": "Slab rate"},
-                                    {"Category": "Other STCG", "Amount (₹)": format_inr(_parsed_cg["other_stcg"]), "Tax Rate": "Slab rate"},
+                                    {"Category": "Equity LTCG", "Amount (₹)": float(_parsed_cg["equity_ltcg"]), "Tax Rate": "12.5% (above ₹1.25L)", "Key": "equity_ltcg"},
+                                    {"Category": "Equity STCG", "Amount (₹)": float(_parsed_cg["equity_stcg"]), "Tax Rate": "20%", "Key": "equity_stcg"},
+                                    {"Category": "Equity MF LTCG", "Amount (₹)": float(_parsed_cg["equity_mf_ltcg"]), "Tax Rate": "12.5% (above ₹1.25L)", "Key": "equity_mf_ltcg"},
+                                    {"Category": "Equity MF STCG", "Amount (₹)": float(_parsed_cg["equity_mf_stcg"]), "Tax Rate": "20%", "Key": "equity_mf_stcg"},
+                                    {"Category": "Debt MF LTCG", "Amount (₹)": float(_parsed_cg["debt_mf_ltcg"]), "Tax Rate": "Slab rate", "Key": "debt_mf_ltcg"},
+                                    {"Category": "Debt MF STCG", "Amount (₹)": float(_parsed_cg["debt_mf_stcg"]), "Tax Rate": "Slab rate", "Key": "debt_mf_stcg"},
+                                    {"Category": "Property LTCG", "Amount (₹)": float(_parsed_cg["property_ltcg"]), "Tax Rate": "12.5% (no indexation)", "Key": "property_ltcg"},
+                                    {"Category": "Property STCG", "Amount (₹)": float(_parsed_cg["property_stcg"]), "Tax Rate": "Slab rate", "Key": "property_stcg"},
+                                    {"Category": "Other LTCG", "Amount (₹)": float(_parsed_cg["other_ltcg"]), "Tax Rate": "Slab rate", "Key": "other_ltcg"},
+                                    {"Category": "Other STCG", "Amount (₹)": float(_parsed_cg["other_stcg"]), "Tax Rate": "Slab rate", "Key": "other_stcg"},
                                 ])
-                                st.dataframe(_cg_display, use_container_width=True, hide_index=True)
-                                st.markdown(f"**Total LTCG: {format_inr(_parsed_cg['total_ltcg'])} | Total STCG: {format_inr(_parsed_cg['total_stcg'])}**")
-                                if st.button("💾 Save Parsed Capital Gains", type="primary", key="save_parsed_cg"):
+                                _edited_df = st.data_editor(
+                                    _cg_display,
+                                    use_container_width=True,
+                                    hide_index=True,
+                                    column_config={
+                                        "Category": st.column_config.TextColumn("Category", disabled=True),
+                                        "Amount (₹)": st.column_config.NumberColumn("Amount (₹)", min_value=0.0, step=1000.0, format="₹%d"),
+                                        "Tax Rate": st.column_config.TextColumn("Tax Rate", disabled=True),
+                                        "Key": None  # hide the key
+                                    }
+                                )
+                                
+                                # Show running totals based on live edits
+                                _live_ltcg = _edited_df.loc[_edited_df["Key"].str.endswith("_ltcg"), "Amount (₹)"].sum()
+                                _live_stcg = _edited_df.loc[_edited_df["Key"].str.endswith("_stcg"), "Amount (₹)"].sum()
+                                st.markdown(f"**Live Total LTCG: {format_inr(_live_ltcg)} | Live Total STCG: {format_inr(_live_stcg)}**")
+                                
+                                if st.button("💾 Save Capital Gains", type="primary", key="save_parsed_cg"):
+                                    # Write back edits to the parsed structure
+                                    for _, row in _edited_df.iterrows():
+                                        _parsed_cg[row["Key"]] = float(row["Amount (₹)"])
+                                    
+                                    # Recompute internal totals (like slab addition)
+                                    _parsed_cg = _sum_totals(_parsed_cg)
+                                    
                                     if upsert_capital_gains(_user_key, _fam_id, _fy, _parsed_cg):
                                         _saved_cg = _parsed_cg
                                         st.success("✅ Capital gains saved.")
