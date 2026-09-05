@@ -886,7 +886,7 @@ def _ais_classify(description: str, info_code: str) -> tuple:
         return "other", is_ltcg
 
 
-def _parse_ais_json(raw_bytes: bytes, r: Dict[str, Any]) -> Dict[str, Any]:
+def _parse_ais_json(raw_bytes: bytes, r: Dict[str, Any], ais_pan: str = None, ais_dob: str = None) -> Dict[str, Any]:
     """
     Parse an AIS JSON from the Income Tax portal.
     Handles multiple schema versions:
@@ -904,12 +904,57 @@ def _parse_ais_json(raw_bytes: bytes, r: Dict[str, Any]) -> Dict[str, Any]:
     try:
         data = json.loads(raw_bytes.decode("utf-8", errors="replace"))
     except json.JSONDecodeError as e:
-        r["parse_errors"].append(
-            f"AIS JSON parse error: {e}. "
-            "Note: AIS files downloaded from the IT portal are encrypted (password = PAN + DOB in DDMMYYYY). "
-            "Decrypt first using the AIS Offline Utility, then re-upload the decrypted JSON."
-        )
-        return r
+        if ais_pan and ais_dob:
+            try:
+                import base64
+                from cryptography.hazmat.primitives.ciphers import Cipher, algorithms, modes
+                from cryptography.hazmat.primitives import hashes
+                from cryptography.hazmat.primitives.kdf.pbkdf2 import PBKDF2HMAC
+                from cryptography.hazmat.backends import default_backend
+                from cryptography.hazmat.primitives import padding
+
+                SECRET = "GQ39%*g"
+                password = (ais_pan.lower() + SECRET + ais_dob).encode()
+                
+                k = raw_bytes.decode("utf-8", errors="ignore").strip()
+                if len(k) > 64:
+                    iv = bytes.fromhex(k[:32])
+                    salt = bytes.fromhex(k[32:64])
+                    ciphertext = base64.b64decode(k[64:])
+
+                    kdf = PBKDF2HMAC(
+                        algorithm=hashes.SHA256(),
+                        length=32,
+                        salt=salt,
+                        iterations=1000,
+                        backend=default_backend()
+                    )
+                    key = kdf.derive(password)
+
+                    cipher = Cipher(algorithms.AES(key), modes.CBC(iv), backend=default_backend())
+                    decryptor = cipher.decryptor()
+                    padded_data = decryptor.update(ciphertext) + decryptor.finalize()
+
+                    unpadder = padding.PKCS7(128).unpadder()
+                    decrypted = unpadder.update(padded_data) + unpadder.finalize()
+
+                    text = decrypted.decode("utf-8")
+                    data = json.loads(text)
+            except Exception as dec_err:
+                r["parse_errors"].append(
+                    f"AIS JSON parse error: {str(e)}. "
+                    f"Attempted AES decryption with provided PAN/DOB but failed: {str(dec_err)}."
+                )
+                return _sum_totals(r) if "_sum_totals" in globals() else r
+        
+        if "data" not in locals():
+            r["parse_errors"].append(
+                f"AIS JSON parse error: {e}. "
+                "Note: AIS files downloaded from the IT portal are encrypted (password = PAN + DOB in DDMMYYYY). "
+                "Please enter your PAN and DOB in the sidebar to auto-decrypt, or decrypt first using the AIS Offline Utility."
+            )
+            return _sum_totals(r) if "_sum_totals" in globals() else r
+
 
     raw_rows = []
     found_any = False
