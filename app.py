@@ -2893,9 +2893,8 @@ else:
                     r_col1.metric("Months to Debt Free", f"{total_months} months")
                     r_col2.metric("Total Interest Paid", format_inr_short(total_interest))
                     
-                    from datetime import datetime
                     from dateutil.relativedelta import relativedelta
-                    payoff_date = datetime.now() + relativedelta(months=total_months)
+                    payoff_date = datetime.datetime.now() + relativedelta(months=total_months)
                     r_col3.metric("Payoff Date", payoff_date.strftime("%b %Y"))
                     
                     fig = px.area(
