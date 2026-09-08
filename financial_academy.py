@@ -93,10 +93,45 @@ def render_financial_academy_tab(api_key=""):
         st.subheader("Library & Further Studies")
         st.markdown("Expand your knowledge with curated resources based on your level.")
         
-        st.markdown("### YouTube Playlists")
-        st.markdown("- [Zerodha Varsity: Stock Market Basics](https://zerodha.com/varsity/)")
-        st.markdown("- [Personal Finance for Beginners](https://www.youtube.com)")
-        
-        st.markdown("### Udemy & Coursera")
-        st.markdown("- [Financial Planning Essentials (Coursera)](https://www.coursera.org)")
-        st.markdown("- [Investing 101 (Udemy)](https://www.udemy.com)")
+        # Build user context
+        user_context = {}
+        if "user" in st.session_state:
+            user = st.session_state["user"]
+            user_context["username"] = user.get("username")
+            family_id = st.session_state.get("family_id", 1)
+            
+            try:
+                from database import get_income_sources_df, get_debts, get_user_investments_df
+                inc_df = get_income_sources_df(user["username"], family_id)
+                user_context["total_monthly_income"] = inc_df["monthly_equivalent"].sum() if not inc_df.empty else 0
+                
+                debts_df = get_debts(family_id)
+                user_context["total_debt"] = debts_df["balance_remaining"].sum() if not debts_df.empty else 0
+                
+                inv_df = get_user_investments_df(user["username"], family_id)
+                if not inv_df.empty:
+                    user_context["investments_by_asset_class"] = inv_df.groupby("asset_class")["current_value"].sum().to_dict()
+                else:
+                    user_context["investments_by_asset_class"] = "No investments found"
+            except Exception as e:
+                user_context["error"] = "Could not fetch detailed financial profile."
+                
+        if st.button("✨ Generate Personalized Learning Path", type="primary", use_container_width=True):
+            with st.spinner("Analyzing your profile and finding the best resources..."):
+                from academy_assessment import generate_ai_learning_path
+                learning_path = generate_ai_learning_path(user_context, api_key)
+                st.session_state.academy_learning_path = learning_path
+                
+        if "academy_learning_path" in st.session_state:
+            st.markdown("### 🎯 Your Personalized AI Learning Path")
+            st.markdown(st.session_state.academy_learning_path)
+            st.markdown("---")
+            
+        with st.expander("General Curated Resources", expanded=("academy_learning_path" not in st.session_state)):
+            st.markdown("### YouTube Playlists")
+            st.markdown("- [Zerodha Varsity: Stock Market Basics](https://zerodha.com/varsity/)")
+            st.markdown("- [Personal Finance for Beginners](https://www.youtube.com)")
+            
+            st.markdown("### Udemy & Coursera")
+            st.markdown("- [Financial Planning Essentials (Coursera)](https://www.coursera.org)")
+            st.markdown("- [Investing 101 (Udemy)](https://www.udemy.com)")

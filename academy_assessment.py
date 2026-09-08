@@ -73,3 +73,50 @@ def generate_next_assessment_question(chat_history: List[Dict[str, str]], api_ke
         return {"error": str(e)}
     
     return {"error": "Failed to generate response"}
+
+def generate_ai_learning_path(user_context: Dict[str, Any], api_key: str = "") -> str:
+    """
+    Generates a personalized markdown syllabus with YouTube search links and articles
+    based on the user's financial context (income, debt, investments).
+    """
+    client = get_gemini_client(api_key)
+    if not client:
+        return "⚠️ Google Gemini API Key is missing. Please configure it in Settings to generate a personalized learning path."
+        
+    system_prompt = """
+    You are an expert Financial Educator. Create a personalized learning path (videos, courses, and articles) 
+    based on the user's financial profile.
+    
+    IMPORTANT RULES FOR LINKS:
+    To avoid broken video links, do NOT generate direct YouTube video IDs.
+    Instead, generate YouTube search queries like this:
+    [Video Title](https://www.youtube.com/results?search_query=your+search+keywords)
+    
+    For articles, you may link to well-known domains like Investopedia or Zerodha Varsity (e.g. https://zerodha.com/varsity/chapter/...).
+    
+    STRUCTURE:
+    Format your response in Markdown:
+    ### 📺 Recommended Video Topics
+    - [Topic 1](https://www.youtube.com/results?search_query=...) - Brief reason why.
+    - [Topic 2](https://www.youtube.com/results?search_query=...) - Brief reason why.
+    
+    ### 📖 Recommended Articles & Courses
+    - [Article 1](URL) - Brief reason why.
+    - [Course 1](URL) - Brief reason why.
+    
+    Keep it encouraging, highly specific to their data (e.g. if they have high debt, recommend debt payoff videos), and concise.
+    """
+    
+    prompt = system_prompt + "\n\nUser Context:\n" + json.dumps(user_context, indent=2)
+    
+    try:
+        response = client.models.generate_content(
+            model="gemini-3.5-flash",
+            contents=prompt
+        )
+        if response and response.text:
+            return response.text
+    except Exception as e:
+        return f"⚠️ Failed to generate learning path: {str(e)}"
+    
+    return "⚠️ Failed to generate response from AI."
