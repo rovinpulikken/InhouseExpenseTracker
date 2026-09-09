@@ -62,15 +62,27 @@ def generate_next_assessment_question(chat_history: List[Dict[str, str]], api_ke
     prompt = system_prompt + "\n\nChat History:\n" + json.dumps(chat_history)
     
     try:
-        response = client.models.generate_content(
-            model="gemini-3.5-flash",
-            contents=prompt
-        )
+        import time
+        max_retries = 3
+        response = None
+        for attempt in range(max_retries):
+            try:
+                response = client.models.generate_content(
+                    model="gemini-3.5-flash",
+                    contents=prompt
+                )
+                break
+            except Exception as api_err:
+                if "503" in str(api_err) and attempt < max_retries - 1:
+                    time.sleep(2 ** attempt)
+                    continue
+                raise api_err
+                
         if response and response.text:
             cleaned = response.text.replace("```json", "").replace("```", "").strip()
             return json.loads(cleaned)
     except Exception as e:
-        return {"error": str(e)}
+        return {"error": f"⚠️ Gemini API Error (after {max_retries} attempts): {str(e)}"}
     
     return {"error": "Failed to generate response"}
 
@@ -110,13 +122,25 @@ def generate_ai_learning_path(user_context: Dict[str, Any], api_key: str = "") -
     prompt = system_prompt + "\n\nUser Context:\n" + json.dumps(user_context, indent=2)
     
     try:
-        response = client.models.generate_content(
-            model="gemini-3.5-flash",
-            contents=prompt
-        )
+        import time
+        max_retries = 3
+        response = None
+        for attempt in range(max_retries):
+            try:
+                response = client.models.generate_content(
+                    model="gemini-3.5-flash",
+                    contents=prompt
+                )
+                break
+            except Exception as api_err:
+                if "503" in str(api_err) and attempt < max_retries - 1:
+                    time.sleep(2 ** attempt)
+                    continue
+                raise api_err
+                
         if response and response.text:
             return response.text
     except Exception as e:
-        return f"⚠️ Failed to generate learning path: {str(e)}"
+        return f"⚠️ Failed to generate learning path (Gemini API Error after {max_retries} attempts): {str(e)}"
     
     return "⚠️ Failed to generate response from AI."
