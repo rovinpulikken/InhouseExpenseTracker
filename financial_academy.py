@@ -98,11 +98,11 @@ def render_financial_academy_tab(api_key=""):
         if "user" in st.session_state:
             user = st.session_state["user"]
             user_context["username"] = user.get("username")
-            family_id = st.session_state.get("family_id", 1)
+            family_id = user.get("family_id", 1)
             
             try:
                 from database import get_income_sources_df, get_debts, get_user_investments_df
-                inc_df = get_income_sources_df(user["username"], family_id)
+                inc_df = get_income_sources_df(user["username"], family_id, view_mode="All")
                 user_context["total_monthly_income"] = inc_df["monthly_equivalent"].sum() if not inc_df.empty else 0
                 
                 debts_df = get_debts(family_id)
