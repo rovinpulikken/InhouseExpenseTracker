@@ -643,7 +643,7 @@ else:
     # ----------------------------------------------------
     # HEADER & TOP KPI ROW
     # ----------------------------------------------------
-    st.markdown("<div class='main-header'>FinCompass: Personal Wealth & AI Advisor</div>", unsafe_allow_html=True)
+    st.markdown("<div class='main-header'>FinCompass: Smart Financial Hub</div>", unsafe_allow_html=True)
     st.markdown("<div class='sub-header'>Manage household and private expenses, track CPI inflation, analyze Indian Financial Year trends, and set category budgets.</div>", unsafe_allow_html=True)
 
     df_fy = get_expenses_df(fy=selected_fy, username=current_user["username"], view_mode=view_mode, family_id=user_family_id)
