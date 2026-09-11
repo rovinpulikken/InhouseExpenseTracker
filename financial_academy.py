@@ -3,7 +3,7 @@ from academy_assessment import generate_next_assessment_question
 
 def render_financial_academy_tab(api_key=""):
     st.header("🎓 Financial Academy")
-    st.markdown("Level up your financial knowledge and master the InhouseExpenseTracker.")
+    st.markdown("Level up your financial knowledge and master FinCompass.")
     
     # Session state for academy
     if "academy_chat_history" not in st.session_state:

@@ -1,1 +1,1 @@
-# InhouseExpenseTracker
+# FinCompass

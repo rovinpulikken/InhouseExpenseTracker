@@ -38,7 +38,7 @@ def send_otp_email(to_email: str, otp_code: str) -> bool:
         If you did not request a password reset, please ignore this email.
 
         Regards,
-        In-House Expense Tracker
+        FinCompass
         """
         msg.attach(MIMEText(body, "plain"))
 

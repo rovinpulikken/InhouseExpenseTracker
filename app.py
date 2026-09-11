@@ -121,7 +121,7 @@ from categorizer import auto_categorize_description, auto_categorize_records
 
 # Page Config
 st.set_page_config(
-    page_title="Indian FY Expense Tracker & Inflation Analyzer",
+    page_title="FinCompass: Wealth Manager & AI Tax Planner",
     page_icon="💸",
     layout="wide",
     initial_sidebar_state="auto"
@@ -281,7 +281,7 @@ if "user" not in st.session_state:
     st.markdown("<br>", unsafe_allow_html=True)
     st.markdown("""
     <div style="max-width: 540px; margin: 20px auto; padding: 24px; border-radius: 12px; background-color: #1e293b; border: 1px solid #334155; text-align: center; box-shadow: 0 10px 25px -5px rgba(0,0,0,0.3);">
-        <h2 style="color: #38bdf8; margin-bottom: 4px;">🔐 In-House Expense Tracker</h2>
+        <h2 style="color: #38bdf8; margin-bottom: 4px;">🔐 FinCompass</h2>
         <p style="color: #94a3b8; font-size: 0.95rem;">Multi-Family Expense Tracking, Wealth Planning & AI Analytics</p>
     </div>
     """, unsafe_allow_html=True)
@@ -298,7 +298,7 @@ if "user" not in st.session_state:
             with st.form("login_form"):
                 login_user = st.text_input("Username", placeholder="e.g. admin", key="login_username").strip()
                 login_pwd = st.text_input("Password", type="password", placeholder="••••••••", key="login_pwd")
-                submit_login = st.form_submit_button("🚀 Sign In to Expense Tracker", type="primary", use_container_width=True)
+                submit_login = st.form_submit_button("🚀 Sign In to FinCompass", type="primary", use_container_width=True)
                 
                 if submit_login:
                     user_record = authenticate_user(login_user, login_pwd)
@@ -643,7 +643,7 @@ else:
     # ----------------------------------------------------
     # HEADER & TOP KPI ROW
     # ----------------------------------------------------
-    st.markdown("<div class='main-header'>Indian FY Expense Tracker & Inflation Analyzer</div>", unsafe_allow_html=True)
+    st.markdown("<div class='main-header'>FinCompass: Personal Wealth & AI Advisor</div>", unsafe_allow_html=True)
     st.markdown("<div class='sub-header'>Manage household and private expenses, track CPI inflation, analyze Indian Financial Year trends, and set category budgets.</div>", unsafe_allow_html=True)
 
     df_fy = get_expenses_df(fy=selected_fy, username=current_user["username"], view_mode=view_mode, family_id=user_family_id)
