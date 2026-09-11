@@ -1326,343 +1326,281 @@ else:
         # 📈 INSIGHTS & ANALYTICS
         # ----------------------------------------------------
     elif nav_selection == "📈 Insights & Analytics":
-        st.header("📈 Insights & Analytics")
-        ia_tab1, ia_tab2, ia_tab3, ia_tab4 = st.tabs([
-            "📑 Itemized Explorer", 
-            "📊 FY Trends", 
-            "📈 Inflation & CPI", 
-            "🚨 Anomaly Detection"
+
+        # ── KPI Strip ───────────────────────────────────────────────────────────
+        ia_all_df = get_expenses_df(fy=selected_fy, username=current_user["username"], view_mode=view_mode, family_id=user_family_id)
+        ia_this_month = datetime.date.today().strftime("%Y-%m")
+        ia_month_df   = ia_all_df[ia_all_df["expense_date"].astype(str).str.startswith(ia_this_month)] if not ia_all_df.empty else pd.DataFrame()
+        ia_m_total    = ia_month_df["amount"].sum() if not ia_month_df.empty else 0
+        ia_fy_total   = ia_all_df["amount"].sum()   if not ia_all_df.empty else 0
+        ia_top_cat    = ia_all_df.groupby("category")["amount"].sum().idxmax() if not ia_all_df.empty else "—"
+
+        # Biggest spike category vs prior month
+        ia_cur_mo_cat = ia_month_df.groupby("category")["amount"].sum() if not ia_month_df.empty else pd.Series(dtype=float)
+        prior_month   = (datetime.date.today().replace(day=1) - datetime.timedelta(days=1)).strftime("%Y-%m")
+        ia_prior_df   = ia_all_df[ia_all_df["expense_date"].astype(str).str.startswith(prior_month)] if not ia_all_df.empty else pd.DataFrame()
+        ia_prior_cat  = ia_prior_df.groupby("category")["amount"].sum() if not ia_prior_df.empty else pd.Series(dtype=float)
+        if not ia_cur_mo_cat.empty and not ia_prior_cat.empty:
+            ia_delta      = (ia_cur_mo_cat - ia_prior_cat).dropna()
+            ia_spike_cat  = ia_delta.idxmax() if not ia_delta.empty else "—"
+            ia_spike_val  = ia_delta.max()    if not ia_delta.empty else 0
+        else:
+            ia_spike_cat, ia_spike_val = "—", 0
+
+        st.markdown("""
+        <style>
+        .ia-kpi-row { display:flex; gap:14px; margin-bottom:20px; flex-wrap:wrap; }
+        .ia-kpi-card {
+            flex:1; min-width:150px;
+            background:linear-gradient(135deg,#1e293b,#0f172a);
+            border:1px solid #334155; border-radius:12px;
+            padding:13px 16px; text-align:center;
+        }
+        .ia-kpi-label { color:#64748b; font-size:0.72rem; text-transform:uppercase; letter-spacing:.06em; }
+        .ia-kpi-value { color:#38bdf8; font-size:1.35rem; font-weight:700; margin-top:3px; }
+        .ia-kpi-sub   { color:#475569; font-size:0.7rem; margin-top:2px; }
+        </style>
+        """, unsafe_allow_html=True)
+
+        st.markdown(f"""
+        <div class="ia-kpi-row">
+          <div class="ia-kpi-card">
+            <div class="ia-kpi-label">This Month's Spend</div>
+            <div class="ia-kpi-value">{format_inr_short(ia_m_total)}</div>
+            <div class="ia-kpi-sub">{ia_this_month}</div>
+          </div>
+          <div class="ia-kpi-card">
+            <div class="ia-kpi-label">FY Total ({selected_fy})</div>
+            <div class="ia-kpi-value">{format_inr_short(ia_fy_total)}</div>
+            <div class="ia-kpi-sub">all categories</div>
+          </div>
+          <div class="ia-kpi-card">
+            <div class="ia-kpi-label">Top Spending Category</div>
+            <div class="ia-kpi-value" style="font-size:0.95rem;">{ia_top_cat}</div>
+            <div class="ia-kpi-sub">this FY</div>
+          </div>
+          <div class="ia-kpi-card">
+            <div class="ia-kpi-label">Biggest Spike vs Last Month</div>
+            <div class="ia-kpi-value" style="font-size:0.95rem; color:#f87171;">{ia_spike_cat}</div>
+            <div class="ia-kpi-sub">{format_inr_short(ia_spike_val)} over prior month</div>
+          </div>
+        </div>
+        """, unsafe_allow_html=True)
+
+        # ── 4-tab layout ────────────────────────────────────────────────────────
+        ia_tab_overview, ia_tab_drill, ia_tab_anomaly, ia_tab_inflation = st.tabs([
+            "📊 Spending Overview",
+            "🔍 Drill Down",
+            "🚨 Anomaly Alerts",
+            "📉 Inflation Forecast",
         ])
 
-    # ----------------------------------------------------
-    # TAB 2: ITEMIZED PERIOD EXPLORER
-    # ----------------------------------------------------
-        with ia_tab1:
-            st.subheader(f"📑 Itemized Expense Explorer ({selected_fy})")
-            st.write("Explore itemized line-by-line expenses with customizable period filters (**Monthly, Quarterly, Half-Yearly, Yearly**) alongside cumulative **QTD, H1, H2, and YTD** totals.")
-            
-            cum_metrics = get_cumulative_metrics(fy=selected_fy if selected_fy != "All FYs" else None, username=current_user["username"], view_mode=view_mode)
-            
-            m_col1, m_col2, m_col3, m_col4 = st.columns(4)
-            with m_col1:
-                st.markdown(f"""
-                <div class="metric-card">
-                    <div class="metric-label">QTD Total (Quarter to Date)</div>
-                    <div class="metric-value" style="color:#38bdf8;">{format_inr_short(cum_metrics['QTD'])}</div>
-                    <div style="color:#64748b; font-size:0.8rem;">{format_inr(cum_metrics['QTD'])}</div>
-                </div>
-                """, unsafe_allow_html=True)
-                
-            with m_col2:
-                st.markdown(f"""
-                <div class="metric-card">
-                    <div class="metric-label">H1 Total (Apr - Sep)</div>
-                    <div class="metric-value" style="color:#818cf8;">{format_inr_short(cum_metrics['H1'])}</div>
-                    <div style="color:#64748b; font-size:0.8rem;">{format_inr(cum_metrics['H1'])}</div>
-                </div>
-                """, unsafe_allow_html=True)
+        # ────────────────────────────────────────────────────────────────────────
+        # TAB 1 ─ Spending Overview  (charts first — what users want to see)
+        # ────────────────────────────────────────────────────────────────────────
+        with ia_tab_overview:
+            trend_df = get_monthly_trend_df(fy=selected_fy, username=current_user["username"], view_mode=view_mode)
 
-            with m_col3:
-                st.markdown(f"""
-                <div class="metric-card">
-                    <div class="metric-label">H2 Total (Oct - Mar)</div>
-                    <div class="metric-value" style="color:#c084fc;">{format_inr_short(cum_metrics['H2'])}</div>
-                    <div style="color:#64748b; font-size:0.8rem;">{format_inr(cum_metrics['H2'])}</div>
-                </div>
-                """, unsafe_allow_html=True)
+            if trend_df.empty:
+                st.info(f"No spending data yet for **{selected_fy}**. Add some transactions first!")
+            else:
+                ov1, ov2 = st.columns([3, 2])
 
-            with m_col4:
-                st.markdown(f"""
-                <div class="metric-card">
-                    <div class="metric-label">YTD / Full FY Total</div>
-                    <div class="metric-value" style="color:#34d399;">{format_inr_short(cum_metrics['YTD'])}</div>
-                    <div style="color:#64748b; font-size:0.8rem;">{format_inr(cum_metrics['YTD'])}</div>
-                </div>
-                """, unsafe_allow_html=True)
+                with ov1:
+                    st.markdown("##### 📅 Monthly Spend by Category")
+                    fig_month = px.bar(
+                        trend_df, x="YearMonth", y="Monthly_Total", color="category",
+                        labels={"Monthly_Total": "Amount (₹)", "YearMonth": "Month"},
+                        template="plotly_dark",
+                    )
+                    fig_month.update_layout(
+                        paper_bgcolor="#1e293b", plot_bgcolor="#1e293b",
+                        legend=dict(orientation="h", yanchor="bottom", y=1.02, xanchor="right", x=1,
+                                    font=dict(size=10)),
+                        margin=dict(l=10, r=10, t=40, b=10),
+                        title=None,
+                    )
+                    st.plotly_chart(fig_month, use_container_width=True)
+
+                with ov2:
+                    st.markdown("##### 🍩 Category Share (Full FY)")
+                    cat_totals = ia_all_df.groupby("category")["amount"].sum().reset_index() if not ia_all_df.empty else pd.DataFrame()
+                    if not cat_totals.empty:
+                        fig_donut = px.pie(
+                            cat_totals, values="amount", names="category",
+                            hole=0.52, template="plotly_dark",
+                            color_discrete_sequence=px.colors.qualitative.Pastel,
+                        )
+                        fig_donut.update_traces(textposition="inside", textinfo="percent+label")
+                        fig_donut.update_layout(
+                            paper_bgcolor="#1e293b",
+                            showlegend=False,
+                            margin=dict(l=10, r=10, t=10, b=10),
+                        )
+                        st.plotly_chart(fig_donut, use_container_width=True)
+
+                st.markdown("---")
+                st.markdown("##### 📊 Quarterly Breakdown")
+                q_trend_df = get_quarterly_trend_df(fy=selected_fy, username=current_user["username"], view_mode=view_mode)
+                if not q_trend_df.empty:
+                    fig_q = px.bar(
+                        q_trend_df, x="quarter", y="Quarterly_Total", color="category",
+                        barmode="group",
+                        labels={"Quarterly_Total": "Amount (₹)", "quarter": "Quarter"},
+                        template="plotly_dark",
+                    )
+                    fig_q.update_layout(
+                        paper_bgcolor="#1e293b", plot_bgcolor="#1e293b",
+                        legend=dict(orientation="h", yanchor="bottom", y=1.02, xanchor="right", x=1,
+                                    font=dict(size=10)),
+                        margin=dict(l=10, r=10, t=40, b=10),
+                        title=None,
+                    )
+                    st.plotly_chart(fig_q, use_container_width=True)
+
+        # ────────────────────────────────────────────────────────────────────────
+        # TAB 2 ─ Drill Down  (Itemized Explorer — simplified controls)
+        # ────────────────────────────────────────────────────────────────────────
+        with ia_tab_drill:
+            # ── Cumulative metric strip ──────────────────────────────────────────
+            cum_metrics = get_cumulative_metrics(
+                fy=selected_fy if selected_fy != "All FYs" else None,
+                username=current_user["username"], view_mode=view_mode)
+
+            dd1, dd2, dd3, dd4 = st.columns(4)
+            for col, label, key, color in [
+                (dd1, "QTD", "QTD", "#38bdf8"),
+                (dd2, "H1  (Apr–Sep)", "H1", "#818cf8"),
+                (dd3, "H2  (Oct–Mar)", "H2", "#c084fc"),
+                (dd4, "YTD / Full FY", "YTD", "#34d399"),
+            ]:
+                with col:
+                    col.markdown(f"""
+                    <div class="metric-card">
+                        <div class="metric-label">{label}</div>
+                        <div class="metric-value" style="color:{color};">{format_inr_short(cum_metrics[key])}</div>
+                        <div style="color:#64748b;font-size:0.78rem;">{format_inr(cum_metrics[key])}</div>
+                    </div>""", unsafe_allow_html=True)
 
             st.markdown("<br>", unsafe_allow_html=True)
-            
-            ctrl_col1, ctrl_col2 = st.columns([1, 2])
-            with ctrl_col1:
-                granularity = st.radio(
-                    "Select Time Granularity",
-                    ["Monthly", "Quarterly", "Half-Yearly", "Yearly (Full FY)"],
-                    horizontal=False
-                )
-                
+
+            # ── Horizontal filter row ────────────────────────────────────────────
+            fc1, fc2, fc3 = st.columns([1.4, 2, 1])
+            with fc1:
+                granularity = st.selectbox("Period", ["Monthly", "Quarterly", "Half-Yearly", "Full FY"], key="ia_gran")
+            with fc3:
+                search_term = st.text_input("🔍 Search description", placeholder="e.g. Swiggy", key="ia_search")
+
             all_df = get_expenses_df(fy=selected_fy, username=current_user["username"], view_mode=view_mode)
-            filtered_df = pd.DataFrame()
+            filtered_df  = pd.DataFrame()
             period_title = ""
-            
-            with ctrl_col2:
+
+            with fc2:
                 if granularity == "Monthly":
                     if not all_df.empty and "Month_Year" in all_df.columns:
                         months_available = sorted(all_df["Month_Year"].unique().tolist(), reverse=True)
-                        selected_month = st.selectbox(
-                            "Select Month",
-                            options=["All Months in FY"] + months_available,
-                            format_func=format_month_label
-                        )
-                        if selected_month != "All Months in FY":
-                            filtered_df = all_df[all_df["Month_Year"] == selected_month]
-                            period_title = f"Itemized Expenses for {format_month_label(selected_month)}"
-                        else:
-                            filtered_df = all_df
-                            period_title = f"All Itemized Expenses for {selected_fy}"
+                        sel_month = st.selectbox("Month", ["All"] + months_available, format_func=format_month_label, key="ia_month")
+                        filtered_df  = all_df if sel_month == "All" else all_df[all_df["Month_Year"] == sel_month]
+                        period_title = f"All Months — {selected_fy}" if sel_month == "All" else format_month_label(sel_month)
                     else:
-                        st.info("No monthly transaction data available.")
-                        
+                        st.info("No data yet.")
                 elif granularity == "Quarterly":
-                    selected_q = st.selectbox("Select Quarter", ["Q1 (Apr - Jun)", "Q2 (Jul - Sep)", "Q3 (Oct - Dec)", "Q4 (Jan - Mar)"])
-                    q_code = selected_q.split()[0]
+                    sel_q       = st.selectbox("Quarter", ["Q1 (Apr–Jun)", "Q2 (Jul–Sep)", "Q3 (Oct–Dec)", "Q4 (Jan–Mar)"], key="ia_q")
+                    q_code      = sel_q.split()[0]
                     filtered_df = all_df[all_df["quarter"] == q_code] if not all_df.empty else pd.DataFrame()
-                    period_title = f"Itemized Expenses for {selected_q} ({selected_fy})"
-                    
+                    period_title = sel_q
                 elif granularity == "Half-Yearly":
-                    selected_h = st.selectbox("Select Half Year", ["H1 (Apr - Sep)", "H2 (Oct - Mar)"])
-                    h_code = selected_h.split()[0]
-                    filtered_df = all_df[all_df["half_year"] == h_code] if not all_df.empty and "half_year" in all_df.columns else pd.DataFrame()
-                    period_title = f"Itemized Expenses for {selected_h} ({selected_fy})"
-                    
-                else: # Yearly
-                    filtered_df = all_df
-                    period_title = f"Full Year Itemized Expenses ({selected_fy})"
-                    
+                    sel_h        = st.selectbox("Half Year", ["H1 (Apr–Sep)", "H2 (Oct–Mar)"], key="ia_h")
+                    h_code       = sel_h.split()[0]
+                    filtered_df  = all_df[all_df.get("half_year", pd.Series()) == h_code] if not all_df.empty and "half_year" in all_df.columns else pd.DataFrame()
+                    period_title = sel_h
+                else:
+                    filtered_df  = all_df
+                    period_title = f"Full FY — {selected_fy}"
+
+            # Apply description search
+            if search_term and not filtered_df.empty:
+                filtered_df = filtered_df[filtered_df["description"].astype(str).str.contains(search_term, case=False, na=False)]
+
             st.markdown("---")
-            st.markdown(f"### {period_title}")
-            
             if filtered_df.empty:
-                st.warning("No itemized expenses found for the selected period.")
+                st.info("No transactions found for the selected filter.")
             else:
                 period_total_val = filtered_df["amount"].sum()
-                st.info(f"💰 Total Itemized Expenses for **{period_title}**: **{format_inr(period_total_val)}** across **{len(filtered_df)}** transactions.")
-                
-                item_cat_summary = filtered_df.groupby("category")["amount"].agg(
-                    Itemized_Total="sum",
-                    Count="count"
-                ).reset_index()
-                
-                item_cat_summary["Share_%"] = (item_cat_summary["Itemized_Total"] / period_total_val) * 100
-                item_cat_summary = item_cat_summary.sort_values(by="Itemized_Total", ascending=False)
-                
-                st.markdown("#### 📊 Itemized Summary by Category")
-                st.dataframe(
-                    item_cat_summary,
-                    column_config={
-                        "category": st.column_config.TextColumn("Category"),
-                        "Itemized_Total": st.column_config.NumberColumn("Itemized Total (₹)", format="₹ %.2f"),
-                        "Count": st.column_config.NumberColumn("Entries"),
-                        "Share_%": st.column_config.NumberColumn("Share of Period Total", format="%.1f %%")
-                    },
-                    use_container_width=True,
-                    hide_index=True
-                )
-                
-                st.markdown("#### 📋 Itemized Transactions Ledger")
-                st.dataframe(
-                    filtered_df[["id", "expense_date", "category", "description", "amount", "quarter", "half_year", "visibility", "username", "source_note"]],
-                    column_config={
-                        "id": st.column_config.NumberColumn("ID"),
-                        "expense_date": st.column_config.DateColumn("Date"),
-                        "category": st.column_config.TextColumn("Category"),
-                        "description": st.column_config.TextColumn("Item / Description"),
-                        "amount": st.column_config.NumberColumn("Amount (₹)", format="₹ %.2f"),
-                        "quarter": st.column_config.TextColumn("Quarter"),
-                        "half_year": st.column_config.TextColumn("Half Year"),
-                        "visibility": st.column_config.TextColumn("Sharing"),
-                        "username": st.column_config.TextColumn("Logged By"),
-                        "source_note": st.column_config.TextColumn("Source")
-                    },
-                    use_container_width=True,
-                    hide_index=True
-                )
 
-        # ----------------------------------------------------
-        # TAB 4: INDIAN FY TRENDS
-        # ----------------------------------------------------
-        with ia_tab2:
-            st.subheader(f"📊 Indian Financial Year Trends ({selected_fy})")
-            st.write("Visualizes monthly spending trajectories, quarterly spending distributions, and category breakdowns.")
-            
-            trend_df = get_monthly_trend_df(fy=selected_fy, username=current_user["username"], view_mode=view_mode)
-            
-            if trend_df.empty:
-                st.warning("No trend data available for the selected Financial Year.")
-            else:
-                st.markdown("#### Monthly Expense Trajectory (Apr - Mar)")
-                fig_month = px.bar(
-                    trend_df,
-                    x="YearMonth",
-                    y="Monthly_Total",
-                    color="category",
-                    title=f"Monthly Expenses Breakdown ({selected_fy})",
-                    labels={"Monthly_Total": "Amount (₹)", "YearMonth": "Month"},
-                    template="plotly_dark"
-                )
-                fig_month.update_layout(paper_bgcolor="#1e293b", plot_bgcolor="#1e293b")
-                st.plotly_chart(fig_month, use_container_width=True)
-                
-                q_trend_df = get_quarterly_trend_df(fy=selected_fy, username=current_user["username"], view_mode=view_mode)
-                if not q_trend_df.empty:
-                    st.markdown("#### Quarterly Expenditure Distribution (Q1 - Q4)")
-                    fig_q = px.bar(
-                        q_trend_df,
-                        x="quarter",
-                        y="Quarterly_Total",
-                        color="category",
-                        barmode="group",
-                        title=f"Quarterly Expenses by Category ({selected_fy})",
-                        labels={"Quarterly_Total": "Amount (₹)", "quarter": "Quarter"},
-                        template="plotly_dark"
+                # Category summary bar chart + table side by side
+                cs1, cs2 = st.columns([2, 3])
+                with cs1:
+                    st.markdown(f"**{period_title}** — {format_inr(period_total_val)} across {len(filtered_df)} entries")
+                    item_cat_summary = (
+                        filtered_df.groupby("category")["amount"]
+                        .agg(Total="sum", Count="count").reset_index()
                     )
-                    fig_q.update_layout(paper_bgcolor="#1e293b", plot_bgcolor="#1e293b")
-                    st.plotly_chart(fig_q, use_container_width=True)
-
-        # ----------------------------------------------------
-        # TAB 5: INFLATION & CPI ANALYTICS
-        # ----------------------------------------------------
-        with ia_tab3:
-            st.subheader("📈 Inflation & Purchasing Power Analytics")
-            
-        sub_tab_cpi, sub_tab_personal = st.tabs(["General CPI Analytics", "Personal Expense Predictor"])
-        
-        with sub_tab_cpi:
-            st.write("Compares your category expense changes against official Reserve Bank of India (RBI) & Ministry of Statistics (MOSPI) CPI inflation benchmarks.")
-            
-            cpi_df = get_cpi_df()
-            col_cpi_calc, col_cpi_chart = st.columns([1, 1])
-            
-            with col_cpi_calc:
-                st.markdown("#### Purchasing Power Erosion Calculator")
-                base_yr = st.number_input("Base Year", min_value=2018, max_value=2025, value=2020)
-                curr_yr = st.number_input("Comparison Year", min_value=2019, max_value=2026, value=2025)
-                sample_amt = st.number_input("Expense Amount in Base Year (₹)", value=10000.0, step=1000.0)
-                
-                cum_inf = calculate_cpi_inflation(base_yr, curr_yr)
-                req_amt = sample_amt * (1 + (cum_inf / 100))
-                
-                st.info(f"💡 What cost **{format_inr(sample_amt)}** in {base_yr} requires **{format_inr(req_amt)}** in {curr_yr} just to keep pace with Indian CPI inflation (**+{cum_inf}%** total inflation).")
-
-            with col_cpi_chart:
-                st.markdown("#### Personal Expense Inflation vs. Indian CPI Curve")
-                fig_cpi = px.line(
-                    cpi_df,
-                    x="Year",
-                    y="CPI Inflation (%)",
-                    markers=True,
-                    title="Indian CPI Annual Inflation Rate (%)",
-                    template="plotly_dark",
-                    color_discrete_sequence=["#fbbf24"]
-                )
-                fig_cpi.update_layout(paper_bgcolor="#1e293b", plot_bgcolor="#1e293b")
-                st.plotly_chart(fig_cpi, use_container_width=True)
-
-                st.markdown("#### Category-Specific Benchmark Inflation Rates")
-                cat_cpi_list = []
-                for cat, details in CPI_CATEGORY_INFLATION.items():
-                    cat_cpi_list.append({
-                        "Category": cat,
-                        "CPI Group": details["cpi_group"],
-                        "CPI Weight (%)": details["cpi_weight"],
-                        "Avg Category Inflation (%)": details["avg_inflation"]
-                    })
-                st.dataframe(pd.DataFrame(cat_cpi_list), use_container_width=True, hide_index=True)
-
-        with sub_tab_personal:
-            st.markdown("### Predict Your Future Expenses")
-            st.write("This tool calculates a **Personalized Inflation Rate** based on your exact historical spending habits. Instead of using the generic national CPI, it heavily weights the inflation of the categories you spend the most on.")
-            
-            # Fetch historical category breakdown
-            hist_breakdown_df = get_category_breakdown(fy=None, username=current_user["username"] if view_mode == "Personal" else None, view_mode=view_mode, family_id=user_family_id)
-            personal_rate = calculate_personal_inflation_rate(hist_breakdown_df)
-            
-            st.info(f"🔥 **Your Personalized Inflation Rate:** {personal_rate}% per year (Based on your historical category weightings)")
-            
-            col_pred_inputs, col_pred_chart = st.columns([1, 2])
-            
-            with col_pred_inputs:
-                custom_inflation = st.number_input(
-                    "Inflation Rate to Use (%)", 
-                    value=float(personal_rate), 
-                    step=0.5, 
-                    format="%.2f", 
-                    help="Defaults to your personalized historical inflation rate based on your category spend weightings, but you can override it here."
-                )
-                pred_base_year = st.number_input("Base Year", min_value=2020, max_value=2030, value=2024, key="pred_base")
-                pred_target_year = st.number_input("Target Prediction Year", min_value=2025, max_value=2060, value=2034, key="pred_target")
-                
-                # Default baseline expense to the most recent FY if available, else 0
-                default_expense = 1000000.0 # 10L default
-                if not hist_breakdown_df.empty:
-                    # Let's get the most recent FY data
-                    fys = get_all_financial_years(username=current_user["username"] if view_mode == "Personal" else None, view_mode=view_mode, family_id=user_family_id)
-                    if fys:
-                        latest_fy = fys[0]
-                        latest_fy_df = get_category_breakdown(fy=latest_fy, username=current_user["username"] if view_mode == "Personal" else None, view_mode=view_mode, family_id=user_family_id)
-                        if not latest_fy_df.empty and 'Total_Amount' in latest_fy_df.columns:
-                            default_expense = float(latest_fy_df['Total_Amount'].sum())
-                
-                baseline_expense = st.number_input("Base Year Annual Expense (₹)", value=default_expense, step=50000.0)
-                
-            with col_pred_chart:
-                if pred_target_year <= pred_base_year:
-                    st.warning("Target year must be greater than base year.")
-                else:
-                    # Generate projection data
-                    proj_years = list(range(pred_base_year, pred_target_year + 1))
-                    proj_expenses = [baseline_expense * ((1 + (custom_inflation / 100.0)) ** (y - pred_base_year)) for y in proj_years]
-                    
-                    proj_df = pd.DataFrame({
-                        "Year": proj_years,
-                        "Projected Annual Expense (₹)": proj_expenses
-                    })
-                    
-                    fig_proj = px.bar(
-                        proj_df, 
-                        x="Year", 
-                        y="Projected Annual Expense (₹)",
-                        title=f"Expense Projection at {custom_inflation}% Inflation",
+                    item_cat_summary["Share %"] = (item_cat_summary["Total"] / period_total_val * 100).round(1)
+                    item_cat_summary = item_cat_summary.sort_values("Total", ascending=False)
+                    st.dataframe(
+                        item_cat_summary,
+                        column_config={
+                            "category": st.column_config.TextColumn("Category"),
+                            "Total":    st.column_config.NumberColumn("Total (₹)", format="₹ %.2f"),
+                            "Count":    st.column_config.NumberColumn("Entries"),
+                            "Share %":  st.column_config.NumberColumn("Share", format="%.1f %%"),
+                        },
+                        use_container_width=True, hide_index=True,
+                    )
+                with cs2:
+                    fig_dd = px.bar(
+                        item_cat_summary, x="Total", y="category", orientation="h",
+                        color="Share %", color_continuous_scale="Blues",
+                        labels={"Total": "₹", "category": ""},
                         template="plotly_dark",
-                        color_discrete_sequence=["#ef4444"]
                     )
-                    fig_proj.update_layout(paper_bgcolor="#1e293b", plot_bgcolor="#1e293b")
-                    st.plotly_chart(fig_proj, use_container_width=True)
-                    
-                    final_amt = proj_expenses[-1]
-                    st.success(f"By {pred_target_year}, you will need **{format_inr(final_amt)}** annually to maintain your current lifestyle.")
+                    fig_dd.update_layout(
+                        paper_bgcolor="#1e293b", plot_bgcolor="#1e293b",
+                        coloraxis_showscale=False, yaxis=dict(autorange="reversed"),
+                        margin=dict(l=10, r=10, t=10, b=10),
+                    )
+                    st.plotly_chart(fig_dd, use_container_width=True)
 
-    # ----------------------------------------------------
-    # TAB 6: EXPENSE SURGE DETECTOR & AI SAVINGS ADVISOR
-    # ----------------------------------------------------
-        with ia_tab4:
-            st.subheader("🚨 Expense Surge & Anomaly Detector")
-            st.caption("Select a Month, Quarter, Half-Year, or Financial Year to pinpoint categories spiking above baseline averages and generate AI cost-savings advice.")
-
-            s_col1, s_col2 = st.columns([1, 1])
-            with s_col1:
-                timeframe_type = st.selectbox(
-                    "📅 Select Timeframe Granularity",
-                    options=["Month-wise", "Quarter-wise", "Half Year-wise", "Financial Year"],
-                    key="surge_tf_type"
+                st.markdown("##### 📋 Transaction Ledger")
+                st.dataframe(
+                    filtered_df[["expense_date", "category", "description", "amount", "visibility", "username"]].sort_values("expense_date", ascending=False),
+                    column_config={
+                        "expense_date": st.column_config.DateColumn("Date"),
+                        "category":     st.column_config.TextColumn("Category"),
+                        "description":  st.column_config.TextColumn("Description"),
+                        "amount":       st.column_config.NumberColumn("Amount (₹)", format="₹ %.2f"),
+                        "visibility":   st.column_config.TextColumn("Visibility"),
+                        "username":     st.column_config.TextColumn("Logged By"),
+                    },
+                    use_container_width=True, hide_index=True,
                 )
 
-            dummy_df, available_periods = get_period_surge_analytics(
-                timeframe_type=timeframe_type,
-                selected_period=None,
-                fy=selected_fy,
-                username=current_user["username"],
-                view_mode=view_mode,
-                family_id=user_family_id
-            )
+        # ────────────────────────────────────────────────────────────────────────
+        # TAB 3 ─ Anomaly Alerts  (defaults to current month, AI button at top)
+        # ────────────────────────────────────────────────────────────────────────
+        with ia_tab_anomaly:
+            st.markdown("#### 🚨 Expense Surge & Anomaly Detector")
+            st.caption("Automatically compares your spending in any period against your historical baseline to flag unusual spikes.")
 
-            with s_col2:
+            an1, an2 = st.columns([1.4, 2])
+            with an1:
+                timeframe_type = st.selectbox(
+                    "Granularity",
+                    ["Month-wise", "Quarter-wise", "Half Year-wise", "Financial Year"],
+                    key="surge_tf_type",
+                )
+            _, available_periods = get_period_surge_analytics(
+                timeframe_type=timeframe_type, selected_period=None,
+                fy=selected_fy, username=current_user["username"],
+                view_mode=view_mode, family_id=user_family_id,
+            )
+            with an2:
                 if available_periods:
-                    fmt_fn = format_month_label if timeframe_type == "Month-wise" else (lambda x: str(x))
+                    fmt_fn = format_month_label if timeframe_type == "Month-wise" else str
+                    # Default to most-recent period (index 0)
                     selected_period = st.selectbox(
-                        "🎯 Select Target Period",
-                        options=available_periods,
-                        format_func=fmt_fn,
-                        key="surge_target_period"
+                        "Period", available_periods, format_func=fmt_fn, key="surge_target_period",
                     )
                 else:
                     selected_period = None
@@ -1670,93 +1608,176 @@ else:
 
             if selected_period:
                 period_surge_df, _ = get_period_surge_analytics(
-                    timeframe_type=timeframe_type,
-                    selected_period=selected_period,
-                    fy=selected_fy,
-                    username=current_user["username"],
-                    view_mode=view_mode,
-                    family_id=user_family_id
+                    timeframe_type=timeframe_type, selected_period=selected_period,
+                    fy=selected_fy, username=current_user["username"],
+                    view_mode=view_mode, family_id=user_family_id,
                 )
 
                 if not period_surge_df.empty:
-                    # Key Metrics Cards
-                    active_spends = period_surge_df[period_surge_df["Period_Spend"] > 0]
-                    anomalies_df = period_surge_df[period_surge_df["Is_Anomaly"] == True]
-                    top_surging_cat = period_surge_df.iloc[0]["category"] if not period_surge_df.empty else "N/A"
-                    top_surge_pct = period_surge_df.iloc[0]["Surge_%"] if not period_surge_df.empty else 0.0
-                    total_excess = period_surge_df["Surge_Amount"].apply(lambda x: max(0.0, x)).sum()
+                    anomalies_df    = period_surge_df[period_surge_df["Is_Anomaly"] == True]
+                    top_surge_row   = period_surge_df.iloc[0]
+                    top_surging_cat = top_surge_row["category"]
+                    top_surge_pct   = top_surge_row["Surge_%"]
+                    total_excess    = period_surge_df["Surge_Amount"].apply(lambda x: max(0.0, x)).sum()
 
-                    m_c1, m_c2, m_c3 = st.columns(3)
-                    with m_c1:
-                        st.metric("🔥 Top Surging Category", top_surging_cat, f"+{top_surge_pct:.1f}%")
-                    with m_c2:
-                        st.metric("💸 Total Excess Spend Over Baseline", format_inr(total_excess))
-                    with m_c3:
-                        st.metric("⚠️ Detected Anomaly Spikes", f"{len(anomalies_df)} Categories")
+                    # ── 3 metric cards ───────────────────────────────────────────
+                    am1, am2, am3 = st.columns(3)
+                    am1.metric("🔥 Top Surging Category", top_surging_cat, f"+{top_surge_pct:.1f}%")
+                    am2.metric("💸 Excess Spend over Baseline", format_inr(total_excess))
+                    am3.metric("⚠️ Anomaly Spikes Detected", f"{len(anomalies_df)} categories")
 
+                    # ── AI button RIGHT AT THE TOP ───────────────────────────────
+                    gemini_api_key_an = (current_user.get("gemini_api_key") or get_admin_gemini_api_key()
+                                         or os.environ.get("GEMINI_API_KEY", "") or st.secrets.get("GEMINI_API_KEY", ""))
                     st.markdown("<br>", unsafe_allow_html=True)
+                    if st.button("🤖 Get AI Cost-Saving Advice for This Period", type="primary", use_container_width=True):
+                        with st.spinner("🤖 Gemini AI is analyzing spending patterns…"):
+                            ai_advice = generate_ai_spend_rationalization(
+                                period_surge_df, timeframe_label=f"{timeframe_type} ({selected_period})")
+                        st.success("🎉 AI Analysis Complete!")
+                        st.info(ai_advice.get("summary", ""))
+                        st.markdown(f"#### 💰 Potential Savings Target: **{ai_advice.get('total_potential_savings', '₹ 0')}**")
+                        for idx, rec in enumerate(ai_advice.get("recommendations", []), 1):
+                            with st.expander(f"💡 #{idx} {rec.get('category','—')} — Est. Savings: {rec.get('est_savings','₹ 0')}"):
+                                st.markdown(f"**Issue:** {rec.get('issue','')}")
+                                st.markdown(f"**Advice:** {rec.get('suggestion','')}")
 
-                    # Grouped Bar Chart: Selected Period Spend vs Baseline Average
-                    st.markdown(f"#### 📊 Category Spend vs Baseline Average ({selected_period})")
+                    st.markdown("---")
+
+                    # ── Chart: Period vs Baseline ────────────────────────────────
                     chart_df = period_surge_df[period_surge_df["Period_Spend"] > 0].copy()
                     if not chart_df.empty:
+                        st.markdown(f"##### 📊 Category Spend vs Baseline — {selected_period}")
                         fig_surge = px.bar(
-                            chart_df,
-                            x="category",
-                            y=["Period_Spend", "Baseline_Avg"],
+                            chart_df, x="category", y=["Period_Spend", "Baseline_Avg"],
                             barmode="group",
-                            labels={"value": "Amount (₹)", "category": "Category", "variable": "Metric"},
+                            labels={"value": "Amount (₹)", "category": "Category", "variable": ""},
                             color_discrete_map={"Period_Spend": "#ef4444", "Baseline_Avg": "#3b82f6"},
-                            height=400
+                            template="plotly_dark", height=380,
                         )
                         fig_surge.update_layout(
-                            legend=dict(title=None, orientation="h", yanchor="bottom", y=1.02, xanchor="right", x=1),
-                            margin=dict(l=20, r=20, t=30, b=20)
+                            paper_bgcolor="#1e293b", plot_bgcolor="#1e293b",
+                            legend=dict(orientation="h", yanchor="bottom", y=1.02, xanchor="right", x=1),
+                            margin=dict(l=10, r=10, t=30, b=10),
                         )
                         st.plotly_chart(fig_surge, use_container_width=True)
 
-                    # Detailed Table
-                    st.markdown(f"#### 📝 Surge & Anomaly Analysis Table ({selected_period})")
+                    # ── Detailed anomaly table ───────────────────────────────────
+                    st.markdown(f"##### 📝 Surge & Anomaly Table — {selected_period}")
                     st.dataframe(
                         period_surge_df[["category", "Period_Spend", "Baseline_Avg", "Surge_Amount", "Surge_%", "Is_Anomaly"]],
                         column_config={
-                            "category": st.column_config.TextColumn("Category"),
-                            "Period_Spend": st.column_config.NumberColumn(f"Spend in {selected_period} (₹)", format="₹ %.2f"),
-                            "Baseline_Avg": st.column_config.NumberColumn("Historical Baseline Avg (₹)", format="₹ %.2f"),
-                            "Surge_Amount": st.column_config.NumberColumn("Excess / Surge (₹)", format="₹ %.2f"),
-                            "Surge_%": st.column_config.NumberColumn("Spike %", format="%.1f %%"),
-                            "Is_Anomaly": st.column_config.CheckboxColumn("Anomaly Tag")
+                            "category":     st.column_config.TextColumn("Category"),
+                            "Period_Spend": st.column_config.NumberColumn(f"Spend (₹)", format="₹ %.2f"),
+                            "Baseline_Avg": st.column_config.NumberColumn("Baseline Avg (₹)", format="₹ %.2f"),
+                            "Surge_Amount": st.column_config.NumberColumn("Excess (₹)", format="₹ %.2f"),
+                            "Surge_%":      st.column_config.NumberColumn("Spike %", format="%.1f %%"),
+                            "Is_Anomaly":   st.column_config.CheckboxColumn("Anomaly?"),
                         },
-                        use_container_width=True,
-                        hide_index=True
+                        use_container_width=True, hide_index=True,
                     )
-
-                    st.markdown("<hr>", unsafe_allow_html=True)
-
-                    # AI Spend Rationalization & Savings Advisor Section
-                    st.markdown(f"### 🤖 Gemini AI & ML Spend Rationalization Advisor ({selected_period})")
-                    st.caption("Generate actionable cost reduction strategies, root cause insights, and target savings tailored for your household.")
-
-                    if st.button("💡 Generate AI Cost Savings & Rationalization Strategy", type="primary", use_container_width=True):
-                        with st.spinner("🤖 Analyzing spending patterns with Machine Learning & Gemini AI..."):
-                            ai_advice = generate_ai_spend_rationalization(period_surge_df, timeframe_label=f"{timeframe_type} ({selected_period})")
-
-                        st.success("🎉 AI Spend Rationalization Report Generated!")
-                        st.info(ai_advice.get("summary", ""))
-
-                        st.markdown(f"#### 💰 Potential Target Savings: **{ai_advice.get('total_potential_savings', '₹ 0')}**")
-
-                        recs = ai_advice.get("recommendations", [])
-                        if recs:
-                            for idx, rec in enumerate(recs, 1):
-                                with st.expander(f"💡 #{idx} {rec.get('category', 'Category')} — Estimated Savings: {rec.get('est_savings', '₹ 0')}", expanded=True):
-                                    st.markdown(f"**Issue Identified**: {rec.get('issue', '')}")
-                                    st.markdown(f"**Actionable Advice**: {rec.get('suggestion', '')}")
                 else:
                     st.info("No transaction data found for this period.")
             else:
-                st.info("No period available to display surge analytics.")
+                st.info("Select a timeframe above to view anomaly analysis.")
 
+        # ────────────────────────────────────────────────────────────────────────
+        # TAB 4 ─ Inflation Forecast  (flattened — no nested sub-tabs)
+        # ────────────────────────────────────────────────────────────────────────
+        with ia_tab_inflation:
+            st.markdown("#### 📉 Inflation & Purchasing Power")
+
+            # ── Section 1: CPI chart + erosion calculator ────────────────────────
+            inf1, inf2 = st.columns([1.4, 2])
+            with inf1:
+                st.markdown("##### Purchasing Power Erosion Calculator")
+                st.caption("How much more do you need to spend today vs a past year?")
+                base_yr    = st.number_input("Base Year",       min_value=2018, max_value=2025, value=2020, key="inf_base")
+                curr_yr    = st.number_input("Comparison Year", min_value=2019, max_value=2026, value=2025, key="inf_curr")
+                sample_amt = st.number_input("Amount in Base Year (₹)", value=10000.0, step=1000.0, key="inf_amt")
+                cum_inf    = calculate_cpi_inflation(base_yr, curr_yr)
+                req_amt    = sample_amt * (1 + cum_inf / 100)
+                st.success(f"₹ {sample_amt:,.0f} in {base_yr} → **{format_inr(req_amt)}** in {curr_yr}  (+{cum_inf:.1f}% CPI inflation)")
+
+                st.markdown("<br>", unsafe_allow_html=True)
+                st.markdown("##### Category CPI Benchmarks")
+                cat_cpi_list = [
+                    {"Category": cat, "CPI Group": d["cpi_group"], "Avg Inflation %": d["avg_inflation"]}
+                    for cat, d in CPI_CATEGORY_INFLATION.items()
+                ]
+                st.dataframe(pd.DataFrame(cat_cpi_list), use_container_width=True, hide_index=True)
+
+            with inf2:
+                st.markdown("##### Indian CPI Annual Rate (%)")
+                cpi_df  = get_cpi_df()
+                fig_cpi = px.line(
+                    cpi_df, x="Year", y="CPI Inflation (%)", markers=True,
+                    template="plotly_dark", color_discrete_sequence=["#fbbf24"],
+                )
+                fig_cpi.update_layout(
+                    paper_bgcolor="#1e293b", plot_bgcolor="#1e293b",
+                    margin=dict(l=10, r=10, t=20, b=10), title=None,
+                )
+                st.plotly_chart(fig_cpi, use_container_width=True)
+
+            st.markdown("---")
+
+            # ── Section 2: Personal Expense Predictor ───────────────────────────
+            st.markdown("##### 🔮 Predict Your Future Expenses")
+            st.caption("Uses your personal spending category weightings to calculate a tailored inflation rate — not the generic national CPI.")
+
+            hist_breakdown_df = get_category_breakdown(
+                fy=None,
+                username=current_user["username"] if view_mode == "Personal" else None,
+                view_mode=view_mode, family_id=user_family_id,
+            )
+            personal_rate = calculate_personal_inflation_rate(hist_breakdown_df)
+
+            pr1, pr2, pr3 = st.columns([1, 1, 1])
+            with pr1:
+                st.markdown(f"""
+                <div class="metric-card">
+                    <div class="metric-label">Your Personalised Inflation Rate</div>
+                    <div class="metric-value" style="color:#f87171;">{personal_rate}%</div>
+                    <div style="color:#64748b;font-size:0.78rem;">based on your category spending mix</div>
+                </div>""", unsafe_allow_html=True)
+            with pr2:
+                custom_inflation = st.number_input("Override Inflation Rate (%)", value=float(personal_rate),
+                                                    step=0.5, format="%.2f", key="pred_inf")
+                pred_base_year   = st.number_input("Base Year",   min_value=2020, max_value=2030, value=2024, key="pred_base")
+            with pr3:
+                pred_target_year = st.number_input("Target Year", min_value=2025, max_value=2060, value=2034, key="pred_target")
+                # Baseline expense
+                default_expense = 1_000_000.0
+                fys_list = get_all_financial_years(
+                    username=current_user["username"] if view_mode == "Personal" else None,
+                    view_mode=view_mode, family_id=user_family_id)
+                if fys_list and not hist_breakdown_df.empty:
+                    latest_fy_df = get_category_breakdown(
+                        fy=fys_list[0],
+                        username=current_user["username"] if view_mode == "Personal" else None,
+                        view_mode=view_mode, family_id=user_family_id)
+                    if not latest_fy_df.empty and "Total_Amount" in latest_fy_df.columns:
+                        default_expense = float(latest_fy_df["Total_Amount"].sum())
+                baseline_expense = st.number_input("Base Year Annual Spend (₹)", value=default_expense,
+                                                    step=50000.0, key="pred_baseline")
+
+            if pred_target_year > pred_base_year:
+                proj_years    = list(range(pred_base_year, pred_target_year + 1))
+                proj_expenses = [baseline_expense * ((1 + custom_inflation / 100.0) ** (y - pred_base_year)) for y in proj_years]
+                proj_df       = pd.DataFrame({"Year": proj_years, "Projected Annual Spend (₹)": proj_expenses})
+                fig_proj      = px.bar(
+                    proj_df, x="Year", y="Projected Annual Spend (₹)",
+                    template="plotly_dark", color_discrete_sequence=["#ef4444"],
+                )
+                fig_proj.update_layout(
+                    paper_bgcolor="#1e293b", plot_bgcolor="#1e293b",
+                    margin=dict(l=10, r=10, t=20, b=10), title=None,
+                )
+                st.plotly_chart(fig_proj, use_container_width=True)
+                st.success(f"By **{pred_target_year}** you'll need **{format_inr(proj_expenses[-1])}** annually to maintain your current lifestyle.")
+            else:
+                st.warning("Target year must be greater than base year.")
 
         # ----------------------------------------------------
         # 🔮 WEALTH & PLANNING
