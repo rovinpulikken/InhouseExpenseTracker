@@ -869,404 +869,457 @@ else:
     # 💸 TRANSACTIONS & ENTRY
     # ----------------------------------------------------
     elif nav_selection == "💸 Transactions":
-        st.header("💸 Transactions")
-        st.write("Manage your manual entries, file imports, and edit or delete existing expenses.")
-        
-        tx_tab1, tx_tab2, tx_tab3 = st.tabs([
-            "📊 Add Expenses (Grid)",
-            "📂 File Import & Quick Add",
-            "✏️ Edit & Delete Existing"
+        # ── Live KPI strip ──────────────────────────────────────────────────────
+        kpi_df = get_expenses_df(fy=selected_fy, username=current_user["username"], view_mode=view_mode, family_id=user_family_id)
+        this_month = datetime.date.today().strftime("%Y-%m")
+        month_df   = kpi_df[kpi_df["expense_date"].astype(str).str.startswith(this_month)] if not kpi_df.empty else pd.DataFrame()
+        last_added = kpi_df["expense_date"].max() if not kpi_df.empty else "—"
+
+        st.markdown("""
+        <style>
+        .tx-kpi-row { display:flex; gap:16px; margin-bottom:18px; flex-wrap:wrap; }
+        .tx-kpi-card {
+            flex:1; min-width:160px;
+            background: linear-gradient(135deg,#1e293b,#0f172a);
+            border:1px solid #334155; border-radius:12px;
+            padding:14px 18px; text-align:center;
+        }
+        .tx-kpi-label { color:#64748b; font-size:0.75rem; text-transform:uppercase; letter-spacing:.05em; }
+        .tx-kpi-value { color:#38bdf8; font-size:1.45rem; font-weight:700; margin-top:2px; }
+        .tx-kpi-sub   { color:#475569; font-size:0.72rem; margin-top:2px; }
+        </style>
+        """, unsafe_allow_html=True)
+
+        m_total  = month_df["amount"].sum()  if not month_df.empty else 0
+        m_count  = len(month_df)             if not month_df.empty else 0
+        fy_total = kpi_df["amount"].sum()    if not kpi_df.empty else 0
+        fy_count = len(kpi_df)               if not kpi_df.empty else 0
+
+        st.markdown(f"""
+        <div class="tx-kpi-row">
+          <div class="tx-kpi-card">
+            <div class="tx-kpi-label">This Month</div>
+            <div class="tx-kpi-value">{format_inr_short(m_total)}</div>
+            <div class="tx-kpi-sub">{m_count} entries</div>
+          </div>
+          <div class="tx-kpi-card">
+            <div class="tx-kpi-label">FY Total ({selected_fy})</div>
+            <div class="tx-kpi-value">{format_inr_short(fy_total)}</div>
+            <div class="tx-kpi-sub">{fy_count} entries</div>
+          </div>
+          <div class="tx-kpi-card">
+            <div class="tx-kpi-label">Last Entry</div>
+            <div class="tx-kpi-value" style="font-size:1rem;">{str(last_added)}</div>
+            <div class="tx-kpi-sub">most recent date</div>
+          </div>
+        </div>
+        """, unsafe_allow_html=True)
+
+        # ── 4-tab layout ────────────────────────────────────────────────────────
+        tx_tab_add, tx_tab_grid, tx_tab_import, tx_tab_manage = st.tabs([
+            "➕ Add Entry",
+            "📋 Bulk Entry Grid",
+            "📤 Import Statement",
+            "🗃️ Manage Records",
         ])
-        
-        with tx_tab1:
-            st.markdown("#### Interactive Spreadsheet Grid (Auto-Categorizing)")
-            st.caption("Type descriptions (e.g., 'Swiggy', 'D-Mart', 'Petrol', 'Electricity bill') and click **✨ Auto-Categorize & Save** below!")
-            
-            c_v1, c_v2 = st.columns([3, 1])
-            with c_v2:
-                entry_vis = st.selectbox("Default Sharing / Visibility", ["Family", "Private"], help="Family entries are shared with household; Private entries are visible only to you.", key="grid_vis")
-                
-            today_date = datetime.date.today()
-            initial_grid = pd.DataFrame([
-                {"date": today_date, "category": "Groceries & Provisions", "description": "D-Mart monthly ration", "amount": 3500.0, "visibility": entry_vis},
-                {"date": today_date, "category": "Dining & Swiggy/Zomato", "description": "Swiggy weekend dinner", "amount": 650.0, "visibility": entry_vis},
-                {"date": today_date, "category": "Transportation & Fuel", "description": "Petrol filling HPCL", "amount": 2000.0, "visibility": entry_vis}
+
+        # ────────────────────────────────────────────────────────────────────────
+        # TAB 1 ─ Add Entry  (most common action, put first)
+        # ────────────────────────────────────────────────────────────────────────
+        with tx_tab_add:
+            st.markdown("#### ➕ Quick Single-Expense Entry")
+            st.caption("Type a description and we'll auto-suggest the category for you.")
+
+            a1, a2, a3 = st.columns([1.2, 2.5, 1.3])
+            with a1:
+                q_date = st.date_input("Date", datetime.date.today(), key="q_date")
+            with a2:
+                q_desc = st.text_input("Description", placeholder="e.g. Swiggy biryani, Petrol, D-Mart ration", key="q_desc")
+            with a3:
+                q_vis = st.selectbox("Visibility", ["Family", "Private"], key="q_vis")
+
+            b1, b2, b3 = st.columns([2.5, 1.5, 1])
+            with b1:
+                predicted_cat = auto_categorize_description(q_desc) if q_desc else EXPENSE_CATEGORIES[0]
+                default_idx   = EXPENSE_CATEGORIES.index(predicted_cat) if predicted_cat in EXPENSE_CATEGORIES else 0
+                q_cat = st.selectbox("Category  ✨ Auto-Suggested", EXPENSE_CATEGORIES, index=default_idx, key="q_cat")
+            with b2:
+                q_amt = st.number_input("Amount (₹)", min_value=0.0, value=0.0, step=100.0, key="q_amt", format="%.2f")
+            with b3:
+                st.markdown("<br>", unsafe_allow_html=True)
+                add_clicked = st.button("➕ Add Expense", type="primary", use_container_width=True)
+
+            if add_clicked:
+                if q_amt > 0:
+                    insert_expenses([{
+                        "date":        q_date.isoformat(),
+                        "category":    q_cat,
+                        "description": q_desc,
+                        "amount":      q_amt,
+                        "visibility":  q_vis,
+                    }], source="Quick Manual Entry", username=current_user["username"],
+                       visibility=q_vis, family_id=user_family_id)
+                    st.success(f"✅ Added {format_inr(q_amt)} under '{q_cat}'!")
+                    st.rerun()
+                else:
+                    st.warning("Please enter an amount greater than ₹ 0.")
+
+        # ────────────────────────────────────────────────────────────────────────
+        # TAB 2 ─ Bulk Entry Grid
+        # ────────────────────────────────────────────────────────────────────────
+        with tx_tab_grid:
+            st.markdown("#### 📋 Spreadsheet-Style Bulk Entry")
+            st.caption("Add multiple rows at once. Click **✨ Auto-Categorize & Save** and Gemini will fill in the best category for each row.")
+
+            g1, g2 = st.columns([3, 1])
+            with g2:
+                entry_vis = st.selectbox("Default Visibility", ["Family", "Private"],
+                                         help="Family entries are shared; Private are visible only to you.",
+                                         key="grid_vis")
+
+            # Empty grid — no sample rows so user starts clean
+            empty_grid = pd.DataFrame([
+                {"date": datetime.date.today(), "category": EXPENSE_CATEGORIES[0],
+                 "description": "", "amount": 0.0, "visibility": entry_vis},
             ])
-            
+
             grid_edited = st.data_editor(
-                initial_grid,
+                empty_grid,
                 num_rows="dynamic",
                 column_config={
-                    "date": st.column_config.DateColumn("Date", required=True),
-                    "category": st.column_config.SelectboxColumn("Category", options=EXPENSE_CATEGORIES, required=True),
-                    "description": st.column_config.TextColumn("Description", help="Type description e.g., 'Amul milk', 'Apollo medicine', 'Swiggy'"),
-                    "amount": st.column_config.NumberColumn("Amount (₹)", min_value=0.0, format="₹ %.2f", required=True),
-                    "visibility": st.column_config.SelectboxColumn("Visibility", options=["Family", "Private"], required=True)
+                    "date":        st.column_config.DateColumn("Date", required=True),
+                    "category":    st.column_config.SelectboxColumn("Category", options=EXPENSE_CATEGORIES, required=True),
+                    "description": st.column_config.TextColumn("Description",
+                                    help="e.g. Amul milk, Apollo medicine, HPCL petrol"),
+                    "amount":      st.column_config.NumberColumn("Amount (₹)", min_value=0.0,
+                                    format="₹ %.2f", required=True),
+                    "visibility":  st.column_config.SelectboxColumn("Visibility",
+                                    options=["Family", "Private"], required=True),
                 },
                 use_container_width=True,
-                key="excel_grid_manual"
+                key="excel_grid_manual",
             )
-            
-            col_btn1, col_btn2 = st.columns(2)
-            with col_btn1:
-                if st.button("✨ Auto-Categorize & Save Grid to Database", type="primary", use_container_width=True):
-                    valid_rows = [r for r in grid_edited.to_dict("records") if float(r.get("amount", 0.0)) > 0]
+
+            gc1, gc2 = st.columns(2)
+            with gc1:
+                if st.button("✨ Auto-Categorize & Save", type="primary", use_container_width=True):
+                    valid_rows = [r for r in grid_edited.to_dict("records")
+                                  if float(r.get("amount", 0.0)) > 0]
                     if valid_rows:
                         categorized_rows = auto_categorize_records(valid_rows)
-                        cnt = insert_expenses(categorized_rows, source="Excel Grid (Auto-Categorized)", username=current_user["username"], visibility=entry_vis, family_id=user_family_id)
-                        st.success(f"🎉 Successfully auto-categorized and saved {cnt} expense entries!")
+                        cnt = insert_expenses(categorized_rows, source="Bulk Grid (Auto-Categorized)",
+                                              username=current_user["username"],
+                                              visibility=entry_vis, family_id=user_family_id)
+                        st.success(f"🎉 Auto-categorized and saved {cnt} entries!")
                         st.rerun()
                     else:
-                        st.warning("Please enter at least one row with an amount greater than 0.")
-                        
-            with col_btn2:
-                if st.button("💾 Save As Is (No Auto-Categorize)", use_container_width=True):
-                    valid_rows = [r for r in grid_edited.to_dict("records") if float(r.get("amount", 0.0)) > 0]
+                        st.warning("Please add at least one row with an amount > 0.")
+            with gc2:
+                if st.button("💾 Save As-Is (No AI Categorize)", use_container_width=True):
+                    valid_rows = [r for r in grid_edited.to_dict("records")
+                                  if float(r.get("amount", 0.0)) > 0]
                     if valid_rows:
-                        cnt = insert_expenses(valid_rows, source="Excel Grid Editor", username=current_user["username"], visibility=entry_vis, family_id=user_family_id)
+                        cnt = insert_expenses(valid_rows, source="Bulk Grid (Manual)",
+                                              username=current_user["username"],
+                                              visibility=entry_vis, family_id=user_family_id)
                         st.success(f"Saved {cnt} entries!")
                         st.rerun()
                     else:
-                        st.warning("Please enter at least one row with an amount > 0.")
-                    
-        with tx_tab2:
-            st.markdown("### File Import & Quick Add")
-            col_ex_left, col_ex_right = st.columns(2)
-            
-            with col_ex_left:
-                st.markdown("#### Download Standard Excel Template")
-                st.write("Download this pre-formatted `.xlsx` template to log expenses offline in Excel or Google Sheets.")
-                
+                        st.warning("Please add at least one row with an amount > 0.")
+
+        # ────────────────────────────────────────────────────────────────────────
+        # TAB 3 ─ Import Statement
+        # ────────────────────────────────────────────────────────────────────────
+        with tx_tab_import:
+            st.markdown("#### 📤 Import Bank / Credit-Card Statement")
+            st.caption("Upload a PDF, Excel, or CSV. Gemini AI extracts and categorizes transactions automatically.")
+
+            imp1, imp2 = st.columns([1, 2])
+            with imp1:
+                st.markdown("##### 📥 Download Template")
+                st.write("Use our pre-formatted `.xlsx` template to log expenses offline.")
                 excel_bytes = generate_excel_template()
                 st.download_button(
-                    label="📥 Download Excel Template (.xlsx)",
+                    label="📥 Download Excel Template",
                     data=excel_bytes,
-                    file_name="Expense_Tracker_Template.xlsx",
+                    file_name="FinCompass_Expense_Template.xlsx",
                     mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
-                    use_container_width=True
+                    use_container_width=True,
                 )
-                
-            with col_ex_right:
-                st.markdown("#### Upload Unstructured Statement (PDF/CSV) or Standard Excel")
-                st.write("Upload your bank/credit card statements. Gemini AI will automatically extract and categorize transactions for your review.")
-                
-                upload_vis = st.radio("Import Expense/Income Visibility", ["Family", "Private"], horizontal=True, key="upload_vis")
-                uploaded_file = st.file_uploader("Choose PDF, Excel, or CSV File", type=["xlsx", "xls", "csv", "pdf"], key="excel_uploader")
-                
-                pdf_password = ""
-                if uploaded_file and uploaded_file.name.lower().endswith('.pdf'):
-                    pdf_password = st.text_input("PDF Password (if protected)", type="password", help="Enter password if your bank statement is password protected")
 
-                gemini_api_key = current_user.get("gemini_api_key") or get_admin_gemini_api_key() or os.environ.get("GEMINI_API_KEY", "") or st.secrets.get("GEMINI_API_KEY", "")
-                
+            with imp2:
+                st.markdown("##### 🤖 AI Statement Parser")
+                upload_vis    = st.radio("Visibility for Imported Entries", ["Family", "Private"],
+                                        horizontal=True, key="upload_vis")
+                uploaded_file = st.file_uploader("Choose PDF, Excel, or CSV",
+                                                 type=["xlsx", "xls", "csv", "pdf"],
+                                                 key="excel_uploader")
+
+                pdf_password = ""
+                if uploaded_file and uploaded_file.name.lower().endswith(".pdf"):
+                    pdf_password = st.text_input("PDF Password (if protected)", type="password",
+                                                 help="Enter password if your bank statement is password-protected")
+
+                gemini_api_key = (current_user.get("gemini_api_key")
+                                  or get_admin_gemini_api_key()
+                                  or os.environ.get("GEMINI_API_KEY", "")
+                                  or st.secrets.get("GEMINI_API_KEY", ""))
+
                 if uploaded_file:
-                    if st.button("🚀 Parse & Auto-Categorize Statement", type="primary", use_container_width=True):
-                        with st.spinner("🤖 AI is reading your statement. This may take 15-30 seconds..."):
-                            # Simple heuristic: if it's explicitly the template name or standard format without 'statement' keyword, try standard import
-                            if uploaded_file.name.lower().endswith(('.xlsx', '.csv')) and "statement" not in uploaded_file.name.lower() and "bill" not in uploaded_file.name.lower():
+                    if st.button("🚀 Parse & Auto-Categorize", type="primary", use_container_width=True):
+                        with st.spinner("🤖 AI is reading your statement — this may take 15–30 s…"):
+                            is_std = (uploaded_file.name.lower().endswith((".xlsx", ".csv"))
+                                      and "statement" not in uploaded_file.name.lower()
+                                      and "bill" not in uploaded_file.name.lower())
+                            if is_std:
                                 try:
-                                    df_parsed, msg = import_from_excel_or_csv(uploaded_file, username=current_user["username"], visibility=upload_vis, family_id=user_family_id)
+                                    df_parsed, msg = import_from_excel_or_csv(
+                                        uploaded_file, username=current_user["username"],
+                                        visibility=upload_vis, family_id=user_family_id)
                                     if df_parsed is not None and not df_parsed.empty:
-                                        df_parsed = detect_and_flag_duplicates(df_parsed, current_user["username"], view_mode, user_family_id)
+                                        df_parsed = detect_and_flag_duplicates(
+                                            df_parsed, current_user["username"], view_mode, user_family_id)
                                         st.session_state["parsed_statement_df"] = df_parsed
-                                        st.success(f"{msg} Please review them below.")
+                                        st.success(f"{msg} Review below.")
                                     else:
                                         st.error(msg)
                                 except Exception as e:
-                                    st.error(f"Error with standard template import: {e}. Try renaming file to include 'statement' to force AI parsing.")
+                                    st.error(f"Template import error: {e}. Try renaming the file to include 'statement' to force AI parsing.")
                             else:
-                                # Force AI unstructured parsing
                                 if not gemini_api_key:
-                                    st.error("⚠️ Gemini API Key is required for PDF/Unstructured Statement parsing. Add it in 'My Profile'.")
+                                    st.error("⚠️ A Gemini API Key is required for AI parsing. Add it in **My Profile**.")
                                 else:
                                     from statement_parser import parse_expense_statement_with_gemini
                                     try:
-                                        raw_json = parse_expense_statement_with_gemini(uploaded_file.getvalue(), uploaded_file.name, gemini_api_key, pdf_password)
+                                        raw_json  = parse_expense_statement_with_gemini(
+                                            uploaded_file.getvalue(), uploaded_file.name,
+                                            gemini_api_key, pdf_password)
                                         df_parsed = pd.DataFrame(raw_json)
                                         if not df_parsed.empty:
-                                            # Standardize columns if missing
                                             for col in ["date", "description", "amount", "transaction_type", "category"]:
                                                 if col not in df_parsed.columns:
                                                     df_parsed[col] = ""
-                                                    
-                                            # Filter out 'Income' and 'Refund' entirely based on user request
                                             df_parsed["transaction_type"] = df_parsed["transaction_type"].astype(str).str.strip().str.title()
-                                            df_parsed["category"] = df_parsed["category"].astype(str).str.strip().str.title()
-                                            
+                                            df_parsed["category"]         = df_parsed["category"].astype(str).str.strip().str.title()
                                             df_parsed = df_parsed[df_parsed["transaction_type"] != "Income"]
                                             df_parsed = df_parsed[~df_parsed["category"].str.contains("Refund", case=False, na=False)]
-                                            
+
                                             if not df_parsed.empty:
-                                                # Coerce types for data_editor compatibility:
-                                                # amount → float64 (NumberColumn), date → ISO string (TextColumn, avoids DateColumn type errors)
                                                 df_parsed["amount"] = pd.to_numeric(df_parsed["amount"], errors="coerce").fillna(0.0)
-                                                df_parsed["date"] = pd.to_datetime(df_parsed["date"], errors="coerce").dt.strftime("%Y-%m-%d").fillna(str(datetime.date.today()))
-                                                
-                                                df_parsed = detect_and_flag_duplicates(df_parsed, current_user["username"], view_mode, user_family_id)
-                                                
+                                                df_parsed["date"]   = (pd.to_datetime(df_parsed["date"], errors="coerce")
+                                                                        .dt.strftime("%Y-%m-%d")
+                                                                        .fillna(str(datetime.date.today())))
+                                                df_parsed = detect_and_flag_duplicates(
+                                                    df_parsed, current_user["username"], view_mode, user_family_id)
                                                 st.session_state["parsed_statement_df"] = df_parsed
                                                 st.rerun()
                                             else:
-                                                st.warning("No expense transactions found (or all were filtered out as Income/Refunds).")
+                                                st.warning("No expense transactions found (all filtered as Income/Refunds).")
                                         else:
                                             st.warning("No transactions found in the document.")
                                     except Exception as e:
                                         st.error(f"Failed to parse statement: {e}")
-                                        
-                if "parsed_statement_df" in st.session_state:
-                    st.markdown("### 🔍 Review & Confirm Transactions")
-                    st.info("Please review the extracted transactions, uncheck any duplicates you don't want to save, correct categories/amounts, and click Save.")
-                    
-                    edited_df = st.data_editor(
-                        st.session_state["parsed_statement_df"],
-                        num_rows="dynamic",
-                        column_config={
-                            "import": st.column_config.CheckboxColumn("Import?", default=True),
-                            "duplicate_warning": st.column_config.CheckboxColumn("Duplicate?", disabled=True, help="Checked if a record with the same Date + Amount already exists."),
-                            "date": st.column_config.TextColumn("Date (YYYY-MM-DD)", help="Edit as YYYY-MM-DD"),
-                            "description": st.column_config.TextColumn("Description"),
-                            "amount": st.column_config.NumberColumn("Amount", required=True),
-                            "transaction_type": st.column_config.SelectboxColumn("Type", options=["Expense", "Income"], required=True),
-                            "category": st.column_config.SelectboxColumn("Category", options=EXPENSE_CATEGORIES + ["Salary", "Refund", "Interest"], required=True)
-                        },
-                        use_container_width=True,
-                        key="statement_editor"
-                    )
-                    
-                    col_save1, col_save2 = st.columns(2)
-                    with col_save1:
-                        if st.button("💾 Confirm & Save to Database", type="primary", use_container_width=True):
-                            records = edited_df.to_dict('records')
-                            valid_records = []
-                            for r in records:
-                                if r.get('import', True):
-                                    t_type = str(r.get('transaction_type', '')).strip().lower()
-                                    if t_type != 'income':
-                                        r['visibility'] = upload_vis
-                                        # Force positive amount just in case
-                                        try:
-                                            r['amount'] = abs(float(str(r.get('amount', 0)).replace(',', '')))
-                                        except:
-                                            pass
-                                        valid_records.append(r)
-                            
-                            try:
-                                if valid_records:
-                                    cnt = insert_expenses(valid_records, source=f"AI Import ({uploaded_file.name})", username=current_user["username"], visibility=upload_vis, family_id=user_family_id)
-                                    st.success(f"Successfully saved {cnt} transactions!")
-                                else:
-                                    st.warning("No valid expense transactions to save (Income entries are ignored).")
-                                del st.session_state["parsed_statement_df"]
-                                import time; time.sleep(1)
-                                st.rerun()
-                            except Exception as e:
-                                st.error(f"Database error: {e}")
-                    with col_save2:
-                        if st.button("❌ Cancel", type="secondary", use_container_width=True):
-                            del st.session_state["parsed_statement_df"]
-                            st.rerun()
-                            
-        st.divider()
-        if True:
-            st.markdown("#### Add Single Expense Entry (with Smart Auto-Categorization)")
-            m1, m2, m3, m4, m5 = st.columns([1.5, 2, 2, 1.5, 1.5])
-            with m1:
-                q_date = st.date_input("Date", datetime.date.today(), key="q_date")
-            with m2:
-                q_desc = st.text_input("Description", placeholder="e.g. Swiggy biryani, Amul milk, D-Mart", key="q_desc")
-            with m3:
-                predicted_cat = auto_categorize_description(q_desc) if q_desc else EXPENSE_CATEGORIES[0]
-                default_idx = EXPENSE_CATEGORIES.index(predicted_cat) if predicted_cat in EXPENSE_CATEGORIES else 0
-                q_cat = st.selectbox("Category (Auto-Suggested)", EXPENSE_CATEGORIES, index=default_idx, key="q_cat")
-            with m4:
-                q_amt = st.number_input("Amount (₹)", min_value=0.0, value=500.0, step=100.0, key="q_amt")
-            with m5:
-                q_vis = st.selectbox("Sharing", ["Family", "Private"], key="q_vis")
-                
-            if st.button("➕ Add Single Expense", type="primary", use_container_width=True):
-                if q_amt > 0:
-                    insert_expenses([{
-                        "date": q_date.isoformat(),
-                        "category": q_cat,
-                        "description": q_desc,
-                        "amount": q_amt,
-                        "visibility": q_vis
-                    }], source="Quick Manual Entry", username=current_user["username"], visibility=q_vis, family_id=user_family_id)
-                    st.success(f"Added {format_inr(q_amt)} under '{q_cat}'!")
-                    st.rerun()
-                else:
-                    st.warning("Please enter an amount > 0.")
 
-    # ----------------------------------------------------
-    # TAB 3: EDIT & DELETE EXPENSES
-    # ----------------------------------------------------
-        with tx_tab3:
-            st.subheader(f"✏️ Edit & Delete Expenses ({selected_fy})")
-            st.write("Modify existing entries, re-assign categories, edit amounts, or delete records.")
-            
-            expenses_df_all = get_expenses_df(fy=selected_fy, username=current_user["username"], view_mode=view_mode)
-            
-            edit_mode_tab1, edit_mode_tab2, edit_mode_tab3, edit_mode_tab4, edit_mode_tab5 = st.tabs([
-                "📝 Inline Table Editor",
-                "🔍 Search & Edit Single Record",
-                "🗑️ Delete Single Record",
-                "🧹 Clear Entire Month Data",
-                "🕵️ Detect Duplicates"
-            ])
-            
-            with edit_mode_tab1:
-                if expenses_df_all.empty:
-                    st.warning(f"No expense records available to edit or delete in {selected_fy}.")
-                else:
-                    st.markdown("#### Interactive Database Table Editor")
-                    st.caption("Edit dates, categories, descriptions, or amounts directly in the grid. FY and Quarters recalculate automatically upon saving.")
-                    
+            # Review table — shown outside the columns so it has full width
+            if "parsed_statement_df" in st.session_state:
+                st.markdown("---")
+                st.markdown("### 🔍 Review & Confirm Extracted Transactions")
+                st.info("Uncheck duplicates you don't want, correct categories/amounts, then click **Confirm & Save**.")
+
+                edited_df = st.data_editor(
+                    st.session_state["parsed_statement_df"],
+                    num_rows="dynamic",
+                    column_config={
+                        "import":            st.column_config.CheckboxColumn("Import?", default=True),
+                        "duplicate_warning": st.column_config.CheckboxColumn("Duplicate?", disabled=True,
+                                             help="Checked if same Date + Amount already exists."),
+                        "date":              st.column_config.TextColumn("Date (YYYY-MM-DD)"),
+                        "description":       st.column_config.TextColumn("Description"),
+                        "amount":            st.column_config.NumberColumn("Amount", required=True),
+                        "transaction_type":  st.column_config.SelectboxColumn("Type",
+                                             options=["Expense", "Income"], required=True),
+                        "category":          st.column_config.SelectboxColumn("Category",
+                                             options=EXPENSE_CATEGORIES + ["Salary", "Refund", "Interest"],
+                                             required=True),
+                    },
+                    use_container_width=True,
+                    key="statement_editor",
+                )
+
+                cs1, cs2 = st.columns(2)
+                with cs1:
+                    if st.button("💾 Confirm & Save to Database", type="primary", use_container_width=True):
+                        valid_records = []
+                        for r in edited_df.to_dict("records"):
+                            if r.get("import", True) and str(r.get("transaction_type", "")).strip().lower() != "income":
+                                r["visibility"] = upload_vis
+                                try:
+                                    r["amount"] = abs(float(str(r.get("amount", 0)).replace(",", "")))
+                                except Exception:
+                                    pass
+                                valid_records.append(r)
+                        try:
+                            if valid_records:
+                                cnt = insert_expenses(
+                                    valid_records,
+                                    source=f"AI Import ({uploaded_file.name})",
+                                    username=current_user["username"],
+                                    visibility=upload_vis,
+                                    family_id=user_family_id,
+                                )
+                                st.success(f"✅ Saved {cnt} transactions!")
+                            else:
+                                st.warning("No valid expense transactions to save.")
+                            del st.session_state["parsed_statement_df"]
+                            import time; time.sleep(1)
+                            st.rerun()
+                        except Exception as e:
+                            st.error(f"Database error: {e}")
+                with cs2:
+                    if st.button("❌ Discard & Cancel", use_container_width=True):
+                        del st.session_state["parsed_statement_df"]
+                        st.rerun()
+
+        # ────────────────────────────────────────────────────────────────────────
+        # TAB 4 ─ Manage Records  (Edit / Delete / Duplicates — consolidated)
+        # ────────────────────────────────────────────────────────────────────────
+        with tx_tab_manage:
+            st.markdown("#### 🗃️ Manage Existing Records")
+
+            expenses_df_all = get_expenses_df(fy=selected_fy, username=current_user["username"],
+                                               view_mode=view_mode)
+
+            if expenses_df_all.empty:
+                st.info(f"No expense records found for **{selected_fy}**. Add some entries first!")
+            else:
+                # ── Section 1: Inline table editor ──────────────────────────────
+                with st.expander("📝 Edit All Records in Table (Inline Grid)", expanded=True):
+                    st.caption("Edit dates, categories, descriptions, or amounts directly. Click **Save Changes** when done.")
                     edited_df_inline = st.data_editor(
-                        expenses_df_all[["id", "expense_date", "category", "description", "amount", "visibility", "source_note"]],
+                        expenses_df_all[["id", "expense_date", "category", "description",
+                                          "amount", "visibility", "source_note"]],
                         num_rows="dynamic",
                         column_config={
-                            "id": st.column_config.NumberColumn("ID", disabled=True),
+                            "id":           st.column_config.NumberColumn("ID", disabled=True),
                             "expense_date": st.column_config.DateColumn("Date", required=True),
-                            "category": st.column_config.SelectboxColumn("Category", options=EXPENSE_CATEGORIES, required=True),
-                            "description": st.column_config.TextColumn("Description"),
-                            "amount": st.column_config.NumberColumn("Amount (₹)", min_value=0.0, format="₹ %.2f", required=True),
-                            "visibility": st.column_config.SelectboxColumn("Visibility", options=["Family", "Private"], required=True),
-                            "source_note": st.column_config.TextColumn("Source", disabled=True)
+                            "category":     st.column_config.SelectboxColumn("Category",
+                                            options=EXPENSE_CATEGORIES, required=True),
+                            "description":  st.column_config.TextColumn("Description"),
+                            "amount":       st.column_config.NumberColumn("Amount (₹)", min_value=0.0,
+                                            format="₹ %.2f", required=True),
+                            "visibility":   st.column_config.SelectboxColumn("Visibility",
+                                            options=["Family", "Private"], required=True),
+                            "source_note":  st.column_config.TextColumn("Source", disabled=True),
                         },
                         use_container_width=True,
                         hide_index=True,
-                        key="inline_editor_tab3"
+                        key="inline_editor_tab3",
                     )
-                    
-                    if st.button("💾 Save All Edits to Database", type="primary", use_container_width=True):
+                    if st.button("💾 Save Changes", type="primary", use_container_width=True):
                         updated_count = update_expenses_df(edited_df_inline)
-                        st.success(f"🎉 Successfully updated {updated_count} record(s) in database!")
+                        st.success(f"🎉 Updated {updated_count} record(s)!")
                         st.rerun()
-                        
-            with edit_mode_tab2:
-                if expenses_df_all.empty:
-                    st.warning(f"No expense records available to edit or delete in {selected_fy}.")
-                else:
-                    st.markdown("#### Select & Modify Single Record")
-                    record_ids = expenses_df_all["id"].tolist()
-                    selected_id = st.selectbox("Select Expense ID to Edit", record_ids, key="single_edit_id")
-                    
+
+                # ── Section 2: Pick-a-record editor / deleter ────────────────────
+                with st.expander("🔍 Find & Edit / Delete a Single Record"):
+                    record_ids   = expenses_df_all["id"].tolist()
+                    selected_id  = st.selectbox("Select Record by ID", record_ids, key="single_edit_id",
+                                                format_func=lambda i: f"#{i} — "
+                                                    f"{expenses_df_all.loc[expenses_df_all['id']==i, 'expense_date'].values[0]}  "
+                                                    f"{expenses_df_all.loc[expenses_df_all['id']==i, 'description'].values[0]}  "
+                                                    f"({format_inr(float(expenses_df_all.loc[expenses_df_all['id']==i, 'amount'].values[0]))})")
                     target_record = expenses_df_all[expenses_df_all["id"] == selected_id].iloc[0]
-                    
-                    e_c1, e_c2, e_c3, e_c4, e_c5 = st.columns([1.5, 2, 2, 1.5, 1.5])
-                    with e_c1:
-                        cur_dt = pd.to_datetime(target_record["expense_date"]).date() if not pd.isna(target_record["expense_date"]) else datetime.date.today()
-                        new_dt = st.date_input("Date", cur_dt, key="single_new_dt")
-                    with e_c2:
+
+                    e1, e2, e3, e4, e5 = st.columns([1.2, 2, 2, 1.4, 1.2])
+                    with e1:
+                        cur_dt  = pd.to_datetime(target_record["expense_date"]).date() if not pd.isna(target_record["expense_date"]) else datetime.date.today()
+                        new_dt  = st.date_input("Date", cur_dt, key="single_new_dt")
+                    with e2:
                         cur_cat = target_record["category"] if target_record["category"] in EXPENSE_CATEGORIES else EXPENSE_CATEGORIES[0]
-                        new_cat = st.selectbox("Category", EXPENSE_CATEGORIES, index=EXPENSE_CATEGORIES.index(cur_cat), key="single_new_cat")
-                    with e_c3:
+                        new_cat = st.selectbox("Category", EXPENSE_CATEGORIES,
+                                               index=EXPENSE_CATEGORIES.index(cur_cat), key="single_new_cat")
+                    with e3:
                         new_desc = st.text_input("Description", value=str(target_record["description"]), key="single_new_desc")
-                    with e_c4:
-                        new_amt = st.number_input("Amount (₹)", min_value=0.0, value=float(target_record["amount"]), step=100.0, key="single_new_amt")
-                    with e_c5:
-                        cur_vis = target_record.get("visibility", "Family") if target_record.get("visibility") in ["Family", "Private"] else "Family"
-                        new_vis = st.selectbox("Sharing", ["Family", "Private"], index=0 if cur_vis == "Family" else 1, key="single_new_vis")
-                        
-                    if st.button(f"💾 Update Record #{selected_id}", type="primary", use_container_width=True):
-                        single_df = pd.DataFrame([{
-                            "id": selected_id,
-                            "expense_date": new_dt.isoformat(),
-                            "category": new_cat,
-                            "description": new_desc,
-                            "amount": new_amt,
-                            "visibility": new_vis
-                        }])
-                        update_expenses_df(single_df)
-                        st.success(f"Updated record #{selected_id}!")
-                        st.rerun()
-                        
-            with edit_mode_tab3:
-                if expenses_df_all.empty:
-                    st.warning(f"No expense records available to edit or delete in {selected_fy}.")
-                else:
-                    st.markdown("#### Delete Single Record by ID")
-                    del_id_select = st.selectbox("Select Expense ID to Delete", record_ids, key="single_del_id_select")
-                    del_target = expenses_df_all[expenses_df_all["id"] == del_id_select].iloc[0]
-                    
-                    st.info(f"Target Record #{del_id_select}: {del_target['expense_date']} | {del_target['category']} | {del_target['description']} | {format_inr(del_target['amount'])}")
-                    
-                    if st.button(f"🗑️ Permanently Delete Record #{del_id_select}", type="primary", use_container_width=True):
-                        delete_expense(int(del_id_select))
-                        st.success(f"Deleted record #{del_id_select}!")
-                        st.rerun()
-                        
-            with edit_mode_tab4:
-                if expenses_df_all.empty:
-                    st.warning(f"No expense records available to edit or delete in {selected_fy}.")
-                else:
-                    st.markdown("#### Bulk Delete Entire Month Data")
-                    if "Month_Year" in expenses_df_all.columns:
-                        available_m = sorted(expenses_df_all["Month_Year"].unique().tolist(), reverse=True)
-                        del_month_target = st.selectbox("Select Month to Wipe", available_m, format_func=format_month_label, key="bulk_del_m")
-                        month_records = expenses_df_all[expenses_df_all["Month_Year"] == del_month_target]
-                        m_sum = month_records["amount"].sum()
-                        
-                        st.warning(f"⚠️ Month **{del_month_target}** contains **{len(month_records)}** entries totaling **{format_inr(m_sum)}**.")
-                        confirm_chk = st.checkbox(f"I confirm deletion of all entries for {del_month_target}", key="chk_bulk_del")
-                        
-                        if st.button(f"🔥 Wipe All Data for {del_month_target}", type="primary", disabled=not confirm_chk, use_container_width=True):
-                            cnt_del = delete_month_expenses(del_month_target)
-                            st.success(f"Deleted {cnt_del} records for {del_month_target}!")
+                    with e4:
+                        new_amt = st.number_input("Amount (₹)", min_value=0.0,
+                                                   value=float(target_record["amount"]), step=100.0, key="single_new_amt")
+                    with e5:
+                        cur_vis = target_record.get("visibility", "Family")
+                        new_vis = st.selectbox("Visibility", ["Family", "Private"],
+                                               index=0 if cur_vis == "Family" else 1, key="single_new_vis")
+
+                    btn_col1, btn_col2 = st.columns(2)
+                    with btn_col1:
+                        if st.button(f"💾 Update Record #{selected_id}", type="primary", use_container_width=True):
+                            update_expenses_df(pd.DataFrame([{
+                                "id": selected_id, "expense_date": new_dt.isoformat(),
+                                "category": new_cat, "description": new_desc,
+                                "amount": new_amt, "visibility": new_vis,
+                            }]))
+                            st.success(f"✅ Record #{selected_id} updated!")
+                            st.rerun()
+                    with btn_col2:
+                        if st.button(f"🗑️ Delete Record #{selected_id}", type="secondary", use_container_width=True):
+                            delete_expense(int(selected_id))
+                            st.success(f"🗑️ Record #{selected_id} deleted.")
                             st.rerun()
 
-            with edit_mode_tab5:
-                st.markdown("#### 🕵️ Detect Duplicates")
-                st.write("Find and delete duplicate expense entries across **ALL Financial Years** (exact same Date and Amount).")
-                
-                # Fetch ALL expenses across ALL years globally
-                all_time_expenses_df = get_expenses_df(fy="All FYs", username=current_user["username"], view_mode=view_mode)
-                
-                if not all_time_expenses_df.empty:
-                    # Find duplicate groups
-                    dup_counts = all_time_expenses_df.groupby(['expense_date', 'amount']).size().reset_index(name='count')
-                    dup_groups = dup_counts[dup_counts['count'] > 1]
-                    
-                    if dup_groups.empty:
-                        st.success("No duplicate entries found across any Financial Year!")
+                # ── Section 3: Duplicate detector ───────────────────────────────
+                with st.expander("🕵️ Detect & Remove Duplicates"):
+                    st.write("Scans **all Financial Years** for entries with the same Date + Amount.")
+                    all_time_df = get_expenses_df(fy="All FYs", username=current_user["username"], view_mode=view_mode)
+                    if not all_time_df.empty:
+                        dup_counts = all_time_df.groupby(["expense_date", "amount"]).size().reset_index(name="count")
+                        dup_groups = dup_counts[dup_counts["count"] > 1]
+                        if dup_groups.empty:
+                            st.success("✅ No duplicate entries found across any Financial Year!")
+                        else:
+                            st.warning(f"Found {len(dup_groups)} duplicate group(s).")
+                            merged = pd.merge(all_time_df, dup_groups, on=["expense_date", "amount"])
+                            merged = merged.sort_values(["expense_date", "amount", "id"])
+                            merged["Delete"] = merged.duplicated(subset=["expense_date", "amount"], keep="first")
+                            edited_dups = st.data_editor(
+                                merged[["Delete", "id", "expense_date", "category", "description", "amount", "source_note"]],
+                                num_rows="fixed",
+                                column_config={
+                                    "Delete":       st.column_config.CheckboxColumn("🗑️ Delete?"),
+                                    "id":           st.column_config.NumberColumn("ID", disabled=True),
+                                    "expense_date": st.column_config.DateColumn("Date", disabled=True),
+                                    "category":     st.column_config.TextColumn("Category", disabled=True),
+                                    "description":  st.column_config.TextColumn("Description", disabled=True),
+                                    "amount":       st.column_config.NumberColumn("Amount", format="₹ %.2f", disabled=True),
+                                    "source_note":  st.column_config.TextColumn("Source", disabled=True),
+                                },
+                                use_container_width=True, hide_index=True, key="dup_editor",
+                            )
+                            to_delete = edited_dups[edited_dups["Delete"] == True]["id"].tolist()
+                            if to_delete:
+                                if st.button(f"🗑️ Delete {len(to_delete)} Selected Duplicate(s)", type="primary"):
+                                    for d_id in to_delete:
+                                        delete_expense(int(d_id))
+                                    st.success(f"Deleted {len(to_delete)} duplicate record(s).")
+                                    st.rerun()
                     else:
-                        st.warning(f"Found {len(dup_groups)} groups of duplicate entries.")
-                        
-                        # Join back to get full details of duplicates
-                        merged = pd.merge(all_time_expenses_df, dup_groups, on=['expense_date', 'amount'])
-                        merged = merged.sort_values(['expense_date', 'amount', 'id'])
-                        
-                        st.write("By default, all redundant records are pre-selected for deletion (keeping one original record from each group):")
-                        
-                        # Smart selection: mark all but the first in each group for deletion
-                        merged['Delete'] = merged.duplicated(subset=['expense_date', 'amount'], keep='first')
-                        
-                        edited_dups = st.data_editor(
-                            merged[['Delete', 'id', 'expense_date', 'category', 'description', 'amount', 'source_note']],
-                            num_rows="fixed",
-                            column_config={
-                                "Delete": st.column_config.CheckboxColumn("🗑️ Delete", default=False),
-                                "id": st.column_config.NumberColumn("ID", disabled=True),
-                                "expense_date": st.column_config.DateColumn("Date", disabled=True),
-                                "category": st.column_config.TextColumn("Category", disabled=True),
-                                "description": st.column_config.TextColumn("Description", disabled=True),
-                                "amount": st.column_config.NumberColumn("Amount", format="₹ %.2f", disabled=True),
-                                "source_note": st.column_config.TextColumn("Source", disabled=True)
-                            },
-                            use_container_width=True,
-                            hide_index=True,
-                            key="dup_editor"
-                        )
-                        
-                        to_delete_ids = edited_dups[edited_dups['Delete'] == True]['id'].tolist()
-                        if len(to_delete_ids) > 0:
-                            if st.button(f"🗑️ Delete Selected ({len(to_delete_ids)} records)", type="primary"):
-                                for d_id in to_delete_ids:
-                                    delete_expense(int(d_id))
-                                st.success(f"Successfully deleted {len(to_delete_ids)} duplicate records!")
-                                st.rerun()
-                else:
-                    st.info("No records to check for duplicates.")
+                        st.info("No records to scan.")
+
+                # ── Section 4: Danger Zone ───────────────────────────────────────
+                with st.expander("⚠️ Danger Zone — Bulk Delete", expanded=False):
+                    st.warning("**This cannot be undone.** This permanently removes all entries for a selected month.")
+                    if "Month_Year" in expenses_df_all.columns:
+                        available_m    = sorted(expenses_df_all["Month_Year"].unique().tolist(), reverse=True)
+                        del_month_target = st.selectbox("Select Month to Wipe", available_m,
+                                                         format_func=format_month_label, key="bulk_del_m")
+                        month_records  = expenses_df_all[expenses_df_all["Month_Year"] == del_month_target]
+                        m_sum          = month_records["amount"].sum()
+                        st.error(f"Month **{del_month_target}** → **{len(month_records)} entries**, total **{format_inr(m_sum)}**.")
+                        confirm_chk    = st.checkbox(f"✅ I confirm — delete ALL entries for {del_month_target}", key="chk_bulk_del")
+                        if st.button(f"🔥 Wipe All Data for {del_month_target}",
+                                     type="primary", disabled=not confirm_chk, use_container_width=True):
+                            cnt_del = delete_month_expenses(del_month_target)
+                            st.success(f"Deleted {cnt_del} records for {del_month_target}.")
+                            st.rerun()
+
+
 
 
         # ----------------------------------------------------
