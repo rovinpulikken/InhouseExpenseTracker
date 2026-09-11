@@ -1783,101 +1783,239 @@ else:
         # 🔮 WEALTH & PLANNING
         # ----------------------------------------------------
     elif nav_selection == "🔮 Wealth & Planning":
-    # ----------------------------------------------------
-    # TAB 7: BUDGETING & INVESTMENTS
-    # ----------------------------------------------------
-        wp_tab1, = st.tabs(["🎯 Budget & Wealth"])
-        with wp_tab1:
-            st.subheader(f"🎯 Budgeting, Investments & Active Portfolio ({selected_fy})")
-            
-        subtab_budget, subtab_invest, subtab_holdings, subtab_debts, subtab_advisor = st.tabs([
-            "🎯 Category Budget Planner & Performance",
-            "📈 Investment & Wealth Portfolio Planner",
-            "💼 Active Investment Portfolio & Holdings Tracker",
-            "🏦 Debt & Liabilities Management",
-            "💡 Smart Advisor & Tax Planner"
-        ])
-
         target_fy_clean = selected_fy if selected_fy != "All FYs" else (all_fys[0] if all_fys else "FY 2024-25")
 
-        with subtab_budget:
-            st.caption("Set category budget caps, auto-calculate target allocations based on historical monthly spending averages, and fine-tune limits using interactive + / - controls.")
+        # ── Common data fetched once ─────────────────────────────────────────────
+        from database import get_user_investments_df
+        inv_df        = get_user_investments_df(username=current_user["username"] if view_mode != "Family" else None, family_id=user_family_id)
+        debts_df_wp   = get_debts(family_id=user_family_id)
+        goals_df_wp   = get_savings_goals(family_id=user_family_id)
+        income_df_wp  = None  # lazy-loaded in Tax Planner tab
 
-            # ------------------------------------------------
-            # SECTION 1: SMART SUGGESTED BUDGET ALLOCATOR
-            # ------------------------------------------------
+        tot_invested   = float(inv_df["investment_amount"].sum()) if not inv_df.empty else 0.0
+        tot_portfolio  = float(inv_df["current_value"].sum())      if not inv_df.empty else 0.0
+        tot_debt_wp    = float(debts_df_wp["outstanding_principal"].sum()) if not debts_df_wp.empty else 0.0
+        net_worth      = tot_portfolio - tot_debt_wp
+
+        # Monthly savings rate  (income from session / budget dict)
+        _monthly_inc_wp = float(st.session_state.get("budget_dict", {}).get("__income__", 0.0)) or 100_000.0
+        _monthly_exp_wp = float(total_spent / max(1, num_months)) if not df_fy.empty else 0.0
+        savings_rate    = max(0.0, min(100.0, ((_monthly_inc_wp - _monthly_exp_wp) / max(1, _monthly_inc_wp)) * 100))
+
+        # ── Net Worth KPI strip ──────────────────────────────────────────────────
+        st.markdown("""
+        <style>
+        .wp-kpi-row  { display:flex; gap:14px; margin-bottom:20px; flex-wrap:wrap; }
+        .wp-kpi-card {
+            flex:1; min-width:155px;
+            background:linear-gradient(135deg,#1e293b,#0f172a);
+            border:1px solid #334155; border-radius:12px;
+            padding:13px 16px; text-align:center;
+        }
+        .wp-kpi-label { color:#64748b; font-size:0.72rem; text-transform:uppercase; letter-spacing:.06em; }
+        .wp-kpi-value { font-size:1.35rem; font-weight:700; margin-top:3px; }
+        .wp-kpi-sub   { color:#475569; font-size:0.7rem; margin-top:2px; }
+        </style>
+        """, unsafe_allow_html=True)
+
+        nw_color  = "#34d399" if net_worth >= 0 else "#f87171"
+        sr_color  = "#34d399" if savings_rate >= 20 else ("#fbbf24" if savings_rate >= 10 else "#f87171")
+        gain_color = "#34d399" if (tot_portfolio - tot_invested) >= 0 else "#f87171"
+
+        st.markdown(f"""
+        <div class="wp-kpi-row">
+          <div class="wp-kpi-card">
+            <div class="wp-kpi-label">Portfolio Value</div>
+            <div class="wp-kpi-value" style="color:#38bdf8;">{format_inr_short(tot_portfolio)}</div>
+            <div class="wp-kpi-sub">{format_inr_short(tot_invested)} invested · {len(inv_df) if not inv_df.empty else 0} holdings</div>
+          </div>
+          <div class="wp-kpi-card">
+            <div class="wp-kpi-label">Unrealised Gain / Loss</div>
+            <div class="wp-kpi-value" style="color:{gain_color};">{format_inr_short(tot_portfolio - tot_invested)}</div>
+            <div class="wp-kpi-sub">{((tot_portfolio-tot_invested)/max(1,tot_invested)*100):.1f}% total return</div>
+          </div>
+          <div class="wp-kpi-card">
+            <div class="wp-kpi-label">Total Outstanding Debt</div>
+            <div class="wp-kpi-value" style="color:#f87171;">{format_inr_short(tot_debt_wp)}</div>
+            <div class="wp-kpi-sub">{len(debts_df_wp) if not debts_df_wp.empty else 0} active loans</div>
+          </div>
+          <div class="wp-kpi-card">
+            <div class="wp-kpi-label">Net Worth</div>
+            <div class="wp-kpi-value" style="color:{nw_color};">{format_inr_short(net_worth)}</div>
+            <div class="wp-kpi-sub">portfolio − debt</div>
+          </div>
+          <div class="wp-kpi-card">
+            <div class="wp-kpi-label">Monthly Savings Rate</div>
+            <div class="wp-kpi-value" style="color:{sr_color};">{savings_rate:.0f}%</div>
+            <div class="wp-kpi-sub">of income saved/invested</div>
+          </div>
+        </div>
+        """, unsafe_allow_html=True)
+
+        # ── 5 flat tabs ──────────────────────────────────────────────────────────
+        wp_tab_nw, wp_tab_budget, wp_tab_invest, wp_tab_debt, wp_tab_tax = st.tabs([
+            "💰 Net Worth Overview",
+            "🎯 Budget & Goals",
+            "📈 Investments",
+            "🏦 Debts & EMIs",
+            "🧾 Tax Planner",
+        ])
+
+        # ════════════════════════════════════════════════════════════════════════
+        # TAB 1 ─ NET WORTH OVERVIEW
+        # ════════════════════════════════════════════════════════════════════════
+        with wp_tab_nw:
+            st.markdown("#### 💰 Your Financial Health at a Glance")
+
+            nw1, nw2 = st.columns([3, 2])
+
+            with nw1:
+                # Net Worth waterfall / bar
+                if not inv_df.empty or not debts_df_wp.empty:
+                    nw_data = []
+                    if not inv_df.empty:
+                        for _, row in inv_df.groupby("investment_type")["current_value"].sum().items():
+                            nw_data.append({"Component": _, "Value": row, "Type": "Asset"})
+                    if not debts_df_wp.empty:
+                        for _, row in debts_df_wp.iterrows():
+                            nw_data.append({"Component": row["debt_name"], "Value": -float(row["outstanding_principal"]), "Type": "Liability"})
+                    nw_df_chart = pd.DataFrame(nw_data)
+                    fig_nw = px.bar(
+                        nw_df_chart, x="Component", y="Value", color="Type",
+                        color_discrete_map={"Asset": "#34d399", "Liability": "#f87171"},
+                        template="plotly_dark", height=320,
+                        labels={"Value": "₹", "Component": ""},
+                    )
+                    fig_nw.update_layout(
+                        paper_bgcolor="#1e293b", plot_bgcolor="#1e293b",
+                        margin=dict(l=10, r=10, t=30, b=10),
+                        legend=dict(orientation="h", yanchor="bottom", y=1.02, xanchor="right", x=1),
+                    )
+                    st.markdown("##### Assets vs Liabilities Breakdown")
+                    st.plotly_chart(fig_nw, use_container_width=True)
+                else:
+                    st.info("Add investments and debts to see your net worth breakdown.")
+
+            with nw2:
+                st.markdown("##### 📊 Portfolio Mix")
+                if not inv_df.empty:
+                    fig_mix = px.pie(
+                        inv_df.groupby("investment_type")["current_value"].sum().reset_index(),
+                        names="investment_type", values="current_value",
+                        hole=0.5, template="plotly_dark",
+                        color_discrete_sequence=px.colors.qualitative.Set3,
+                    )
+                    fig_mix.update_traces(textposition="inside", textinfo="percent+label")
+                    fig_mix.update_layout(paper_bgcolor="#1e293b", showlegend=False, margin=dict(l=5,r=5,t=5,b=5), height=240)
+                    st.plotly_chart(fig_mix, use_container_width=True)
+                else:
+                    st.info("No investments recorded yet.")
+
+                # Savings goals progress mini-view
+                if not goals_df_wp.empty:
+                    st.markdown("##### 🎯 Goals Progress")
+                    for _, g in goals_df_wp.iterrows():
+                        pct = min(1.0, g["current_saved"] / g["target_amount"]) if g["target_amount"] > 0 else 0
+                        st.caption(f"**{g['goal_name']}** — {int(pct*100)}%")
+                        st.progress(pct)
+
+            st.markdown("---")
+            st.markdown("##### ⚡ Quick Actions")
+            qa1, qa2, qa3 = st.columns(3)
+            with qa1:
+                st.markdown("""
+                <div style="background:linear-gradient(135deg,#1e3a5f,#0f172a); border:1px solid #38bdf8;
+                            border-radius:10px; padding:14px 16px; text-align:center; min-height:90px;">
+                    <div style="font-size:1.5rem;">📈</div>
+                    <div style="color:#38bdf8; font-weight:700; margin-top:4px; font-size:0.9rem;">Investments Tab</div>
+                    <div style="color:#64748b; font-size:0.75rem; margin-top:3px;">Add holdings · Sync prices · Rebalance</div>
+                </div>""", unsafe_allow_html=True)
+            with qa2:
+                st.markdown("""
+                <div style="background:linear-gradient(135deg,#2d1b3f,#0f172a); border:1px solid #a78bfa;
+                            border-radius:10px; padding:14px 16px; text-align:center; min-height:90px;">
+                    <div style="font-size:1.5rem;">🧾</div>
+                    <div style="color:#a78bfa; font-weight:700; margin-top:4px; font-size:0.9rem;">Tax Planner</div>
+                    <div style="color:#64748b; font-size:0.75rem; margin-top:3px;">Compute tax · Upload capital gains</div>
+                </div>""", unsafe_allow_html=True)
+            with qa3:
+                st.markdown("""
+                <div style="background:linear-gradient(135deg,#1a2f1a,#0f172a); border:1px solid #34d399;
+                            border-radius:10px; padding:14px 16px; text-align:center; min-height:90px;">
+                    <div style="font-size:1.5rem;">🎯</div>
+                    <div style="color:#34d399; font-weight:700; margin-top:4px; font-size:0.9rem;">Budget & Goals</div>
+                    <div style="color:#64748b; font-size:0.75rem; margin-top:3px;">Set budgets · Track savings goals</div>
+                </div>""", unsafe_allow_html=True)
+
+        # ════════════════════════════════════════════════════════════════════════
+        # TAB 2 ─ BUDGET & GOALS
+        # ════════════════════════════════════════════════════════════════════════
+        with wp_tab_budget:
+            st.caption("Set spending limits, auto-allocate based on income, and track your savings goals.")
+
+            # ── Smart Budget Allocator ───────────────────────────────────────────
             st.markdown("""
-            <div style="background-color: #1e293b; padding: 14px 18px; border-radius: 8px; border-left: 4px solid #10b981; margin-bottom: 15px;">
-                <div style="font-weight: 600; color: #10b981; font-size: 0.95rem;">💡 Smart Suggested Budget Calculator</div>
-                <div style="color: #94a3b8; font-size: 0.85rem;">Specify your overall target household monthly spend, or fill limits with your past monthly spending averages.</div>
+            <div style="background-color:#1e293b; padding:14px 18px; border-radius:8px;
+                        border-left:4px solid #10b981; margin-bottom:15px;">
+                <div style="font-weight:600; color:#10b981; font-size:0.95rem;">💡 Smart Suggested Budget Calculator</div>
+                <div style="color:#94a3b8; font-size:0.85rem;">Specify your monthly income and target spend, or fill with past averages.</div>
             </div>
             """, unsafe_allow_html=True)
 
             suggested_base_df = get_suggested_budgets(fy=target_fy_clean, username=current_user["username"], view_mode=view_mode, family_id=user_family_id)
             total_hist_avg_monthly = float(suggested_base_df["hist_monthly_avg"].sum())
-
-            # Calculate the sum of user-entered categories (excluding auto-calculated Investments)
             other_cats = [c for c in EXPENSE_CATEGORIES if c != "Insurance & Investments"]
             current_entered_sum = sum([float(st.session_state.get("budget_dict", {}).get(c, 0.0)) for c in other_cats])
-            
-            # Fallback if empty
             if current_entered_sum == 0:
                 current_entered_sum = max(50000.0, float(round(total_hist_avg_monthly, -3))) if total_hist_avg_monthly > 0 else 75000.0
-                
+
             def autosave_all_budgets():
                 t_others = sum([float(st.session_state["budget_dict"].get(c, 0.0)) for c in other_cats])
                 st.session_state["budget_dict"]["Insurance & Investments"] = max(0.0, float(monthly_income_input - t_others))
-                records = [
-                    {"category": c, "monthly_limit": val, "annual_limit": val * 12.0}
-                    for c, val in st.session_state["budget_dict"].items()
-                ]
+                records = [{"category": c, "monthly_limit": val, "annual_limit": val * 12.0}
+                           for c, val in st.session_state["budget_dict"].items()]
                 batch_set_category_budgets(target_fy_clean, records, family_id=user_family_id)
 
             t_col_inc, t_col1, t_col2, t_col3 = st.columns([1.5, 2, 1.2, 1.2])
             with t_col_inc:
-                monthly_income_input = st.number_input(
-                    "💵 Expected Monthly Income (₹)",
-                    min_value=0.0,
-                    value=100000.0,
-                    step=5000.0,
-                    help="Your total expected monthly income. Used to calculate target savings and investments."
-                )
+                monthly_income_input = st.number_input("💵 Monthly Income (₹)", min_value=0.0, value=100000.0, step=5000.0)
             with t_col1:
-                target_monthly_input = st.number_input(
-                    "💰 Target Total Household Monthly Spend (₹)",
-                    min_value=1000.0,
-                    value=float(current_entered_sum),
-                    step=5000.0,
-                    help="Sum of all your category limits. Edit this to auto-scale your categories proportionally."
-                )
-                
-            # If user manually edited the Target Total, auto-scale the categories
+                target_monthly_input = st.number_input("💰 Target Monthly Spend (₹)", min_value=1000.0, value=float(current_entered_sum), step=5000.0)
             if "budget_dict" in st.session_state and target_monthly_input != current_entered_sum and current_entered_sum > 0:
                 scale_factor = target_monthly_input / current_entered_sum
                 for c in other_cats:
                     st.session_state["budget_dict"][c] = round(float(st.session_state["budget_dict"][c]) * scale_factor, 2)
                 autosave_all_budgets()
                 st.rerun()
-
             with t_col2:
                 st.markdown("<br>", unsafe_allow_html=True)
-                btn_apply_hist = st.button(
-                    "⚡ Fill Historical Averages",
-                    type="secondary",
-                    use_container_width=True,
-                    help="Populate suggested budgets matching exact past monthly spending averages."
-                )
-
+                if st.button("⚡ Fill Historical Avgs", type="secondary", use_container_width=True):
+                    if "budget_dict" not in st.session_state:
+                        st.session_state["budget_dict"] = {}
+                    for idx, r in suggested_base_df.iterrows():
+                        c = r["category"]
+                        if c != "Insurance & Investments":
+                            st.session_state["budget_dict"][c] = round(float(r["hist_monthly_avg"]), 2)
+                    autosave_all_budgets()
+                    st.success("⚡ Filled historical averages!")
+                    st.rerun()
             with t_col3:
                 st.markdown("<br>", unsafe_allow_html=True)
-                btn_apply_prop = st.button(
-                    "🎯 Auto-Allocate Target Proportionally",
-                    type="primary",
-                    use_container_width=True,
-                    help="Distribute your Target Total Spend across categories proportionally based on past spending ratios."
-                )
+                if st.button("🎯 Auto-Allocate 80/20", type="primary", use_container_width=True):
+                    if "budget_dict" not in st.session_state:
+                        st.session_state["budget_dict"] = {}
+                    prop_target = monthly_income_input * 0.80
+                    prop_df = get_suggested_budgets(fy=target_fy_clean, username=current_user["username"], view_mode=view_mode, target_total_monthly=prop_target, family_id=user_family_id)
+                    for idx, r in prop_df.iterrows():
+                        c = r["category"]
+                        if c == "Insurance & Investments":
+                            st.session_state["budget_dict"][c] = round(float(monthly_income_input * 0.20), 2)
+                        else:
+                            st.session_state["budget_dict"][c] = round(float(r["suggested_monthly"]), 2)
+                    autosave_all_budgets()
+                    st.success(f"🎯 80/20 allocated! Investments set to {format_inr(monthly_income_input * 0.20)}/mo.")
+                    st.rerun()
 
-            # Handle Preset Actions in session state
             if "budget_dict" not in st.session_state:
                 st.session_state["budget_dict"] = {}
                 for idx, r in suggested_base_df.iterrows():
@@ -1885,156 +2023,143 @@ else:
                     m = float(r["monthly_limit"]) if float(r["monthly_limit"]) > 0 else float(r["suggested_monthly"])
                     st.session_state["budget_dict"][c] = m
 
-            if btn_apply_hist:
-                for idx, r in suggested_base_df.iterrows():
-                    c = r["category"]
-                    if c != "Insurance & Investments":
-                        val = round(float(r["hist_monthly_avg"]), 2)
-                        st.session_state["budget_dict"][c] = val
-                autosave_all_budgets()
-                st.success("⚡ Filled all category limits with past monthly averages and Auto-Saved!")
-                st.rerun()
-
-            if btn_apply_prop:
-                prop_target = monthly_income_input * 0.80  # 80% of income for expenses
-                prop_df = get_suggested_budgets(fy=target_fy_clean, username=current_user["username"], view_mode=view_mode, target_total_monthly=prop_target, family_id=user_family_id)
-                for idx, r in prop_df.iterrows():
-                    c = r["category"]
-                    if c == "Insurance & Investments":
-                        st.session_state["budget_dict"][c] = round(float(monthly_income_input * 0.20), 2)
-                    else:
-                        st.session_state["budget_dict"][c] = round(float(r["suggested_monthly"]), 2)
-                autosave_all_budgets()
-                st.success(f"🎯 Auto-allocated and Auto-Saved! Set Investments to 20% ({format_inr(monthly_income_input * 0.20)}) and distributed the remaining 80% to expenses.")
-                st.rerun()
-
-            # ------------------------------------------------
-            # SECTION 2: INTERACTIVE CATEGORY BUDGET ADJUSTER (+/-)
-            # ------------------------------------------------
+            # ── Category adjuster ────────────────────────────────────────────────
             st.markdown("<br>", unsafe_allow_html=True)
-            st.markdown("#### ⚙️ Category Budget Planner & Interactive Adjuster (+ / -)")
-            st.caption("Use the quick `+` and `-` modifier buttons to fine-tune each category limit up or down.")
-
+            st.markdown("#### ⚙️ Category Budget Adjuster")
             hist_avg_map = dict(zip(suggested_base_df["category"], suggested_base_df["hist_monthly_avg"]))
 
             for cat in other_cats:
                 current_val = float(st.session_state["budget_dict"].get(cat, 10000.0))
                 h_avg = float(hist_avg_map.get(cat, 0.0))
-
                 cat_col1, cat_col2, cat_col3, cat_col4, cat_col5 = st.columns([2.5, 1.8, 2.5, 1.8, 1.8])
-
                 with cat_col1:
                     st.markdown(f"**{cat}**")
                     st.caption(f"Hist Avg: {format_inr(h_avg)} / mo")
-
                 with cat_col2:
-                    b_minus1k = st.button("➖ ₹1k", key=f"sub_1k_{cat}", help=f"Decrease {cat} budget by ₹1,000")
-                    b_minus5p = st.button("➖ 5%", key=f"sub_5p_{cat}", help=f"Decrease {cat} budget by 5%")
-                    if b_minus1k:
+                    b_m1k = st.button("➖ ₹1k", key=f"sub_1k_{cat}")
+                    b_m5p = st.button("➖ 5%", key=f"sub_5p_{cat}")
+                    if b_m1k:
                         st.session_state["budget_dict"][cat] = max(0.0, round(current_val - 1000.0, 2))
-                        autosave_all_budgets()
-                        st.rerun()
-                    if b_minus5p:
+                        autosave_all_budgets(); st.rerun()
+                    if b_m5p:
                         st.session_state["budget_dict"][cat] = max(0.0, round(current_val * 0.95, 2))
-                        autosave_all_budgets()
-                        st.rerun()
-
+                        autosave_all_budgets(); st.rerun()
                 with cat_col3:
-                    new_val = st.number_input(
-                        f"Monthly Limit (₹)",
-                        min_value=0.0,
-                        value=float(st.session_state["budget_dict"].get(cat, 10000.0)),
-                        step=500.0,
-                        key=f"input_m_{cat}",
-                        label_visibility="collapsed"
-                    )
+                    new_val = st.number_input(f"Monthly Limit (₹)", min_value=0.0, value=float(st.session_state["budget_dict"].get(cat, 10000.0)),
+                                              step=500.0, key=f"input_m_{cat}", label_visibility="collapsed")
                     if new_val != st.session_state["budget_dict"][cat]:
                         st.session_state["budget_dict"][cat] = round(new_val, 2)
-                        autosave_all_budgets()
-                        st.rerun()
-
+                        autosave_all_budgets(); st.rerun()
                 with cat_col4:
-                    b_plus1k = st.button("➕ ₹1k", key=f"add_1k_{cat}", help=f"Increase {cat} budget by ₹1,000")
-                    b_plus5p = st.button("➕ 5%", key=f"add_5p_{cat}", help=f"Increase {cat} budget by 5%")
-                    if b_plus1k:
+                    b_p1k = st.button("➕ ₹1k", key=f"add_1k_{cat}")
+                    b_p5p = st.button("➕ 5%", key=f"add_5p_{cat}")
+                    if b_p1k:
                         st.session_state["budget_dict"][cat] = round(current_val + 1000.0, 2)
-                        autosave_all_budgets()
-                        st.rerun()
-                    if b_plus5p:
+                        autosave_all_budgets(); st.rerun()
+                    if b_p5p:
                         st.session_state["budget_dict"][cat] = round(current_val * 1.05, 2)
-                        autosave_all_budgets()
-                        st.rerun()
-
+                        autosave_all_budgets(); st.rerun()
                 with cat_col5:
-                    ann_val = st.session_state["budget_dict"][cat] * 12.0
-                    st.markdown(f"**{format_inr_short(ann_val)}**")
+                    st.markdown(f"**{format_inr_short(st.session_state['budget_dict'][cat] * 12.0)}**")
                     st.caption("Annual Cap")
+                st.markdown("<hr style='margin:6px 0; border-color:#334155;'>", unsafe_allow_html=True)
 
-                st.markdown("<hr style='margin: 6px 0; border-color: #334155;'>", unsafe_allow_html=True)
-            
-            # Dynamic calculation for Insurance & Investments
+            # Auto-calculated investments row
             cat = "Insurance & Investments"
             total_others = sum([float(st.session_state["budget_dict"].get(c, 0.0)) for c in other_cats])
             calc_inv = max(0.0, float(monthly_income_input - total_others))
             st.session_state["budget_dict"][cat] = calc_inv
-
-            # Render it special
-            cat_col1, cat_col2, cat_col3, cat_col4, cat_col5 = st.columns([2.5, 1.8, 2.5, 1.8, 1.8])
-            with cat_col1:
-                st.markdown(f"**{cat}** (Auto-Calculated)")
-                st.caption(f"Income - All Other Expenses")
-            with cat_col2:
-                 st.write("")
-            with cat_col3:
-                 st.markdown(f"**{format_inr(calc_inv)}**")
-            with cat_col4:
-                 st.write("")
-            with cat_col5:
-                 st.markdown(f"**{format_inr_short(calc_inv * 12.0)}**")
-                 st.caption("Annual Cap")
-                 
-            st.markdown("<hr style='margin: 6px 0; border-color: #334155;'>", unsafe_allow_html=True)
+            ic1, ic2, ic3, ic4, ic5 = st.columns([2.5, 1.8, 2.5, 1.8, 1.8])
+            with ic1:
+                st.markdown(f"**{cat}** *(Auto)*")
+                st.caption("Income − All Other Expenses")
+            with ic3: st.markdown(f"**{format_inr(calc_inv)}**")
+            with ic5:
+                st.markdown(f"**{format_inr_short(calc_inv * 12.0)}**")
+                st.caption("Annual Cap")
+            st.markdown("<hr style='margin:6px 0; border-color:#334155;'>", unsafe_allow_html=True)
 
             if monthly_income_input < total_others:
-                 st.warning("⚠️ Warning: Your allocated expenses exceed your expected monthly income. Please reduce your category limits.")
+                st.warning("⚠️ Allocated expenses exceed monthly income. Reduce category limits.")
 
-            # ------------------------------------------------
-            # 🎯 GOAL-BASED SAVINGS
-            # ------------------------------------------------
-            st.markdown("### 🎯 Goal-Based Savings")
-            st.caption("Track your cash savings against specific life goals (e.g. Child's Education, Downpayment).")
-            
-            savings_goals_df = get_savings_goals(family_id=user_family_id)
-            if not savings_goals_df.empty:
-                for _, goal in savings_goals_df.iterrows():
-                    pct = min(1.0, goal["current_saved"] / goal["target_amount"]) if goal["target_amount"] > 0 else 0.0
-                    st.markdown(f"**{goal['goal_name']}**")
-                    st.progress(pct)
-                    sc1, sc2, sc3 = st.columns([2, 1, 1])
-                    with sc1:
-                        st.caption(f"Saved: {format_inr_short(goal['current_saved'])} / {format_inr_short(goal['target_amount'])} ({int(pct*100)}%)")
-                    with sc2:
-                        if goal["target_date"]:
-                            st.caption(f"Target: {goal['target_date']}")
-                    with sc3:
-                        with st.popover("⚙️ Manage Goal"):
-                            c_amt = st.number_input("Log Contribution", min_value=0.0, step=1000.0, key=f"contrib_{goal['id']}")
-                            if st.button("➕ Add Funds", key=f"btn_add_{goal['id']}"):
-                                if add_goal_contribution(goal['id'], user_family_id, c_amt):
-                                    st.success(f"Added {format_inr(c_amt)} to {goal['goal_name']}")
-                                    st.rerun()
-                            st.markdown("---")
-                            if st.button("🚨 Delete Goal", key=f"btn_del_{goal['id']}"):
-                                if delete_savings_goal(goal['id'], user_family_id):
-                                    st.success("Deleted goal!")
-                                    st.rerun()
-                    st.markdown("<br>", unsafe_allow_html=True)
+            # Budget summary strip
+            total_alloc = float(sum(st.session_state["budget_dict"].values()))
+            diff = float(target_monthly_input - total_alloc)
+            bs1, bs2, bs3 = st.columns(3)
+            bs1.metric("🎯 Target Monthly Spend", format_inr(target_monthly_input))
+            bs2.metric("💵 Total Allocated", format_inr(total_alloc), delta=f"{format_inr(diff)} Buffer" if diff >= 0 else f"-{format_inr(abs(diff))} Deficit", delta_color="normal" if diff >= 0 else "inverse")
+            bs3.metric("📅 Annual Budget Cap", format_inr(total_alloc * 12.0))
+            st.success("✅ **Auto-Save On**: All budget changes are instantly saved.")
+
+            # ── Budget Performance ────────────────────────────────────────────────
+            st.markdown("---")
+            st.markdown("#### 📊 Budget Performance & Utilisation")
+            budget_status = get_budget_status(target_fy_clean, username=current_user["username"], view_mode=view_mode, family_id=user_family_id)
+            if not budget_status.empty:
+                for idx, row in budget_status.iterrows():
+                    cat  = row["category"]
+                    spent  = float(row["Actual_Spent"])
+                    budget = float(row["Annual_Budget"])
+                    util   = float(row["Utilization_%"])
+                    if budget > 0:
+                        c1, c2, c3 = st.columns([2, 3, 1])
+                        with c1:
+                            st.markdown(f"**{cat}**")
+                            st.caption(f"Spent: {format_inr(spent)} / Budget: {format_inr(budget)}")
+                        with c2:
+                            st.progress(min(util / 100.0, 1.0))
+                        with c3:
+                            if util > 100:
+                                st.markdown("<span class='surge-badge'>OVER</span>", unsafe_allow_html=True)
+                            elif util > 80:
+                                st.markdown("<span style='background:#78350f; color:#fde047; padding:4px 8px; border-radius:6px; font-weight:600; font-size:0.82rem;'>DANGER</span>", unsafe_allow_html=True)
+                            else:
+                                st.markdown("<span class='normal-badge'>ON TRACK</span>", unsafe_allow_html=True)
+
+            # ── Savings Goals ─────────────────────────────────────────────────────
+            st.markdown("---")
+            st.markdown("#### 🎯 Savings Goals")
+
+            if not goals_df_wp.empty:
+                # Show as 2-column card grid
+                goal_rows = list(goals_df_wp.iterrows())
+                for row_start in range(0, len(goal_rows), 2):
+                    gcols = st.columns(2)
+                    for col_idx, (_, goal) in enumerate(goal_rows[row_start:row_start + 2]):
+                        with gcols[col_idx]:
+                            pct = min(1.0, goal["current_saved"] / goal["target_amount"]) if goal["target_amount"] > 0 else 0.0
+                            bar_color = "#10b981" if pct >= 0.75 else ("#fbbf24" if pct >= 0.4 else "#38bdf8")
+                            st.markdown(f"""
+                            <div style="background:linear-gradient(135deg,#1e293b,#0f172a); border:1px solid #334155;
+                                        border-radius:12px; padding:16px 18px; margin-bottom:10px;">
+                                <div style="font-weight:700; color:#f1f5f9; font-size:0.95rem;">{goal['goal_name']}</div>
+                                <div style="display:flex; justify-content:space-between; margin:8px 0 4px;">
+                                    <span style="color:#34d399; font-weight:600;">{format_inr_short(goal['current_saved'])}</span>
+                                    <span style="color:#64748b; font-size:0.82rem;">of {format_inr_short(goal['target_amount'])}</span>
+                                </div>
+                                <div style="width:100%; background:#334155; border-radius:4px; height:8px;">
+                                    <div style="width:{pct*100:.1f}%; background:{bar_color}; height:100%; border-radius:4px;"></div>
+                                </div>
+                                <div style="color:#64748b; font-size:0.75rem; margin-top:6px;">{int(pct*100)}% complete{(' · Target: '+str(goal['target_date'])) if goal.get('target_date') else ''}</div>
+                            </div>
+                            """, unsafe_allow_html=True)
+                            with st.popover("⚙️ Manage"):
+                                c_amt = st.number_input("Log Contribution", min_value=0.0, step=1000.0, key=f"contrib_{goal['id']}")
+                                if st.button("➕ Add Funds", key=f"btn_add_{goal['id']}"):
+                                    if add_goal_contribution(goal['id'], user_family_id, c_amt):
+                                        st.success(f"Added {format_inr(c_amt)}!")
+                                        st.rerun()
+                                st.markdown("---")
+                                if st.button("🚨 Delete Goal", key=f"btn_del_{goal['id']}"):
+                                    if delete_savings_goal(goal['id'], user_family_id):
+                                        st.success("Deleted!")
+                                        st.rerun()
             else:
-                st.info("No savings goals active. Create one below!")
-                
+                st.info("No savings goals yet. Create one below!")
+
             with st.expander("➕ Create New Savings Goal"):
                 with st.form("new_goal_form"):
-                    g_name = st.text_input("Goal Name (e.g., Child's Education)")
+                    g_name = st.text_input("Goal Name (e.g. Child's Education)")
                     g_target = st.number_input("Target Amount", min_value=0.0, step=10000.0)
                     g_date = st.date_input("Target Date")
                     g_contrib = st.number_input("Planned Monthly Contribution (Optional)", min_value=0.0, step=1000.0)
@@ -2044,321 +2169,70 @@ else:
                                 st.success("Goal created!")
                                 st.rerun()
                         else:
-                            st.error("Please provide a valid name and target amount.")
-            
-            st.markdown("<hr style='margin: 10px 0; border-color: #334155;'>", unsafe_allow_html=True)
+                            st.error("Please provide a name and target amount.")
 
-            # ------------------------------------------------
-            # LIVE BUDGET SUMMARY BAR & SAVE BUTTON
-            # ------------------------------------------------
-            total_allocated_monthly = float(sum(st.session_state["budget_dict"].values()))
-            diff_from_target = float(target_monthly_input - total_allocated_monthly)
+        # ════════════════════════════════════════════════════════════════════════
+        # TAB 3 ─ INVESTMENTS  (Holdings + SIP Planner + Rebalance + Deploy New Money)
+        # ════════════════════════════════════════════════════════════════════════
+        with wp_tab_invest:
+            # ── Portfolio KPI strip ──────────────────────────────────────────────
+            if not inv_df.empty:
+                tot_gain_inv = tot_portfolio - tot_invested
+                tot_ret_pct  = round((tot_gain_inv / tot_invested) * 100, 2) if tot_invested > 0 else 0.0
+                pm1, pm2, pm3, pm4 = st.columns(4)
+                pm1.metric("💰 Total Invested", format_inr(tot_invested))
+                pm2.metric("🏆 Portfolio Value", format_inr(tot_portfolio))
+                pm3.metric("📈 Gain / Loss", format_inr(tot_gain_inv), delta=f"{tot_ret_pct:.2f}%", delta_color="normal" if tot_gain_inv >= 0 else "inverse")
+                pm4.metric("📊 Holdings", f"{len(inv_df)} assets")
 
-            sum_c1, sum_c2, sum_c3 = st.columns(3)
-            with sum_c1:
-                st.metric("🎯 User Target Monthly Spend", format_inr(target_monthly_input))
-            with sum_c2:
-                st.metric("💵 Total Allocated Monthly Budget", format_inr(total_allocated_monthly), delta=f"{format_inr(diff_from_target)} Buffer" if diff_from_target >= 0 else f"-{format_inr(abs(diff_from_target))} Deficit", delta_color="normal" if diff_from_target >= 0 else "inverse")
-            with sum_c3:
-                st.metric("📅 Total Annual Budget Cap", format_inr(total_allocated_monthly * 12.0))
+                st.markdown("<br>", unsafe_allow_html=True)
 
-            st.markdown("<br>", unsafe_allow_html=True)
-            
-            st.success("✅ **Auto-Save Enabled**: All changes you make above are instantly saved to the database.")
+                # Historical growth deltas
+                deltas_inv = get_portfolio_snapshots_deltas(user_family_id, tot_portfolio)
+                dh1, dh2, dh3, dh4 = st.columns(4)
+                def _fmt_d(d):
+                    v, p = d["value"], d["percent"]
+                    return f"{'+' if v>=0 else ''}{format_inr_short(v)} ({'+' if v>=0 else ''}{p:.1f}%)"
+                dh1.metric("Since Last Sync", "", delta=_fmt_d(deltas_inv["previous_sync"]), delta_color="normal")
+                dh2.metric("7-Day Change", "", delta=_fmt_d(deltas_inv["weekly"]), delta_color="normal")
+                dh3.metric("30-Day Change", "", delta=_fmt_d(deltas_inv["monthly"]), delta_color="normal")
+                dh4.metric("1-Year Change", "", delta=_fmt_d(deltas_inv["yearly"]), delta_color="normal")
 
-            # ------------------------------------------------
-            # SECTION 3: BUDGET PERFORMANCE & UTILIZATION DASHBOARD
-            # ------------------------------------------------
-            st.markdown("<hr>", unsafe_allow_html=True)
-            st.markdown("#### 📊 Budget Performance & Utilization Dashboard")
-            budget_status = get_budget_status(target_fy_clean, username=current_user["username"], view_mode=view_mode, family_id=user_family_id)
+                # Quick-action buttons
+                st.markdown("<br>", unsafe_allow_html=True)
+                act1, act2, act3 = st.columns([1, 1, 2])
+                with act1:
+                    if st.button("🔄 Sync Live Prices", use_container_width=True):
+                        with st.spinner("Fetching NAVs..."):
+                            updated_df = live_market_tracker.update_portfolio_live_prices(inv_df.copy())
+                            update_investments_df(updated_df)
+                            record_portfolio_snapshot(user_family_id, float(updated_df["current_value"].sum()))
+                        st.success("✅ Prices synced!"); st.rerun()
 
-            if not budget_status.empty:
-                for idx, row in budget_status.iterrows():
-                    cat = row["category"]
-                    spent = float(row["Actual_Spent"])
-                    budget = float(row["Annual_Budget"])
-                    util = float(row["Utilization_%"])
+                # ── AI Portfolio Review at TOP ───────────────────────────────────
+                with act2:
+                    run_ai_review = st.button("🤖 AI Portfolio Review", type="primary", use_container_width=True)
+                if run_ai_review:
+                    with st.spinner("🤖 Gemini AI analyzing portfolio..."):
+                        portfolio_ai = generate_ai_portfolio_suggestions(inv_df, current_user, debts_df_wp, goals_df_wp)
+                    st.success("🎉 AI Review Complete!")
+                    st.info(portfolio_ai.get("summary", ""))
+                    for rec in portfolio_ai.get("recommendations", []):
+                        with st.expander(f"**{rec.get('title', 'Recommendation')}**"):
+                            st.markdown(f"**Observation**: {rec.get('observation', '')}")
+                            st.markdown(f"**Suggestion**: {rec.get('suggestion', '')}")
 
-                    if budget > 0:
-                        c1, c2, c3 = st.columns([2, 3, 1])
-                        with c1:
-                            st.markdown(f"**{cat}**")
-                            st.caption(f"Spent: {format_inr(spent)} / Budget: {format_inr(budget)}")
-                        with c2:
-                            progress_val = min(util / 100.0, 1.0)
-                            st.progress(progress_val)
-                        with c3:
-                            if util > 100:
-                                st.markdown("<span class='surge-badge'>OVER BUDGET</span>", unsafe_allow_html=True)
-                            elif util > 80:
-                                st.markdown("<span style='background:#78350f; color:#fde047; padding:4px 8px; border-radius:6px; font-weight:600; font-size:0.85rem;'>DANGER ZONE</span>", unsafe_allow_html=True)
-                            else:
-                                st.markdown("<span class='normal-badge'>ON TRACK</span>", unsafe_allow_html=True)
-
-        # ------------------------------------------------
-        # SUB-TAB 2: INVESTMENT & WEALTH PORTFOLIO PLANNER
-        # ------------------------------------------------
-        with subtab_invest:
-            st.markdown("### 📈 Investment & Wealth Portfolio Planner")
-            st.caption("Takes your allocated Insurance & Investment budget, age, and current savings to construct a personalized asset allocation, monthly SIP breakdown, and 20-year compound wealth trajectory.")
-
-            curr_insurance_invest_monthly = float(st.session_state.get("budget_dict", {}).get("Insurance & Investments", 20000.0))
-
-            from database import get_user_investments_df
-            inv_df = get_user_investments_df(username=current_user["username"] if view_mode != "Family" else None, family_id=user_family_id)
-            total_active_investments = float(inv_df["current_value"].sum()) if not inv_df.empty and "current_value" in inv_df.columns else 0.0
-
-            inv_col1, inv_col2, inv_col3, inv_col4 = st.columns([1, 1.2, 1.5, 1.8])
-            with inv_col1:
-                u_age = st.number_input("👤 Your Age", min_value=18, max_value=85, value=current_user.get("age", 35), step=1, key="invest_user_age")
-                if u_age != current_user.get("age", 35):
-                    from database import update_user_age
-                    if update_user_age(current_user["username"], u_age):
-                        st.session_state["user"]["age"] = u_age
-            with inv_col2:
-                st.write("") # vertical spacing to align toggle
-                st.write("")
-                use_portfolio_networth = st.toggle("Link Networth", value=True, help="Automatically link your total active investment valuation here.")
-            with inv_col3:
-                if use_portfolio_networth:
-                    u_savings = total_active_investments
-                    st.metric("💰 Linked Portfolio Networth", format_inr_short(u_savings))
-                else:
-                    # Need a separate key to preserve manual state
-                    u_savings = st.number_input("💰 Your Networth (₹)", min_value=0.0, value=total_active_investments, step=50000.0, format="%.2f", key="invest_user_savings_manual")
-            with inv_col4:
-                u_sip_budget = st.number_input(
-                    "💵 Monthly recurring Investments (₹)",
-                    min_value=1000.0,
-                    value=max(5000.0, curr_insurance_invest_monthly),
-                    step=1000.0,
-                    format="%.2f",
-                    key="invest_user_sip"
-                )
-
-            # Compute Investment Plan
-            inv_plan = calculate_investment_plan(
-                age=u_age,
-                current_savings=u_savings,
-                monthly_investment_budget=u_sip_budget,
-                monthly_expenses=total_spent / max(1, num_months) if not df_fy.empty else 50000.0
-            )
-
-            # Key Investment Metrics
-            im1, im2, im3, im4 = st.columns(4)
-            with im1:
-                st.metric("🚀 Equity Allocation", f"{inv_plan['equity_pct']:.0f}%", f"SIP: {format_inr(inv_plan['equity_sip'])}")
-            with im2:
-                st.metric("🛡️ Debt Allocation", f"{inv_plan['debt_pct']:.0f}%", f"SIP: {format_inr(inv_plan['debt_sip'])}")
-            with im3:
-                st.metric("🪙 Gold Allocation", f"{inv_plan['gold_pct']:.0f}%", f"SIP: {format_inr(inv_plan['gold_sip'])}")
-            with im4:
-                st.metric("📈 Expected Blended CAGR", f"~{inv_plan['blended_cagr_pct']}% / yr", "Indian Market Benchmark")
-
-            st.markdown("<br>", unsafe_allow_html=True)
-
-            # Asset Split Pie Chart & Monthly SIP Allocation Table
-            ch_col1, ch_col2 = st.columns([1, 1])
-
-            with ch_col1:
-                st.markdown("#### 📊 Age-Adjusted Asset Class Split")
-                pie_df = pd.DataFrame([
-                    {"Asset": "Equity", "Allocation_%": inv_plan["equity_pct"]},
-                    {"Asset": "Debt / Fixed Income", "Allocation_%": inv_plan["debt_pct"]},
-                    {"Asset": "Gold / SGB", "Allocation_%": inv_plan["gold_pct"]}
-                ])
-                fig_asset = px.pie(
-                    pie_df,
-                    names="Asset",
-                    values="Allocation_%",
-                    color="Asset",
-                    color_discrete_map={"Equity": "#38bdf8", "Debt / Fixed Income": "#34d399", "Gold / SGB": "#fbbf24"},
-                    hole=0.4
-                )
-                fig_asset.update_layout(margin=dict(l=10, r=10, t=10, b=10), height=280)
-                st.plotly_chart(fig_asset, use_container_width=True)
-
-            with ch_col2:
-                st.markdown("#### 📝 Recommended Monthly SIP Allocation")
-                sip_df = pd.DataFrame(inv_plan["sip_instruments"])
-                st.dataframe(
-                    sip_df[["asset_class", "allocation_pct", "monthly_sip", "recommended_instruments"]],
-                    column_config={
-                        "asset_class": st.column_config.TextColumn("Asset Class"),
-                        "allocation_pct": st.column_config.TextColumn("Weight"),
-                        "monthly_sip": st.column_config.NumberColumn("Monthly SIP (₹)", format="₹ %.2f"),
-                        "recommended_instruments": st.column_config.TextColumn("Suggested Vehicles")
-                    },
-                    use_container_width=True,
-                    hide_index=True
-                )
-
-            # Wealth Compound Growth Trajectory Chart
-            st.markdown("<hr>", unsafe_allow_html=True)
-            st.markdown("#### 🚀 Wealth Compound Growth Trajectory (5 - 20 Years)")
-            
-            proj_data = []
-            for yrs, p_data in inv_plan["projections"].items():
-                proj_data.append({
-                    "Horizon": f"{yrs} Years",
-                    "Total Invested": p_data["total_invested"],
-                    "Projected Future Corpus": p_data["total_future_value"],
-                    "Wealth Compounding Gain": p_data["wealth_gain"]
-                })
-            
-            proj_df = pd.DataFrame(proj_data)
-
-            fig_proj = px.bar(
-                proj_df,
-                x="Horizon",
-                y=["Total Invested", "Wealth Compounding Gain"],
-                title="Compound Capital Growth Projection (12% Eq / 7% Debt / 8% Gold)",
-                labels={"value": "Amount (₹)", "variable": "Component"},
-                color_discrete_map={"Total Invested": "#64748b", "Wealth Compounding Gain": "#10b981"},
-                barmode="stack",
-                height=380
-            )
-            fig_proj.update_layout(paper_bgcolor="#1e293b", plot_bgcolor="#1e293b", margin=dict(l=20, r=20, t=40, b=20))
-            st.plotly_chart(fig_proj, use_container_width=True)
-
-            # Emergency Reserve & Safety Shield Indicator
-            st.markdown("#### 🏦 Emergency Reserve & Protection Status")
-            em_status = inv_plan["emergency_status"]
-            if em_status == "Sufficient":
-                st.success(f"✅ **Emergency Buffer Healthy**: Your current savings of **{format_inr(u_savings)}** exceeds your recommended 6-month buffer of **{format_inr(inv_plan['req_emergency'])}**.")
             else:
-                st.warning(f"⚠️ **Emergency Buffer Deficit**: Target 6-month buffer is **{format_inr(inv_plan['req_emergency'])}**. You have a deficit of **{format_inr(inv_plan['emergency_gap'])}**. Consider assigning initial savings to Liquid Funds before aggressive stock investments.")
+                st.info("💡 No holdings yet. Add your first investment below.")
 
-            # Gemini AI Wealth & Milestone Strategy Advisor Card
-            st.markdown("<hr>", unsafe_allow_html=True)
-            st.markdown("### 🤖 Gemini AI Wealth & Milestone Advisory")
-            st.caption("Get personalized financial milestone recommendations and tax-efficient wealth management strategies.")
+            st.markdown("---")
 
-            if st.button("💡 Generate AI Wealth & Milestone Advisory", type="primary", use_container_width=True):
-                with st.spinner("🤖 Analyzing portfolio allocation with Gemini AI..."):
-                    wealth_advice = generate_ai_wealth_advice(inv_plan)
-
-                st.success("🎉 AI Wealth Strategy Generated!")
-                st.info(wealth_advice.get("summary", ""))
-
-                for bullet in wealth_advice.get("key_takeaways", []):
-                    st.markdown(f"- {bullet}")
-
-            # ------------------------------------------------
-            # RETIREMENT PLANNER SIMULATION
-            # ------------------------------------------------
-            st.markdown("<hr>", unsafe_allow_html=True)
-            st.markdown("### 🏖️ Retirement Planner Simulation")
-            st.caption("Plan your retirement corpus dynamically. Leave 'Expected Returns' blank to automatically fetch historical average returns from global indices.")
-
-            ret_col1, ret_col2 = st.columns(2)
-            with ret_col1:
-                ret_age = st.number_input("🎯 Desired Retirement Age", min_value=u_age + 1, max_value=100, value=max(60, u_age + 10), step=1)
-                exp_return_str = st.text_input("📈 Expected Returns (CAGR %)", placeholder="e.g. 12.5 (Leave blank to use historical data)")
-            
-            with ret_col2:
-                benchmark_index = st.selectbox(
-                    "📊 Benchmark Index (If Expected Returns is blank)",
-                    options=[
-                        ("Nifty 50 (India)", "^NSEI"),
-                        ("BSE Sensex (India)", "^BSESN"),
-                        ("S&P 500 (US)", "^GSPC"),
-                        ("NASDAQ Composite (US)", "^IXIC")
-                    ],
-                    format_func=lambda x: x[0]
-                )
-                hist_years = st.selectbox(
-                    "📅 Historical Data Period",
-                    options=[5, 10, 15, 20],
-                    index=1,
-                    format_func=lambda x: f"Last {x} Years"
-                )
-
-            st.markdown("#### 💸 Additional Planner Assumptions")
-            st.caption("Factor in extra expenses before retirement. These will drain your accumulating corpus.")
-            add_col1, add_col2 = st.columns(2)
-            with add_col1:
-                default_expenses = pd.DataFrame([{"Expense Description": "", "Amount (₹)": 0.0, "Age": min(ret_age, u_age + 5)}])
-                one_time_exp_df = st.data_editor(default_expenses, num_rows="dynamic", key="one_time_exp_editor", use_container_width=True, hide_index=True)
-            with add_col2:
-                add_recurring_exp = st.number_input(
-                    "Additional Monthly Recurring Expenses (₹)", 
-                    min_value=0.0, 
-                    value=0.0, 
-                    step=5000.0, 
-                    help="Extra monthly expenses you want to plan for (e.g., ongoing medical costs) during the accumulation phase."
-                )
-
-            one_time_expenses_list = []
-            for _, row in one_time_exp_df.iterrows():
-                raw_amt = row.get("Amount (₹)", 0.0)
-                raw_age = row.get("Age", u_age)
-                
-                try:
-                    amt = float(raw_amt) if raw_amt is not None and str(raw_amt).strip() != "" else 0.0
-                except (ValueError, TypeError):
-                    amt = 0.0
-                
-                try:
-                    age_val = int(raw_age) if raw_age is not None and str(raw_age).strip() != "" else u_age
-                except (ValueError, TypeError):
-                    age_val = u_age
-
-                if amt > 0:
-                    one_time_expenses_list.append({"amount": amt, "age": age_val})
-
-            if st.button("🔮 Calculate Retirement Corpus", type="primary", use_container_width=True):
-                from investment_planner import fetch_index_historical_cagr, calculate_retirement_corpus, generate_ai_retirement_advisory
-                
-                with st.spinner("Calculating retirement projections..."):
-                    if exp_return_str.strip():
-                        try:
-                            cagr_decimal = float(exp_return_str.strip()) / 100.0
-                        except ValueError:
-                            st.warning("Invalid Expected Returns. Falling back to 12%.")
-                            cagr_decimal = 0.12
-                    else:
-                        st.info(f"Fetching {hist_years}-year historical returns for {benchmark_index[0]}...")
-                        cagr_decimal = fetch_index_historical_cagr(benchmark_index[1], hist_years)
-                        st.success(f"Historical {hist_years}-year CAGR for {benchmark_index[0]} is **{cagr_decimal*100:.2f}%**")
-
-                    ret_plan = calculate_retirement_corpus(
-                        current_age=u_age,
-                        retirement_age=ret_age,
-                        current_savings=u_savings,
-                        monthly_sip=u_sip_budget,
-                        cagr_decimal=cagr_decimal,
-                        one_time_expenses=one_time_expenses_list,
-                        additional_monthly_expense=add_recurring_exp
-                    )
-
-                    r1, r2, r3 = st.columns(3)
-                    r1.metric("💰 Projected Corpus", format_inr(ret_plan["total_future_value"]), f"+ {format_inr(ret_plan['wealth_gain'])} Gain")
-                    r2.metric("💵 Total Invested", format_inr(ret_plan["total_invested"]))
-                    r3.metric("🏝️ Safe Monthly Withdrawal (4%)", format_inr(ret_plan["safe_monthly_withdrawal"]))
-
-                with st.spinner("🤖 Generating AI Retirement Strategy..."):
-                    ret_advice = generate_ai_retirement_advisory(ret_plan, inv_df)
-                    st.markdown("#### 🤖 AI Retirement Advisory")
-                    st.info(ret_advice.get("summary", ""))
-                    for item in ret_advice.get("key_takeaways", []):
-                        st.markdown(f"- {item}")
-
-        # ------------------------------------------------
-        # SUB-TAB 3: ACTIVE INVESTMENT PORTFOLIO & HOLDINGS TRACKER
-        # ------------------------------------------------
-        with subtab_holdings:
-            st.markdown("### 💼 Active Investment Portfolio & Holdings Tracker")
-            st.caption("Track, aggregate, and analyze active investments across platforms. Upload Consolidated Account Statements (CAS) or track live market NAVs.")
-
-            # --- CAS / Broker Statement Uploader ---
-            st.markdown("#### 📤 Auto-Ingest from Broker Statements (GenAI Powered)")
-            with st.expander("Upload ICICI Direct / Anand Rathi / Standard CAS / Any Format"):
-                import os
-                import pandas as pd
-                
-                template_df = pd.DataFrame({
+            # ── Add Holdings (collapsed by default if data exists) ───────────────
+            with st.expander("➕ Add / Import Holdings", expanded=inv_df.empty):
+                # CAS Uploader
+                st.markdown("##### 📤 Import from Broker Statement (AI-Powered)")
+                default_api_key = current_user.get("gemini_api_key") or os.environ.get("GEMINI_API_KEY", "") or st.secrets.get("GEMINI_API_KEY", "")
+                template_df_inv = pd.DataFrame({
                     "Stock Code / Name": ["HDFC Bank", "Nifty 50 Index Fund"],
                     "Platform / Broker": ["Zerodha", "ICICI Direct"],
                     "Asset Class": ["Equity", "Mutual Funds"],
@@ -2368,45 +2242,15 @@ else:
                     "Units": [30.5, 150.25],
                     "Average Buy Price": [1639.34, 210.50],
                     "Market Cap": ["Large Cap", "Unknown"],
-                    "Sector / Theme": ["Banking", "Index"]
+                    "Sector / Theme": ["Banking", "Index"],
                 })
-                csv_template = template_df.to_csv(index=False).encode('utf-8')
-                st.download_button(
-                    label="⬇️ Download Standard Statement Template",
-                    data=csv_template,
-                    file_name="investment_template.csv",
-                    mime="text/csv",
-                    help="Fill out this standard template for guaranteed 100% accurate parsing without needing Gemini AI."
-                )
-                
-                default_api_key = current_user.get("gemini_api_key")
-                if not default_api_key:
-                    default_api_key = os.environ.get("GEMINI_API_KEY", "")
-                if not default_api_key:
-                    try:
-                        default_api_key = st.secrets.get("GEMINI_API_KEY", "")
-                    except:
-                        pass
-                
-                gemini_api_key = st.text_input("Gemini API Key (Optional for Universal Parsing)", value=default_api_key, type="password", key="stmt_api_key")
-                if gemini_api_key and gemini_api_key != current_user.get("gemini_api_key"):
-                    if st.button("💾 Save Key to Profile", key="save_api_key_btn"):
-                        from database import update_user_gemini_key
-                        if update_user_gemini_key(current_user["username"], gemini_api_key):
-                            st.session_state["user"]["gemini_api_key"] = gemini_api_key
-                            st.success("API Key saved securely to your profile!")
-                            st.rerun()
-                        else:
-                            st.error("Failed to save API key.")
-                
-                uploaded_file = st.file_uploader("Upload CSV, Excel, PDF, or Image file", type=['csv', 'xlsx', 'xls', 'pdf', 'png', 'jpg', 'jpeg'], key="stmt_upload")
-                if uploaded_file and st.button("Parse and Import Statement", type="primary"):
-                    with st.spinner("Parsing statement with Gemini AI (fallback to heuristics)..." if gemini_api_key else "Parsing statement using heuristics..."):
+                st.download_button("⬇️ Download Standard CSV Template", template_df_inv.to_csv(index=False).encode(), "investment_template.csv", "text/csv")
+                uploaded_file_inv = st.file_uploader("Upload CSV, Excel, PDF or Image", type=["csv", "xlsx", "xls", "pdf", "png", "jpg", "jpeg"], key="stmt_upload")
+                if uploaded_file_inv and st.button("Parse & Import", type="primary"):
+                    with st.spinner("Parsing..."):
                         try:
-                            parsed_data = statement_parser.identify_and_parse_statement(uploaded_file.getvalue(), uploaded_file.name, api_key=gemini_api_key)
-                            if not parsed_data:
-                                st.warning("Could not extract any valid holdings from this file. Ensure it's a supported format.")
-                            else:
+                            parsed_data = statement_parser.identify_and_parse_statement(uploaded_file_inv.getvalue(), uploaded_file_inv.name, api_key=default_api_key)
+                            if parsed_data:
                                 import amfi_lookup
                                 for inv_dict in parsed_data:
                                     code_candidate = inv_dict.get("name_or_symbol") or inv_dict.get("platform")
@@ -2415,582 +2259,480 @@ else:
                                         if resolved:
                                             inv_dict["resolved_name"] = resolved["name"]
                                             inv_dict["sector_segment"] = resolved["category"]
-
                                 from database import batch_insert_investments
                                 count = batch_insert_investments(parsed_data, username=current_user["username"], family_id=user_family_id)
-                                st.success(f"🎉 Successfully imported {count} holdings from {uploaded_file.name}!")
+                                st.success(f"🎉 Imported {count} holdings!")
                                 st.rerun()
+                            else:
+                                st.warning("Could not extract holdings from this file.")
                         except Exception as e:
-                            st.error(f"Error parsing file: {e}")
+                            st.error(f"Parse error: {e}")
 
-            # Form to Add New Investment Entry
-            st.markdown("#### ➕ Add New Manual Holding")
-            
-            PRESET_TYPES = [
-                "Equity (Stocks)",
-                "Mutual funds",
-                "Structured funds",
-                "EPF",
-                "PPF",
-                "KVP (Kisan Vikas Patra)",
-                "NSC (National Savings Certificate)",
-                "Fixed Deposits / Recurring Deposits",
-                "Startup investments",
-                "Gold / Sovereign Gold Bonds (SGB)",
-                "Real Estate",
-                "Other (Add Custom Type)"
-            ]
-            
-            PRESET_PLATFORMS = [
-                "Zerodha",
-                "Groww",
-                "SBI / SBI Mutual Fund",
-                "Post Office",
-                "Coin (Zerodha)",
-                "Angel One",
-                "Upstox",
-                "ICICI Direct",
-                "HDFC Securities",
-                "IndMoney",
-                "Direct / Primary Institution",
-                "Other (Add Custom Platform)"
-            ]
+                st.markdown("##### ➕ Manual Entry")
+                PRESET_TYPES = ["Equity (Stocks)", "Mutual funds", "Structured funds", "EPF", "PPF",
+                                "KVP (Kisan Vikas Patra)", "NSC (National Savings Certificate)",
+                                "Fixed Deposits / Recurring Deposits", "Startup investments",
+                                "Gold / Sovereign Gold Bonds (SGB)", "Real Estate", "Other (Add Custom Type)"]
+                PRESET_PLATFORMS = ["Zerodha", "Groww", "SBI / SBI Mutual Fund", "Post Office", "Coin (Zerodha)",
+                                    "Angel One", "Upstox", "ICICI Direct", "HDFC Securities", "IndMoney",
+                                    "Direct / Primary Institution", "Other (Add Custom Platform)"]
+                mc1, mc2, mc3, mc4, mc5 = st.columns([1.5, 1.5, 1.2, 1.0, 1.2])
+                with mc1:
+                    sel_plat = st.selectbox("Platform", PRESET_PLATFORMS, key="inv_plat_sel")
+                    final_plat = st.text_input("Custom Platform", key="inv_plat_custom") if sel_plat == "Other (Add Custom Platform)" else sel_plat
+                with mc2:
+                    sel_type = st.selectbox("Type", PRESET_TYPES, key="inv_type_sel")
+                    final_type = st.text_input("Custom Type", key="inv_type_custom") if sel_type == "Other (Add Custom Type)" else sel_type
+                with mc3:
+                    inv_desc_val = st.text_input("Stock Code / Name", value="HDFCBANK", key="inv_desc_input")
+                with mc4:
+                    inv_amt_val = st.number_input("Invested (₹)", min_value=100.0, value=50000.0, step=5000.0, key="inv_amt_input")
+                with mc5:
+                    inv_yr_val = st.number_input("Year", min_value=1990, max_value=datetime.datetime.now().year + 5, value=datetime.datetime.now().year, step=1, key="inv_yr_input")
+                    curr_val_input = st.number_input("Current Value (₹)", min_value=0.0, value=inv_amt_val * 1.10, step=5000.0, key="inv_curr_input")
+                if st.button("➕ Add Holding", type="primary", use_container_width=True):
+                    insert_investment(username=current_user["username"], platform=final_plat, investment_type=final_type,
+                                     investment_amount=inv_amt_val, year_invested=inv_yr_val,
+                                     current_value=curr_val_input, family_id=user_family_id, description=inv_desc_val)
+                    st.success(f"Added {inv_desc_val}!")
+                    st.rerun()
 
-            add_col1, add_col2, add_col3, add_col4, add_col5 = st.columns([1.5, 1.5, 1.2, 1.0, 1.2])
+            # ── Holdings Grid ────────────────────────────────────────────────────
+            if not inv_df.empty:
+                st.markdown("---")
 
-            with add_col1:
-                selected_plat = st.selectbox("Platform / Broker", PRESET_PLATFORMS, key="inv_plat_sel")
-                if selected_plat == "Other (Add Custom Platform)":
-                    final_plat = st.text_input("Specify Platform Name", value="Custom Broker", key="inv_plat_custom")
-                else:
-                    final_plat = selected_plat
-
-            with add_col2:
-                selected_type = st.selectbox("Investment Type", PRESET_TYPES, key="inv_type_sel")
-                if selected_type == "Other (Add Custom Type)":
-                    final_type = st.text_input("Specify Custom Category", value="Alternative Asset", key="inv_type_custom")
-                else:
-                    final_type = selected_type
-
-            with add_col3:
-                inv_desc_val = st.text_input("Stock Code / Name", value="HDFCBANK", key="inv_desc_input")
-
-            with add_col4:
-                inv_amt_val = st.number_input("Invested Amount (₹)", min_value=100.0, value=50000.0, step=5000.0, format="%.2f", key="inv_amt_input")
-
-            with add_col5:
-                curr_year = datetime.datetime.now().year
-                inv_yr_val = st.number_input("Year Invested", min_value=1990, max_value=curr_year + 5, value=curr_year, step=1, key="inv_yr_input")
-                curr_val_input = st.number_input("Current Value (₹)", min_value=0.0, value=inv_amt_val * 1.10, step=5000.0, format="%.2f", key="inv_curr_input")
-
-            if st.button("➕ Add Investment Holding to Portfolio", type="primary", use_container_width=True):
-                new_id = insert_investment(
-                    username=current_user["username"],
-                    platform=final_plat,
-                    investment_type=final_type,
-                    investment_amount=inv_amt_val,
-                    year_invested=inv_yr_val,
-                    current_value=curr_val_input,
-                    family_id=user_family_id,
-                    description=inv_desc_val
-                )
-                st.success(f"🎉 Successfully added holding **{inv_desc_val}** under **{final_plat}** with initial investment of **{format_inr(inv_amt_val)}**!")
-                st.rerun()
-
-            st.markdown("<hr>", unsafe_allow_html=True)
-
-            # Retrieve User Holdings
-            holdings_df = get_user_investments_df(username=current_user["username"] if view_mode != "Family" else None, family_id=user_family_id)
-
-            if not holdings_df.empty:
-                tot_invested = float(holdings_df["investment_amount"].sum())
-                tot_current = float(holdings_df["current_value"].sum())
-                tot_gain = tot_current - tot_invested
-                tot_returns_pct = round((tot_gain / tot_invested) * 100.0, 2) if tot_invested > 0 else 0.0
-
-                # Top Metrics
-                hm1, hm2, hm3, hm4 = st.columns(4)
-                with hm1:
-                    st.metric("💰 Total Invested Capital", format_inr(tot_invested))
-                with hm2:
-                    st.metric("🏆 Current Portfolio Valuation", format_inr(tot_current))
-                with hm3:
-                    st.metric(
-                        "📈 Capital Gain / Loss",
-                        format_inr(tot_gain),
-                        delta=f"{tot_returns_pct:.2f}% Total Gain" if tot_gain >= 0 else f"{tot_returns_pct:.2f}% Loss",
-                        delta_color="normal" if tot_gain >= 0 else "inverse"
-                    )
-                with hm4:
-                    st.metric("📊 Total Holdings Count", f"{len(holdings_df)} Active Assets")
-
-                st.markdown("<br>", unsafe_allow_html=True)
-                
-                # Portfolio Snapshot Deltas
-                deltas = get_portfolio_snapshots_deltas(user_family_id, tot_current)
-                
-                st.markdown("#### ⏳ Historical Growth (vs Live Market)")
-                dh1, dh2, dh3, dh4 = st.columns(4)
-                
-                def format_delta(d):
-                    val = d["value"]
-                    pct = d["percent"]
-                    prefix = "+" if val >= 0 else ""
-                    return f"{prefix}{format_inr_short(val)} ({prefix}{pct:.2f}%)"
-                
-                with dh1:
-                    st.metric("Since Last Sync", "", delta=format_delta(deltas["previous_sync"]), delta_color="normal")
-                with dh2:
-                    st.metric("7-Day Change", "", delta=format_delta(deltas["weekly"]), delta_color="normal")
-                with dh3:
-                    st.metric("30-Day Change", "", delta=format_delta(deltas["monthly"]), delta_color="normal")
-                with dh4:
-                    st.metric("1-Year Change", "", delta=format_delta(deltas["yearly"]), delta_color="normal")
-
-                st.markdown("<br>", unsafe_allow_html=True)
-                
-                # Live Market Refresh
-                head_c1, head_c2 = st.columns([3, 1])
-                with head_c1:
-                    st.markdown("#### 📡 Real-Time Portfolio Tracking")
-                with head_c2:
-                    if st.button("🔄 Sync Live Prices (NAVs)", use_container_width=True):
-                        with st.spinner("Fetching latest NAVs from AMFI & Market APIs..."):
-                            updated_df = live_market_tracker.update_portfolio_live_prices(holdings_df.copy())
-                            update_investments_df(updated_df)
-                            
-                            # Record snapshot of the new total value
-                            new_tot = float(updated_df["current_value"].sum())
-                            record_portfolio_snapshot(user_family_id, new_tot)
-                            
-                        st.success("✅ Portfolio synced with live market data!")
-                        st.rerun()
-
-                st.markdown("<br>", unsafe_allow_html=True)
-
-                # Multi-Segment Distribution Charts
+                # Distribution charts
                 chart_c1, chart_c2, chart_c3 = st.columns(3)
                 with chart_c1:
-                    st.markdown("#### 🍩 Asset Type")
-                    fig_type = px.pie(
-                        holdings_df,
-                        names="investment_type",
-                        values="current_value",
-                        hole=0.4
-                    )
-                    fig_type.update_layout(margin=dict(l=10, r=10, t=30, b=10), height=280)
+                    st.markdown("##### Asset Type")
+                    fig_type = px.pie(inv_df, names="investment_type", values="current_value", hole=0.4, template="plotly_dark")
+                    fig_type.update_layout(margin=dict(l=5,r=5,t=10,b=5), height=220)
                     st.plotly_chart(fig_type, use_container_width=True)
-
                 with chart_c2:
-                    st.markdown("#### 🏗️ Market Cap")
-                    fig_mc = px.pie(
-                        holdings_df,
-                        names="market_cap",
-                        values="current_value",
-                        hole=0.4
-                    )
-                    fig_mc.update_layout(margin=dict(l=10, r=10, t=30, b=10), height=280)
+                    st.markdown("##### Market Cap")
+                    fig_mc = px.pie(inv_df, names="market_cap", values="current_value", hole=0.4, template="plotly_dark")
+                    fig_mc.update_layout(margin=dict(l=5,r=5,t=10,b=5), height=220)
                     st.plotly_chart(fig_mc, use_container_width=True)
-
                 with chart_c3:
-                    st.markdown("#### 🏛️ Platform / Broker")
-                    fig_plat = px.bar(
-                        holdings_df.groupby("platform", as_index=False)["current_value"].sum(),
-                        x="platform",
-                        y="current_value",
-                        color="platform",
-                        labels={"current_value": "Current Value (₹)", "platform": "Platform"}
-                    )
-                    fig_plat.update_layout(paper_bgcolor="#1e293b", plot_bgcolor="#1e293b", margin=dict(l=10, r=10, t=10, b=10), height=280, showlegend=False)
+                    st.markdown("##### Platform")
+                    fig_plat = px.bar(inv_df.groupby("platform", as_index=False)["current_value"].sum(),
+                                      x="platform", y="current_value", color="platform", template="plotly_dark",
+                                      labels={"current_value": "₹", "platform": ""})
+                    fig_plat.update_layout(paper_bgcolor="#1e293b", plot_bgcolor="#1e293b", margin=dict(l=5,r=5,t=10,b=5), height=220, showlegend=False)
                     st.plotly_chart(fig_plat, use_container_width=True)
-                    
-                st.markdown("<hr>", unsafe_allow_html=True)
-                
-                # --- GROUPED PORTFOLIO SUMMARY ---
-                render_grouped_portfolio_summary(holdings_df)
-                
-                
-                st.markdown("<hr>", unsafe_allow_html=True)
-                # Target Allocation & Rebalancing Drift
-                st.markdown("#### ⚖️ Target Allocation & Rebalancing (Segment Drift)")
-                st.caption("Compare your current portfolio segments against ideal target allocations to identify drift.")
-                
-                seg_analytics = analyze_portfolio_segments(holdings_df)
-                
-                target_allocs = {
-                    "Equity": st.sidebar.slider("Target Equity %", 0, 100, 60, key="tgt_eq"),
-                    "Mutual Funds": st.sidebar.slider("Target MF %", 0, 100, 20, key="tgt_mf"),
-                    "Deposits": st.sidebar.slider("Target Debt/Deposits %", 0, 100, 20, key="tgt_debt")
-                }
-                
-                drift_data = calculate_asset_allocation_drift(seg_analytics, target_allocs)
-                if drift_data:
-                    drift_df = pd.DataFrame(drift_data)
-                    st.dataframe(drift_df, use_container_width=True)
-                    
-                    if st.button("🤖 Get AI Segment & Rebalancing Advice", type="primary"):
-                        with st.spinner("Analyzing Segment Diversification & Drift..."):
-                            adv = generate_ai_segment_advisory(seg_analytics, "Moderate (Growth)")
-                        st.info(adv)
-                        
-                st.markdown("<hr>", unsafe_allow_html=True)
-                
-                with st.expander("🧹 Find & Remove Duplicate Holdings"):
-                    st.caption("Scan your portfolio for exactly identical entries (same amount, platform, year, type, etc.)")
+
+                # Grouped summary
+                render_grouped_portfolio_summary(inv_df)
+
+                # Editable grid
+                with st.expander("✏️ Edit Holdings"):
+                    all_asset_types = sorted(inv_df["investment_type"].unique().tolist())
+                    sel_types = st.multiselect("Filter by Asset Class", all_asset_types, default=all_asset_types)
+                    filt_inv = inv_df[inv_df["investment_type"].isin(sel_types)] if sel_types else inv_df.head(0)
+                    if "resolved_name" not in inv_df.columns:
+                        inv_df["resolved_name"] = ""
+                    display_cols = ["id", "description", "resolved_name", "platform", "investment_type",
+                                    "investment_amount", "year_invested", "current_value",
+                                    "units", "avg_buy_price", "market_cap", "sector_segment",
+                                    "unrealized_gain", "returns_pct"]
+                    edited_holdings = st.data_editor(
+                        filt_inv[display_cols] if not filt_inv.empty else filt_inv,
+                        column_config={
+                            "id": st.column_config.NumberColumn("ID", disabled=True),
+                            "description": st.column_config.TextColumn("Stock / Name"),
+                            "resolved_name": st.column_config.TextColumn("AMFI Name", disabled=True),
+                            "platform": st.column_config.TextColumn("Platform"),
+                            "investment_type": st.column_config.TextColumn("Type"),
+                            "investment_amount": st.column_config.NumberColumn("Invested (₹)", format="₹ %.2f"),
+                            "year_invested": st.column_config.NumberColumn("Year"),
+                            "current_value": st.column_config.NumberColumn("Current Val (₹)", format="₹ %.2f"),
+                            "units": st.column_config.NumberColumn("Units", format="%.4f"),
+                            "avg_buy_price": st.column_config.NumberColumn("Avg Price", format="₹ %.2f"),
+                            "market_cap": st.column_config.SelectboxColumn("Market Cap", options=["Large Cap", "Mid Cap", "Small Cap", "Multi Cap", "Unknown"]),
+                            "sector_segment": st.column_config.TextColumn("Sector"),
+                            "unrealized_gain": st.column_config.NumberColumn("Gain/Loss (₹)", format="₹ %.2f", disabled=True),
+                            "returns_pct": st.column_config.NumberColumn("Return %", format="%.2f %%", disabled=True),
+                        },
+                        use_container_width=True, hide_index=True, num_rows="dynamic", key="editor_holdings"
+                    )
+                    ec1, ec2 = st.columns([2, 1])
+                    with ec1:
+                        if st.button("💾 Save Edits", type="primary", use_container_width=True):
+                            cnt_upd = update_investments_df(edited_holdings)
+                            st.success(f"Updated {cnt_upd} entries!"); st.rerun()
+                    with ec2:
+                        del_id = st.number_input("Delete by ID", min_value=1, step=1, key="del_inv_id")
+                        if st.button("🗑️ Delete", type="secondary", use_container_width=True):
+                            delete_investment(del_id)
+                            st.success(f"Deleted ID {del_id}!"); st.rerun()
+                    with st.expander("⚠️ Delete All Holdings"):
+                        st.warning("Permanent — cannot be undone.")
+                        if st.button("🗑️ Confirm Delete ALL", type="primary", use_container_width=True):
+                            deleted_count = delete_all_investments(username=current_user["username"] if view_mode != "Family" else None, family_id=user_family_id)
+                            st.success(f"Deleted {deleted_count} holdings!"); st.rerun()
+
+                # Duplicate finder
+                with st.expander("🧹 Find Duplicate Holdings"):
                     from database import find_duplicate_investments, delete_duplicate_investments
                     duplicates = find_duplicate_investments(username=current_user["username"] if view_mode != "Family" else None, family_id=user_family_id)
-                    
                     if not duplicates:
-                        st.success("No duplicate holdings found!")
+                        st.success("No duplicates found!")
                     else:
-                        st.warning(f"Found {len(duplicates)} group(s) of identical investments.")
-                        
-                        duplicate_ids_to_delete = []
-                        dup_display_list = []
-                        
+                        st.warning(f"Found {len(duplicates)} duplicate group(s).")
+                        dup_ids = []
+                        dup_list = []
                         for group in duplicates:
-                            # Keep the first, mark rest for deletion
-                            original = group[0]
-                            dups = group[1:]
-                            duplicate_ids_to_delete.extend([d['id'] for d in dups])
-                            
-                            for d in dups:
-                                dup_display_list.append({
-                                    "Duplicate ID": d['id'],
-                                    "Original ID": original['id'],
-                                    "Platform": d['platform'],
-                                    "Name/Desc": d['description'],
-                                    "Invested": d['investment_amount']
-                                })
-                        
-                        st.dataframe(pd.DataFrame(dup_display_list), use_container_width=True)
-                        
-                        if st.button(f"🗑️ Delete {len(duplicate_ids_to_delete)} Duplicate Entries", type="primary"):
-                            del_count = delete_duplicate_investments(duplicate_ids_to_delete)
-                            st.success(f"Successfully deleted {del_count} duplicate entries! Refreshing...")
-                            st.rerun()
+                            orig = group[0]
+                            for d in group[1:]:
+                                dup_ids.append(d["id"])
+                                dup_list.append({"Dup ID": d["id"], "Original ID": orig["id"], "Platform": d["platform"], "Name": d["description"], "Invested": d["investment_amount"]})
+                        st.dataframe(pd.DataFrame(dup_list), use_container_width=True)
+                        if st.button(f"🗑️ Delete {len(dup_ids)} Duplicates", type="primary"):
+                            st.success(f"Deleted {delete_duplicate_investments(dup_ids)} entries!"); st.rerun()
 
-                st.markdown("<br>", unsafe_allow_html=True)
-                # Interactive Data Editor & Deletion Manager
-                st.markdown("#### ✏️ Edit or Manage Holdings")
-                st.caption("You can update investment amounts, current values, platform, or investment types directly in the table below, then click Save.")
+            # ── SIP Planner & Wealth Trajectory ─────────────────────────────────
+            st.markdown("---")
+            with st.expander("📈 SIP Planner & Wealth Growth Trajectory", expanded=True):
+                curr_ins_monthly = float(st.session_state.get("budget_dict", {}).get("Insurance & Investments", 20000.0))
+                use_portfolio_nw = st.toggle("Link Portfolio Net Worth", value=True)
+                sip_c1, sip_c2, sip_c3 = st.columns(3)
+                with sip_c1:
+                    u_age = st.number_input("Your Age", min_value=18, max_value=85, value=current_user.get("age", 35), step=1, key="invest_user_age")
+                    if u_age != current_user.get("age", 35):
+                        from database import update_user_age
+                        if update_user_age(current_user["username"], u_age):
+                            st.session_state["user"]["age"] = u_age
+                with sip_c2:
+                    u_savings = tot_portfolio if use_portfolio_nw else st.number_input("Current Networth (₹)", min_value=0.0, value=tot_portfolio, step=50000.0, key="invest_user_savings_manual")
+                    if use_portfolio_nw:
+                        st.metric("💰 Linked Portfolio Value", format_inr_short(u_savings))
+                with sip_c3:
+                    u_sip_budget = st.number_input("Monthly Investment (₹)", min_value=1000.0, value=max(5000.0, curr_ins_monthly), step=1000.0, key="invest_user_sip")
 
-                # Asset Class Filter
-                all_asset_types = sorted(holdings_df["investment_type"].unique().tolist())
-                selected_asset_types = st.multiselect(
-                    "🔍 Filter by Asset Class",
-                    options=all_asset_types,
-                    default=all_asset_types,
-                    help="Select asset classes (e.g., Equity, Mutual Funds) to view and edit."
+                inv_plan = calculate_investment_plan(
+                    age=u_age, current_savings=u_savings, monthly_investment_budget=u_sip_budget,
+                    monthly_expenses=total_spent / max(1, num_months) if not df_fy.empty else 50000.0
                 )
 
-                if selected_asset_types:
-                    filtered_df = holdings_df[holdings_df["investment_type"].isin(selected_asset_types)]
+                ip1, ip2, ip3, ip4 = st.columns(4)
+                ip1.metric("🚀 Equity", f"{inv_plan['equity_pct']:.0f}%", f"SIP {format_inr(inv_plan['equity_sip'])}")
+                ip2.metric("🛡️ Debt", f"{inv_plan['debt_pct']:.0f}%", f"SIP {format_inr(inv_plan['debt_sip'])}")
+                ip3.metric("🪙 Gold", f"{inv_plan['gold_pct']:.0f}%", f"SIP {format_inr(inv_plan['gold_sip'])}")
+                ip4.metric("📈 Blended CAGR", f"~{inv_plan['blended_cagr_pct']}%/yr")
+
+                ch1, ch2 = st.columns([1, 2])
+                with ch1:
+                    pie_df_sip = pd.DataFrame([
+                        {"Asset": "Equity", "Allocation_%": inv_plan["equity_pct"]},
+                        {"Asset": "Debt / FI", "Allocation_%": inv_plan["debt_pct"]},
+                        {"Asset": "Gold", "Allocation_%": inv_plan["gold_pct"]},
+                    ])
+                    fig_asset = px.pie(pie_df_sip, names="Asset", values="Allocation_%",
+                                       color_discrete_map={"Equity": "#38bdf8", "Debt / FI": "#34d399", "Gold": "#fbbf24"}, hole=0.4)
+                    fig_asset.update_layout(margin=dict(l=5,r=5,t=5,b=5), height=220)
+                    st.plotly_chart(fig_asset, use_container_width=True)
+                with ch2:
+                    proj_data = []
+                    for yrs, p_data in inv_plan["projections"].items():
+                        proj_data.append({"Horizon": f"{yrs}yr", "Total Invested": p_data["total_invested"], "Compounding Gain": p_data["wealth_gain"]})
+                    fig_sip = px.bar(pd.DataFrame(proj_data), x="Horizon", y=["Total Invested", "Compounding Gain"],
+                                     barmode="stack", template="plotly_dark",
+                                     color_discrete_map={"Total Invested": "#64748b", "Compounding Gain": "#10b981"},
+                                     labels={"value": "₹", "variable": ""})
+                    fig_sip.update_layout(paper_bgcolor="#1e293b", plot_bgcolor="#1e293b", margin=dict(l=5,r=5,t=10,b=5), height=220,
+                                          legend=dict(orientation="h", yanchor="bottom", y=1.02, xanchor="right", x=1, font=dict(size=10)))
+                    st.plotly_chart(fig_sip, use_container_width=True)
+
+                em_status = inv_plan["emergency_status"]
+                if em_status == "Sufficient":
+                    st.success(f"✅ Emergency Buffer Healthy: {format_inr(u_savings)} > required {format_inr(inv_plan['req_emergency'])}")
                 else:
-                    filtered_df = holdings_df.head(0) # Show empty if nothing selected
+                    st.warning(f"⚠️ Emergency Buffer Deficit: {format_inr(inv_plan['emergency_gap'])} short of 6-month target {format_inr(inv_plan['req_emergency'])}.")
 
-                # Make sure resolved_name exists in columns if loading legacy data
-                if "resolved_name" not in holdings_df.columns:
-                    holdings_df["resolved_name"] = ""
+                if st.button("💡 Generate AI Wealth Advisory", type="primary", use_container_width=True):
+                    with st.spinner("🤖 Generating AI wealth strategy..."):
+                        wealth_advice = generate_ai_wealth_advice(inv_plan)
+                    st.success("🎉 AI Wealth Strategy Ready!")
+                    st.info(wealth_advice.get("summary", ""))
+                    for bullet in wealth_advice.get("key_takeaways", []):
+                        st.markdown(f"- {bullet}")
 
-                display_cols = ["id", "description", "resolved_name", "platform", "investment_type", "investment_amount", "year_invested", "current_value", "units", "avg_buy_price", "market_cap", "sector_segment", "unrealized_gain", "returns_pct"]
-                
-                edited_holdings = st.data_editor(
-                    filtered_df[display_cols] if not filtered_df.empty else filtered_df,
-                    column_config={
-                        "id": st.column_config.NumberColumn("ID", disabled=True),
-                        "description": st.column_config.TextColumn("Stock Code / Name"),
-                        "resolved_name": st.column_config.TextColumn("Resolved AMFI Name (Read-only)", disabled=True),
-                        "platform": st.column_config.TextColumn("Platform / Broker"),
-                        "investment_type": st.column_config.TextColumn("Asset Type"),
-                        "investment_amount": st.column_config.NumberColumn("Invested (₹)", format="₹ %.2f"),
-                        "year_invested": st.column_config.NumberColumn("Year"),
-                        "current_value": st.column_config.NumberColumn("Current Val (₹)", format="₹ %.2f"),
-                        "units": st.column_config.NumberColumn("Units", format="%.4f"),
-                        "avg_buy_price": st.column_config.NumberColumn("Avg Price", format="₹ %.2f"),
-                        "market_cap": st.column_config.SelectboxColumn("Market Cap", options=["Large Cap", "Mid Cap", "Small Cap", "Multi Cap", "Unknown"]),
-                        "sector_segment": st.column_config.TextColumn("Sector / Theme"),
-                        "unrealized_gain": st.column_config.NumberColumn("Gain/Loss (₹)", format="₹ %.2f", disabled=True),
-                        "returns_pct": st.column_config.NumberColumn("Return %", format="%.2f %%", disabled=True)
-                    },
-                    use_container_width=True,
-                    hide_index=True,
-                    num_rows="dynamic",
-                    key="editor_holdings"
-                )
+            # ── Rebalance Advisor ────────────────────────────────────────────────
+            st.markdown("---")
+            with st.expander("⚖️ Portfolio Rebalance & Deploy New Money"):
+                gemini_api_key_wp = (current_user.get("gemini_api_key") or get_admin_gemini_api_key()
+                                     or os.environ.get("GEMINI_API_KEY", "") or st.secrets.get("GEMINI_API_KEY", ""))
+                from investment_planner import generate_rebalance_advice, generate_new_money_advice
 
-                ed_c1, ed_c2 = st.columns([2, 1])
-                with ed_c1:
-                    if st.button("💾 Save Table Edits to Database", type="primary", use_container_width=True):
-                        cnt_upd = update_investments_df(edited_holdings)
-                        st.success(f"🎉 Updated {cnt_upd} holding entry/entries in database!")
-                        st.rerun()
+                advisor_user_context = st.text_area("💬 Goals / Context (optional)",
+                    placeholder="e.g. I want to buy a house in 2 years",
+                    help="AI incorporates this into recommendations.", key="inv_context")
 
-                with ed_c2:
-                    del_id = st.number_input("Delete Holding ID", min_value=1, step=1, key="del_inv_id")
-                    if st.button("🗑️ Delete Holding", type="secondary", use_container_width=True):
-                        delete_investment(del_id)
-                        st.success(f"Deleted holding ID {del_id}!")
-                        st.rerun()
+                adv_mode = st.radio("Mode", ["🔄 Rebalance Existing Portfolio", "💰 Deploy New Money"], horizontal=True)
 
-                    # Add an expander for deleting all holdings to prevent accidental deletion
-                    with st.expander("🚨 Delete All Holdings"):
-                        st.warning("This action cannot be undone. It will permanently delete all your holdings.")
-                        if st.button("🗑️ Confirm Delete ALL", type="primary", use_container_width=True):
-                            deleted_count = delete_all_investments(
-                                username=current_user["username"] if view_mode != "Family" else None,
-                                family_id=user_family_id
-                            )
-                            st.success(f"Successfully deleted all {deleted_count} holdings!")
-                            st.rerun()
+                country_opts_inv = ["India", "United States", "UAE", "United Kingdom", "Singapore", "Other"]
+                cur_country_inv  = current_user.get("country", "India")
+                risk_opts_inv    = ["Conservative", "Moderate", "Aggressive"]
 
-                # Gemini AI Portfolio Review & Suggestions Section
-                st.markdown("<hr>", unsafe_allow_html=True)
-                st.markdown("### 🤖 Gemini AI Portfolio Review & Suggestions")
-                st.caption("Get automated AI portfolio analysis on asset concentration risk, platform diversification, tax efficiency, and rebalancing recommendations.")
+                rc1, rc2, rc3 = st.columns([1, 1.5, 1.5])
+                with rc1:
+                    inv_risk = st.selectbox("Risk Profile", risk_opts_inv,
+                        index=risk_opts_inv.index(current_user.get("risk_tolerance", "Moderate")) if current_user.get("risk_tolerance") in risk_opts_inv else 1,
+                        key="inv_risk_sel")
+                with rc2:
+                    inv_country = st.selectbox("Country", country_opts_inv,
+                        index=country_opts_inv.index(cur_country_inv) if cur_country_inv in country_opts_inv else 0,
+                        key="inv_country_sel")
+                    if inv_country != cur_country_inv:
+                        from database import update_user_profile
+                        update_user_profile(current_user["username"], country=inv_country)
+                        st.session_state["user"]["country"] = inv_country
 
-                if st.button("🤖 Generate AI Portfolio Review & Suggestions", type="primary", use_container_width=True):
-                    with st.spinner("🤖 Analyzing active investment portfolio with Gemini AI..."):
-                        debts_df = get_debts(family_id=user_family_id)
-                        goals_df = get_savings_goals(family_id=user_family_id)
-                        portfolio_ai = generate_ai_portfolio_suggestions(holdings_df, current_user, debts_df, goals_df)
+                if adv_mode.startswith("💰"):
+                    with rc3:
+                        nm_amount = st.number_input("Amount to Invest (₹)", min_value=1000.0, value=50000.0, step=5000.0, key="nm_amount")
+                        nm_mode   = st.selectbox("Mode", ["Lump Sum", "SIP (Monthly)"], key="nm_mode")
 
-                    st.success("🎉 Portfolio AI Review Complete!")
-                    st.info(portfolio_ai.get("summary", ""))
+                run_inv_adv = st.button("▶️ Run Analysis", type="primary", use_container_width=True, key="run_inv_adv")
+                if run_inv_adv:
+                    if adv_mode.startswith("🔄"):
+                        with st.spinner("Fetching live trend signals (30–45s)..."):
+                            rebal_result = generate_rebalance_advice(inv_df, inv_risk, inv_country, advisor_user_context, gemini_api_key_wp)
+                        st.session_state["rebal_result"] = rebal_result
+                        st.session_state["nm_result"] = None
+                    else:
+                        with st.spinner("Generating personalised suggestions..."):
+                            nm_result = generate_new_money_advice(inv_df, inv_risk, nm_amount, "SIP" if "SIP" in nm_mode else "Lump Sum", inv_country, advisor_user_context, gemini_api_key_wp)
+                        st.session_state["nm_result"] = nm_result
+                        st.session_state["rebal_result"] = None
 
-                    for rec in portfolio_ai.get("recommendations", []):
-                        st.markdown(f"#### {rec.get('title', 'Recommendation')}")
-                        st.markdown(f"**Observation**: {rec.get('observation', '')}")
-                        st.markdown(f"**Suggestion**: {rec.get('suggestion', '')}")
-                        st.markdown("<hr style='margin: 8px 0; border-color: #334155;'>", unsafe_allow_html=True)
+                rebal_result = st.session_state.get("rebal_result")
+                nm_result    = st.session_state.get("nm_result")
 
-            else:
-                st.info("💡 No active holdings recorded yet. Use the form above to add your first investment asset!")
+                if rebal_result:
+                    if "error" in rebal_result:
+                        st.warning(f"⚠️ {rebal_result['error']}")
+                    else:
+                        st.success(f"✅ Analysis for portfolio of {format_inr(rebal_result['total_value'])}")
+                        alloc_c1, alloc_c2 = st.columns(2)
+                        with alloc_c1:
+                            st.markdown("##### Current Allocation")
+                            curr_pie = pd.DataFrame(list(rebal_result["current_allocation"].items()), columns=["Asset", "%"])
+                            fig_curr = px.pie(curr_pie, names="Asset", values="%", hole=0.4, color_discrete_sequence=px.colors.qualitative.Set3)
+                            fig_curr.update_layout(margin=dict(l=0,r=0,t=10,b=10), height=220, showlegend=True)
+                            st.plotly_chart(fig_curr, use_container_width=True)
+                        with alloc_c2:
+                            st.markdown("##### Target Allocation")
+                            tgt_pie = pd.DataFrame(list(rebal_result["target_allocation"].items()), columns=["Asset", "%"])
+                            fig_tgt = px.pie(tgt_pie, names="Asset", values="%", hole=0.4, color_discrete_sequence=px.colors.qualitative.Pastel)
+                            fig_tgt.update_layout(margin=dict(l=0,r=0,t=10,b=10), height=220, showlegend=True)
+                            st.plotly_chart(fig_tgt, use_container_width=True)
+                        drift_df_r = pd.DataFrame(rebal_result["drift_table"])
+                        if not drift_df_r.empty:
+                            st.dataframe(drift_df_r[["Asset Class", "Current %", "Target %", "Drift %", "Action"]], use_container_width=True, hide_index=True)
+                        if rebal_result.get("recommendations"):
+                            st.markdown("##### 🤖 AI Recommendations")
+                            for rec in rebal_result["recommendations"]:
+                                ac = {"Buy": "#10b981", "Sell/Switch": "#f59e0b", "Hold": "#64748b"}.get(rec.get("action_type", ""), "#64748b")
+                                st.markdown(f"""<div style="background:#1e293b; border-radius:8px; border-left:4px solid {ac}; padding:10px 14px; margin-bottom:6px;">
+                                    <div style="font-weight:600; color:#f1f5f9;">{rec.get('title','')}</div>
+                                    <div style="color:#38bdf8; font-size:0.85rem; margin:4px 0;">🏛️ {rec.get('instrument','')}</div>
+                                    <div style="color:#94a3b8; font-size:0.82rem;">{rec.get('rationale','')}</div>
+                                </div>""", unsafe_allow_html=True)
 
-        with subtab_debts:
-            st.caption("Track your liabilities, outstanding principal, interest rates, and loan tenures.")
-            
-            # Fetch all debts for the family
+                if nm_result:
+                    st.success("🎉 New Money Suggestions Ready!")
+                    st.info(nm_result.get("summary", ""))
+                    CLASS_ICONS  = {"equity": "🚀", "debt": "🛡️", "gold": "🪙", "tax_saving": "🏛️"}
+                    CLASS_COLORS = {"equity": "#38bdf8", "debt": "#34d399", "gold": "#fbbf24", "tax_saving": "#a78bfa"}
+                    for cls_key, instruments in nm_result.get("suggestions", {}).items():
+                        if not instruments: continue
+                        icon  = CLASS_ICONS.get(cls_key, "📌")
+                        color = CLASS_COLORS.get(cls_key, "#94a3b8")
+                        alloc_amt = nm_result.get("allocation_split", {}).get(cls_key.capitalize(), 0)
+                        st.markdown(f"**{icon} {cls_key.replace('_',' ').title()}** — Suggested: ₹{alloc_amt:,.0f}")
+                        for instr in instruments:
+                            rc = {"Low":"#34d399","Very Low":"#10b981","Moderate":"#fbbf24","Moderate-High":"#f97316","High":"#ef4444"}.get(instr.get("risk",""),"#94a3b8")
+                            st.markdown(f"""<div style="background:#1e293b; border-radius:8px; border-left:3px solid {color}; padding:10px 14px; margin-bottom:5px;">
+                                <div style="font-weight:600; color:#f1f5f9;">{instr.get('name','')}</div>
+                                <div style="color:{rc}; font-size:0.78rem;">Risk: {instr.get('risk','N/A')}</div>
+                                <div style="color:#94a3b8; font-size:0.82rem;">{instr.get('rationale','')}</div>
+                                <div style="color:{color}; font-weight:700; margin-top:4px;">{instr.get('suggested_amount','')}</div>
+                            </div>""", unsafe_allow_html=True)
+
+            # ── Retirement Planner ───────────────────────────────────────────────
+            st.markdown("---")
+            with st.expander("🏖️ Retirement Planner"):
+                ret_col1, ret_col2 = st.columns(2)
+                with ret_col1:
+                    ret_age = st.number_input("🎯 Desired Retirement Age", min_value=u_age + 1, max_value=100, value=max(60, u_age + 10), step=1)
+                    exp_return_str = st.text_input("📈 Expected CAGR (%) — leave blank for historical", placeholder="e.g. 12.5")
+                with ret_col2:
+                    benchmark_index = st.selectbox("📊 Benchmark (if CAGR blank)",
+                        options=[("Nifty 50 (India)", "^NSEI"), ("BSE Sensex", "^BSESN"), ("S&P 500 (US)", "^GSPC"), ("NASDAQ", "^IXIC")],
+                        format_func=lambda x: x[0])
+                    hist_years = st.selectbox("Historical Data Period", options=[5, 10, 15, 20], index=1, format_func=lambda x: f"Last {x} Years")
+                add_col1, add_col2 = st.columns(2)
+                with add_col1:
+                    one_time_exp_df = st.data_editor(pd.DataFrame([{"Expense Description": "", "Amount (₹)": 0.0, "Age": min(ret_age, u_age + 5)}]), num_rows="dynamic", key="one_time_exp_editor", use_container_width=True, hide_index=True)
+                with add_col2:
+                    add_recurring_exp = st.number_input("Additional Monthly Recurring Expenses (₹)", min_value=0.0, value=0.0, step=5000.0)
+                one_time_expenses_list = []
+                for _, row in one_time_exp_df.iterrows():
+                    try: amt = float(row.get("Amount (₹)", 0) or 0)
+                    except: amt = 0.0
+                    try: age_val = int(row.get("Age", u_age) or u_age)
+                    except: age_val = u_age
+                    if amt > 0:
+                        one_time_expenses_list.append({"amount": amt, "age": age_val})
+                if st.button("🔮 Calculate Retirement Corpus", type="primary", use_container_width=True):
+                    from investment_planner import fetch_index_historical_cagr, calculate_retirement_corpus, generate_ai_retirement_advisory
+                    with st.spinner("Calculating..."):
+                        if exp_return_str.strip():
+                            try: cagr_decimal = float(exp_return_str.strip()) / 100.0
+                            except: cagr_decimal = 0.12
+                        else:
+                            st.info(f"Fetching {hist_years}-yr CAGR for {benchmark_index[0]}...")
+                            cagr_decimal = fetch_index_historical_cagr(benchmark_index[1], hist_years)
+                            st.success(f"{hist_years}-yr CAGR for {benchmark_index[0]}: **{cagr_decimal*100:.2f}%**")
+                        ret_plan = calculate_retirement_corpus(u_age, ret_age, u_savings, u_sip_budget, cagr_decimal, one_time_expenses_list, add_recurring_exp)
+                        r1, r2, r3 = st.columns(3)
+                        r1.metric("💰 Projected Corpus", format_inr(ret_plan["total_future_value"]), f"+{format_inr(ret_plan['wealth_gain'])} gain")
+                        r2.metric("💵 Total Invested", format_inr(ret_plan["total_invested"]))
+                        r3.metric("🏝️ Safe Monthly Withdrawal (4%)", format_inr(ret_plan["safe_monthly_withdrawal"]))
+                    with st.spinner("🤖 Generating AI Retirement Advisory..."):
+                        ret_advice = generate_ai_retirement_advisory(ret_plan, inv_df)
+                        st.markdown("#### 🤖 AI Retirement Advisory")
+                        st.info(ret_advice.get("summary", ""))
+                        for item in ret_advice.get("key_takeaways", []):
+                            st.markdown(f"- {item}")
+
+        # ════════════════════════════════════════════════════════════════════════
+        # TAB 4 ─ DEBTS & EMIs
+        # ════════════════════════════════════════════════════════════════════════
+        with wp_tab_debt:
+            st.caption("Track loans, outstanding principal, interest rates, and simulate payoff strategies.")
             debts_df = get_debts(family_id=user_family_id)
-            
-            # ------------------------------------------------
-            # DEBT SUMMARY DASHBOARD
-            # ------------------------------------------------
             if not debts_df.empty:
                 total_outstanding = debts_df["outstanding_principal"].sum()
                 total_monthly_emi = debts_df["monthly_emi"].sum()
-                
-                st.markdown("""
-                <div style="background-color: #1e293b; padding: 14px 18px; border-radius: 8px; border-left: 4px solid #ef4444; margin-bottom: 15px;">
-                    <div style="font-weight: 600; color: #ef4444; font-size: 0.95rem;">🏦 Total Debt & Liabilities Overview</div>
-                </div>
-                """, unsafe_allow_html=True)
-                
-                sum_c1, sum_c2, sum_c3 = st.columns(3)
-                with sum_c1:
-                    st.metric("Total Outstanding Debt", format_inr(total_outstanding))
-                with sum_c2:
-                    st.metric("Total Monthly EMI", format_inr(total_monthly_emi))
-                with sum_c3:
-                    st.metric("Active Loans", str(len(debts_df)))
-                    
-                st.markdown("<hr>", unsafe_allow_html=True)
-                
-            # ------------------------------------------------
-            # ADD NEW DEBT FORM
-            # ------------------------------------------------
+                dm1, dm2, dm3 = st.columns(3)
+                dm1.metric("Total Outstanding", format_inr(total_outstanding))
+                dm2.metric("Total Monthly EMI", format_inr(total_monthly_emi))
+                dm3.metric("Active Loans", str(len(debts_df)))
+                st.markdown("---")
+
             with st.expander("➕ Add New Debt / Liability", expanded=debts_df.empty):
                 with st.form("add_debt_form"):
-                    st.markdown("#### Enter Loan / Debt Details")
                     dc1, dc2 = st.columns(2)
                     with dc1:
                         new_debt_name = st.text_input("Debt / Loan Name", placeholder="e.g. HDFC Home Loan")
-                        new_debt_cat = st.selectbox("Category", DEBT_CATEGORIES)
+                        new_debt_cat  = st.selectbox("Category", DEBT_CATEGORIES)
                     with dc2:
-                        new_principal = st.number_input("Total Principal Amount", min_value=0.0, step=10000.0)
+                        new_principal  = st.number_input("Total Principal", min_value=0.0, step=10000.0)
                         new_start_date = st.date_input("Start Date", value=datetime.date.today())
-                        
                     dc3, dc4, dc5 = st.columns(3)
-                    with dc3:
-                        new_rate = st.number_input("Interest Rate (%)", min_value=0.0, max_value=100.0, step=0.1, format="%.2f")
-                    with dc4:
-                        new_tenure = st.number_input("Tenure (Months)", min_value=1, step=12)
-                    with dc5:
-                        new_emi = st.number_input("Monthly EMI / Payment", min_value=0.0, step=1000.0)
-                        
+                    with dc3: new_rate   = st.number_input("Interest Rate (%)", min_value=0.0, max_value=100.0, step=0.1, format="%.2f")
+                    with dc4: new_tenure = st.number_input("Tenure (Months)", min_value=1, step=12)
+                    with dc5: new_emi    = st.number_input("Monthly EMI", min_value=0.0, step=1000.0)
                     if st.form_submit_button("💾 Save Liability", type="primary", use_container_width=True):
                         if new_debt_name and new_principal > 0:
-                            # Auto-sync to Budget Planner as Fixed Expense
                             if new_emi > 0:
                                 if "budget_dict" in st.session_state:
                                     st.session_state["budget_dict"][new_debt_cat] = st.session_state["budget_dict"].get(new_debt_cat, 0.0) + new_emi
-                                
-                                # Instantly save this new budget to DB so it persists in the Budget Planner Tab
-                                existing_val = 0.0
                                 b_df = get_category_budget(target_fy_clean, new_debt_cat, family_id=user_family_id)
-                                if not b_df.empty:
-                                    existing_val = float(b_df.iloc[0]["monthly_limit"])
-                                
-                                new_limit = existing_val + new_emi
-                                set_category_budget(target_fy_clean, new_debt_cat, new_limit, new_limit * 12, family_id=user_family_id)
-
+                                existing_val = float(b_df.iloc[0]["monthly_limit"]) if not b_df.empty else 0.0
+                                set_category_budget(target_fy_clean, new_debt_cat, existing_val + new_emi, (existing_val + new_emi) * 12, family_id=user_family_id)
                             add_debt(new_debt_name, new_debt_cat, new_principal, new_principal, new_rate, new_emi, new_tenure, str(new_start_date), user_family_id)
-                            st.success(f"Successfully added {new_debt_name} to your liabilities and synced its EMI ({format_inr(new_emi)}) to the '{new_debt_cat}' Budget Planner!")
-                            st.rerun()
+                            st.success(f"Added {new_debt_name} — EMI {format_inr(new_emi)} synced to budget!"); st.rerun()
                         else:
-                            st.error("Please provide a valid Debt Name and Principal Amount.")
+                            st.error("Please provide a name and principal amount.")
 
-            # ------------------------------------------------
-            # DEBT PORTFOLIO & PAYMENT LOGGING
-            # ------------------------------------------------
-            st.markdown("<br>", unsafe_allow_html=True)
-            st.markdown("### 📊 Active Debt Portfolio")
-            
             if not debts_df.empty:
+                st.markdown("### 📊 Active Debt Portfolio")
                 for idx, row in debts_df.iterrows():
-                    did = row["id"]
-                    dname = row["debt_name"]
-                    dcat = row["debt_category"]
-                    outstanding = row["outstanding_principal"]
-                    total = row["total_principal"]
-                    emi = row["monthly_emi"]
-                    rate = row["interest_rate"]
-                    
-                    paid_pct = 0.0
-                    if total > 0:
-                        paid_pct = max(0.0, min(100.0, ((total - outstanding) / total) * 100))
-                        
-                    with st.container():
-                        st.markdown(f"""
-                        <div class="dashboard-box" style="margin-bottom: 10px;">
-                            <div style="display: flex; justify-content: space-between; align-items: flex-start; margin-bottom: 10px;">
-                                <div>
-                                    <div style="font-size: 1.1rem; font-weight: 700; color: #f8fafc;">{dname}</div>
-                                    <div style="font-size: 0.85rem; color: #94a3b8;">{dcat} • {rate}% Interest</div>
-                                </div>
-                                <div style="text-align: right;">
-                                    <div style="font-size: 1.2rem; font-weight: 700; color: #ef4444;">{format_inr(outstanding)}</div>
-                                    <div style="font-size: 0.85rem; color: #94a3b8;">Outstanding</div>
-                                </div>
+                    did = row["id"]; dname = row["debt_name"]; dcat = row["debt_category"]
+                    outstanding = row["outstanding_principal"]; total = row["total_principal"]
+                    emi = row["monthly_emi"]; rate = row["interest_rate"]
+                    paid_pct = max(0.0, min(100.0, ((total - outstanding) / total) * 100)) if total > 0 else 0.0
+                    st.markdown(f"""
+                    <div class="dashboard-box" style="margin-bottom:10px;">
+                        <div style="display:flex; justify-content:space-between; align-items:flex-start; margin-bottom:10px;">
+                            <div>
+                                <div style="font-size:1.1rem; font-weight:700; color:#f8fafc;">{dname}</div>
+                                <div style="font-size:0.85rem; color:#94a3b8;">{dcat} · {rate}% Interest</div>
                             </div>
-                            <div style="margin-bottom: 15px;">
-                                <div style="display: flex; justify-content: space-between; font-size: 0.8rem; margin-bottom: 4px;">
-                                    <span style="color: #64748b;">Principal Paid: {paid_pct:.1f}%</span>
-                                    <span style="color: #64748b;">Total: {format_inr(total)}</span>
-                                </div>
-                                <div style="width: 100%; background-color: #334155; border-radius: 4px; height: 8px;">
-                                    <div style="width: {paid_pct}%; background-color: #10b981; height: 100%; border-radius: 4px;"></div>
-                                </div>
+                            <div style="text-align:right;">
+                                <div style="font-size:1.2rem; font-weight:700; color:#ef4444;">{format_inr(outstanding)}</div>
+                                <div style="font-size:0.85rem; color:#94a3b8;">Outstanding</div>
                             </div>
                         </div>
-                        """, unsafe_allow_html=True)
-                        
-                        with st.expander(f"💸 Log EMI/Payment for {dname}"):
+                        <div style="margin-bottom:10px;">
+                            <div style="display:flex; justify-content:space-between; font-size:0.8rem; margin-bottom:4px;">
+                                <span style="color:#64748b;">Paid: {paid_pct:.1f}%</span>
+                                <span style="color:#64748b;">Total: {format_inr(total)}</span>
+                            </div>
+                            <div style="width:100%; background:#334155; border-radius:4px; height:8px;">
+                                <div style="width:{paid_pct}%; background:#10b981; height:100%; border-radius:4px;"></div>
+                            </div>
+                        </div>
+                    </div>""", unsafe_allow_html=True)
+                    with st.expander(f"💸 Log Payment · ✏️ Edit · 📜 History — {dname}"):
+                        lp1, lp2 = st.columns(2)
+                        with lp1:
                             with st.form(f"pay_debt_{did}"):
-                                pc1, pc2 = st.columns(2)
-                                with pc1:
-                                    pay_date = st.date_input("Payment Date", value=datetime.date.today(), key=f"pd_{did}")
-                                    pay_principal = st.number_input("Principal Portion", min_value=0.0, step=100.0, key=f"pp_{did}")
-                                with pc2:
-                                    pay_interest = st.number_input("Interest Portion", min_value=0.0, step=100.0, key=f"pi_{did}")
-                                
+                                pay_date = st.date_input("Date", value=datetime.date.today(), key=f"pd_{did}")
+                                pay_principal = st.number_input("Principal Portion (₹)", min_value=0.0, step=100.0, key=f"pp_{did}")
+                                pay_interest  = st.number_input("Interest Portion (₹)", min_value=0.0, step=100.0, key=f"pi_{did}")
                                 if st.form_submit_button("Record Payment", type="primary"):
                                     if pay_principal > 0 or pay_interest > 0:
                                         add_debt_payment(did, str(pay_date), pay_principal, pay_interest, user_family_id)
-                                        st.success(f"Payment recorded! Outstanding principal reduced by {format_inr(pay_principal)}.")
-                                        st.rerun()
-                                    else:
-                                        st.error("Please enter an amount.")
-                                        
-                        # Show payment history
-                        pay_df = get_debt_payments(did)
-                        if not pay_df.empty:
-                            with st.expander("📜 Payment History"):
-                                st.dataframe(pay_df[["payment_date", "principal_paid", "interest_paid"]], use_container_width=True, hide_index=True)
-                                
-                        with st.expander(f"✏️ Edit / Delete {dname}"):
+                                        st.success("Payment logged!"); st.rerun()
+                        with lp2:
                             with st.form(f"edit_debt_{did}"):
-                                st.markdown("### Update Debt Details")
-                                ec1, ec2 = st.columns(2)
-                                with ec1:
-                                    e_dname = st.text_input("Debt Name", value=dname, key=f"edn_{did}")
-                                    e_dcat = st.selectbox("Category", DEBT_CATEGORIES, index=DEBT_CATEGORIES.index(dcat) if dcat in DEBT_CATEGORIES else 0, key=f"edc_{did}")
-                                    e_rate = st.number_input("Interest Rate (%)", value=float(rate), min_value=0.0, step=0.1, key=f"edr_{did}")
-                                    e_tenure = st.number_input("Tenure (Months)", value=int(row["tenure_months"]), min_value=1, step=1, key=f"edt_{did}")
-                                with ec2:
-                                    e_total = st.number_input("Total Principal", value=float(total), min_value=0.0, step=100.0, key=f"edtp_{did}")
-                                    e_out = st.number_input("Outstanding Principal", value=float(outstanding), min_value=0.0, step=100.0, key=f"edop_{did}")
-                                    e_emi = st.number_input("Monthly EMI", value=float(emi), min_value=0.0, step=100.0, key=f"edemi_{did}")
-                                    e_start = st.date_input("Start Date", value=datetime.datetime.strptime(row["start_date"], "%Y-%m-%d").date() if row["start_date"] else datetime.date.today(), key=f"edsd_{did}")
-                                    
+                                e_dname  = st.text_input("Name", value=dname, key=f"edn_{did}")
+                                e_dcat   = st.selectbox("Category", DEBT_CATEGORIES, index=DEBT_CATEGORIES.index(dcat) if dcat in DEBT_CATEGORIES else 0, key=f"edc_{did}")
+                                e_out    = st.number_input("Outstanding (₹)", value=float(outstanding), min_value=0.0, step=100.0, key=f"edop_{did}")
+                                e_emi    = st.number_input("EMI (₹)", value=float(emi), min_value=0.0, step=100.0, key=f"edemi_{did}")
                                 uc1, uc2 = st.columns(2)
                                 with uc1:
-                                    if st.form_submit_button("Update Liability", type="primary"):
-                                        if update_debt(did, e_dname, e_dcat, e_total, e_out, e_rate, e_emi, e_tenure, str(e_start), user_family_id):
-                                            st.success("Liability updated successfully!")
-                                            st.rerun()
-                                        else:
-                                            st.error("Failed to update.")
+                                    if st.form_submit_button("Update", type="primary"):
+                                        if update_debt(did, e_dname, e_dcat, float(total), e_out, float(rate), e_emi, int(row["tenure_months"]), row["start_date"], user_family_id):
+                                            st.success("Updated!"); st.rerun()
                                 with uc2:
-                                    if st.form_submit_button("🚨 Delete Liability"):
+                                    if st.form_submit_button("🚨 Delete"):
                                         if delete_debt(did, user_family_id):
-                                            st.success("Liability deleted successfully!")
-                                            st.rerun()
-                                        else:
-                                            st.error("Failed to delete.")
+                                            st.success("Deleted!"); st.rerun()
+                        pay_df = get_debt_payments(did)
+                        if not pay_df.empty:
+                            st.markdown("**Payment History:**")
+                            st.dataframe(pay_df[["payment_date", "principal_paid", "interest_paid"]], use_container_width=True, hide_index=True)
 
                 st.markdown("---")
                 st.markdown("### 🔮 Debt Payoff Simulator")
-                st.caption("Simulate your payoff timeline and see how much interest you can save.")
-                
-                sim_col1, sim_col2 = st.columns(2)
-                with sim_col1:
-                    strategy = st.selectbox(
-                        "Payoff Strategy",
-                        ["Avalanche (Highest Interest First) - mathematically optimal", 
-                         "Snowball (Lowest Balance First) - psychological wins"]
-                    )
-                with sim_col2:
-                    sim_budget = st.number_input(
-                        "Total Monthly Debt Budget",
-                        value=float(total_monthly_emi),
-                        min_value=float(total_monthly_emi),
-                        step=1000.0,
-                        help="Must be at least the sum of all your minimum EMIs."
-                    )
-                
+                sim_c1, sim_c2 = st.columns(2)
+                with sim_c1:
+                    strategy = st.selectbox("Payoff Strategy", ["Avalanche (Highest Interest First) - mathematically optimal", "Snowball (Lowest Balance First) - psychological wins"])
+                with sim_c2:
+                    sim_budget = st.number_input("Total Monthly Debt Budget (₹)", value=float(total_monthly_emi), min_value=float(total_monthly_emi), step=1000.0)
                 if st.button("Run Simulation 🚀"):
                     total_months, total_interest, timeline_df = simulate_debt_payoff(debts_df, strategy, sim_budget)
-                    
-                    st.markdown("#### Simulation Results")
-                    r_col1, r_col2, r_col3 = st.columns(3)
-                    r_col1.metric("Months to Debt Free", f"{total_months} months")
-                    r_col2.metric("Total Interest Paid", format_inr_short(total_interest))
-                    
+                    r1, r2, r3 = st.columns(3)
+                    r1.metric("Months to Debt-Free", f"{total_months} months")
+                    r2.metric("Total Interest Paid", format_inr_short(total_interest))
                     from dateutil.relativedelta import relativedelta
-                    payoff_date = datetime.datetime.now() + relativedelta(months=total_months)
-                    r_col3.metric("Payoff Date", payoff_date.strftime("%b %Y"))
-                    
-                    fig = px.area(
-                        timeline_df, 
-                        x="Month", 
-                        y="Total Balance", 
-                        title=f"{strategy.split()[0]} Payoff Trajectory",
-                        color_discrete_sequence=["#ef4444"]
-                    )
-                    st.plotly_chart(fig, use_container_width=True)
-
+                    r3.metric("Payoff Date", (datetime.datetime.now() + relativedelta(months=total_months)).strftime("%b %Y"))
+                    fig_debt = px.area(timeline_df, x="Month", y="Total Balance", color_discrete_sequence=["#ef4444"], template="plotly_dark")
+                    fig_debt.update_layout(paper_bgcolor="#1e293b", plot_bgcolor="#1e293b")
+                    st.plotly_chart(fig_debt, use_container_width=True)
             else:
-                st.info("No active debts. You are debt-free! 🎉")
+                st.info("🎉 No active debts — you are debt-free!")
 
-        # ============================================================
-        # SUB-TAB 5: 💡 SMART ADVISOR & TAX PLANNER
-        # ============================================================
-        with subtab_advisor:
-            from investment_planner import (
-                generate_rebalance_advice, generate_new_money_advice,
-                compute_tax_liability, ADVISORY_DISCLAIMER
-            )
+        # ════════════════════════════════════════════════════════════════════════
+        # TAB 5 ─ TAX PLANNER  (promoted from 3 levels deep to top-level tab)
+        # ════════════════════════════════════════════════════════════════════════
+        with wp_tab_tax:
+            from investment_planner import ADVISORY_DISCLAIMER
             from database import (
                 add_income_source, get_income_sources_df,
                 delete_income_source, update_income_source,
@@ -3006,1240 +2748,373 @@ else:
                 FRSB_RATE, FRSB_RATE_EFFECTIVE, _sum_totals,
             )
 
-            st.markdown("### 💡 Smart Investment Advisor & Tax Planner")
-            st.caption("AI-powered portfolio rebalancing, new money deployment suggestions, and country-aware tax planning — all in one place.")
+            st.markdown("### 🧾 Income Manager & Tax Planner")
+            st.caption(f"Log all income sources, compute your tax liability (FY 2025-26), and discover tax-saving opportunities. RBI FRSB: **{FRSB_RATE*100:.2f}%** (effective {FRSB_RATE_EFFECTIVE})")
 
-            # Advisory disclaimer banner
-            st.markdown(f"""
-            <div style="background: linear-gradient(135deg, #1e293b, #0f172a); border: 1px solid #f59e0b;
-                        border-left: 4px solid #f59e0b; border-radius: 8px; padding: 12px 16px; margin-bottom: 16px;">
-                <div style="color: #fbbf24; font-size: 0.85rem; font-weight: 600;">⚠️ Advisory Notice</div>
-                <div style="color: #94a3b8; font-size: 0.82rem; margin-top: 4px;">
-                    All recommendations are for informational purposes only. Trend signals use historical
-                    SMA crossovers &amp; momentum. Consult a SEBI-registered advisor before investing.
-                </div>
-            </div>
-            """, unsafe_allow_html=True)
+            # ── Income Sources ───────────────────────────────────────────────────
+            st.markdown("#### 💵 Income Sources")
+            income_df = get_income_sources_df(username=current_user["username"], family_id=user_family_id, view_mode=view_mode)
+            total_monthly_income = float(income_df["monthly_equivalent"].sum()) if not income_df.empty else 0.0
+            total_annual_income  = total_monthly_income * 12.0
 
-            advisor_user_context = st.text_area(
-                "💬 Additional Context / Goals (Optional)", 
-                placeholder="e.g., 'I want to buy a house in 2 years' or 'Should I shift my FDs to Mutual Funds?'",
-                help="The AI will incorporate these specific goals into its recommendations."
-            )
-            st.markdown("<br>", unsafe_allow_html=True)
+            if not income_df.empty:
+                ki1, ki2, ki3 = st.columns(3)
+                ki1.metric("📅 Monthly Income", format_inr(total_monthly_income))
+                ki2.metric("📆 Annual Income",  format_inr(total_annual_income))
+                ki3.metric("🔢 Sources", str(len(income_df)))
+                if len(income_df) > 1:
+                    fig_inc = px.bar(income_df.sort_values("monthly_equivalent", ascending=True),
+                                     x="monthly_equivalent", y="source_name", orientation="h", color="income_type",
+                                     labels={"monthly_equivalent": "Monthly (₹)", "source_name": ""},
+                                     template="plotly_dark", height=max(180, len(income_df) * 40))
+                    fig_inc.update_layout(paper_bgcolor="#1e293b", plot_bgcolor="#1e293b", margin=dict(l=10,r=10,t=10,b=10))
+                    st.plotly_chart(fig_inc, use_container_width=True)
 
-            # Ensure API key is available in this scope
-            gemini_api_key = (
-                current_user.get("gemini_api_key") or
-                get_admin_gemini_api_key() or
-                os.environ.get("GEMINI_API_KEY", "") or
-                st.secrets.get("GEMINI_API_KEY", "")
-            )
+            if "edit_inc_id" not in st.session_state:
+                st.session_state["edit_inc_id"] = None
+            _inc_icons = {"Salary / Regular Employment": "💼", "Business / Self-Employment": "🏢",
+                          "Freelance / Consulting": "💻", "Rental Income": "🏠",
+                          "Dividends / Investment Income": "📈", "Pension / Annuity": "🧓",
+                          "Capital Gains": "💹", "Agricultural Income": "🌾", "Gifts / Inheritance": "🎁", "Other": "💰"}
 
-            adv_tab1, adv_tab2, adv_tab3 = st.tabs([
-                "🔄 Rebalance My Portfolio",
-                "💰 Deploy New Money",
-                "🧾 Income & Tax Planner"
-            ])
-
-            # --------------------------------
-            # INNER TAB 1: REBALANCE
-            # --------------------------------
-            with adv_tab1:
-                st.markdown("#### 🔄 Portfolio Rebalance Advisor")
-                st.caption("Compare your current allocation vs your target, spot drift, and get specific rebalancing actions.")
-                
-                render_grouped_portfolio_summary(inv_df)
-                st.markdown("<br>", unsafe_allow_html=True)
-                
-                rc1, rc2, rc3 = st.columns([1, 1.5, 1.5])
-                with rc1:
-                    rebal_risk = st.selectbox(
-                        "Risk Profile", ["Conservative", "Moderate", "Aggressive"],
-                        index=["Conservative", "Moderate", "Aggressive"].index(
-                            current_user.get("risk_tolerance", "Moderate") if current_user.get("risk_tolerance") in ["Conservative", "Moderate", "Aggressive"] else "Moderate"
-                        ), key="rebal_risk_sel"
-                    )
-                with rc2:
-                    country_opts = ["India", "United States", "UAE", "United Kingdom", "Singapore", "Other"]
-                    cur_country = current_user.get("country", "India")
-                    rebal_country = st.selectbox(
-                        "Country of Residence", country_opts,
-                        index=country_opts.index(cur_country) if cur_country in country_opts else 0,
-                        key="rebal_country_sel",
-                        help="Your country determines which specific funds & instruments are suggested."
-                    )
-                    if rebal_country != cur_country:
-                        from database import update_user_profile
-                        update_user_profile(current_user["username"], country=rebal_country)
-                        st.session_state["user"]["country"] = rebal_country
-                with rc3:
-                    st.write("")
-                    run_rebal = st.button("🔍 Analyse & Rebalance", type="primary", use_container_width=True, key="run_rebal_btn")
-
-                if run_rebal:
-                    with st.spinner("Fetching live trend signals for ALL holdings and computing drift (this may take up to 30-45 seconds)..."):
-                        rebal_result = generate_rebalance_advice(inv_df, rebal_risk, rebal_country, advisor_user_context, gemini_api_key)
-                    st.session_state["rebal_result"] = rebal_result
-
-                rebal_result = st.session_state.get("rebal_result")
-                if rebal_result:
-                    if "error" in rebal_result:
-                        st.warning(f"⚠️ {rebal_result['error']}")
-                    else:
-                        st.success(f"✅ Analysis complete for portfolio of **{format_inr(rebal_result['total_value'])}**")
-
-                        # Allocation Comparison Charts
-                        alloc_c1, alloc_c2 = st.columns(2)
-                        with alloc_c1:
-                            st.markdown("##### 📊 Current Allocation")
-                            curr_pie = pd.DataFrame(list(rebal_result["current_allocation"].items()), columns=["Asset", "%"])
-                            fig_curr = px.pie(curr_pie, names="Asset", values="%", hole=0.4,
-                                             color_discrete_sequence=px.colors.qualitative.Set3)
-                            fig_curr.update_layout(margin=dict(l=0,r=0,t=10,b=10), height=240, showlegend=True)
-                            st.plotly_chart(fig_curr, use_container_width=True)
-                        with alloc_c2:
-                            st.markdown("##### 🎯 Target Allocation")
-                            tgt_pie = pd.DataFrame(list(rebal_result["target_allocation"].items()), columns=["Asset", "%"])
-                            fig_tgt = px.pie(tgt_pie, names="Asset", values="%", hole=0.4,
-                                            color_discrete_sequence=px.colors.qualitative.Pastel)
-                            fig_tgt.update_layout(margin=dict(l=0,r=0,t=10,b=10), height=240, showlegend=True)
-                            st.plotly_chart(fig_tgt, use_container_width=True)
-
-                        # Drift Table
-                        st.markdown("##### 📋 Allocation Drift & Actions")
-                        drift_df = pd.DataFrame(rebal_result["drift_table"])
-                        if not drift_df.empty:
-                            def drift_row_style(row):
-                                if "Reduce" in str(row.get("Action", "")):
-                                    return ["background-color: rgba(239,68,68,0.15)"] * len(row)
-                                elif "Buy" in str(row.get("Action", "")):
-                                    return ["background-color: rgba(16,185,129,0.15)"] * len(row)
-                                return [""] * len(row)
-                            st.dataframe(
-                                drift_df[["Asset Class", "Current %", "Target %", "Drift %", "Action"]],
-                                use_container_width=True, hide_index=True
-                            )
-
-                        # Detailed Action Plan
-                        dp = rebal_result.get("detailed_plan", [])
-                        if dp:
-                            st.markdown("##### 🗺️ Detailed Action Plan")
-                            with st.expander("View Step-by-Step Plan", expanded=True):
-                                for i, step in enumerate(dp):
-                                    st.markdown(f"**Step {i+1}:** {step}")
-
-                        # Trend Signals for Equity Holdings
-                        if rebal_result.get("trend_signals"):
-                            with st.expander("📈 Live Trend Signals (Equity Holdings)", expanded=False):
-                                for sig in rebal_result["trend_signals"]:
-                                    signal_color = {"Strong Buy": "#10b981", "Buy": "#34d399", "Hold": "#94a3b8", "Reduce": "#f59e0b", "Caution": "#ef4444"}.get(sig.get("signal", ""), "#94a3b8")
-                                    sig_col1, sig_col2, sig_col3, sig_col4 = st.columns([2, 1.5, 1, 3])
-                                    with sig_col1:
-                                        st.markdown(f"**{sig.get('holding_name', sig.get('ticker', '?'))}**")
-                                        st.caption(f"Ticker: `{sig.get('ticker', 'N/A')}`")
-                                    with sig_col2:
-                                        price = sig.get("current_price")
-                                        st.metric("Current Price", f"₹{price:,.2f}" if price else "N/A",
-                                                  delta=f"{sig.get('momentum_pct', 0):+.1f}% (30d)" if sig.get("momentum_pct") is not None else None)
-                                    with sig_col3:
-                                        st.markdown(f"""<div style="background:{signal_color}22; border:1px solid {signal_color};
-                                            border-radius:6px; padding:8px 12px; text-align:center;
-                                            font-weight:700; color:{signal_color}; font-size:0.9rem;">
-                                            {sig.get('signal', 'N/A')}<br>
-                                            <span style="font-size:0.75rem; font-weight:400;">{sig.get('strength_score', 50)}/100</span>
-                                            </div>""", unsafe_allow_html=True)
-                                    with sig_col4:
-                                        st.caption(sig.get("details", ""))
-                                    st.markdown("<hr style='margin:6px 0; border-color:#334155;'>", unsafe_allow_html=True)
-
-                        # Recommendations
-                        if rebal_result.get("recommendations"):
-                            st.markdown("##### 🤖 AI Rebalancing Recommendations")
-                            for rec in rebal_result["recommendations"]:
-                                action_color = {"Buy": "#10b981", "Sell/Switch": "#f59e0b", "Hold": "#64748b"}.get(rec.get("action_type", ""), "#64748b")
+            if not income_df.empty:
+                inc_rows = list(income_df.iterrows())
+                for row_start in range(0, len(inc_rows), 3):
+                    grid_cols = st.columns(3)
+                    for col_idx, (_, irow) in enumerate(inc_rows[row_start:row_start + 3]):
+                        with grid_cols[col_idx]:
+                            inc_icon = _inc_icons.get(str(irow["income_type"]), "💰")
+                            is_editing = st.session_state.get("edit_inc_id") == irow["id"]
+                            if is_editing:
+                                with st.form(key=f"edit_inc_form_{irow['id']}"):
+                                    e_name   = st.text_input("Source Name", value=str(irow["source_name"]))
+                                    e_type   = st.selectbox("Type", INCOME_TYPES, index=INCOME_TYPES.index(irow["income_type"]) if irow["income_type"] in INCOME_TYPES else 0)
+                                    e_amount = st.number_input("Amount (₹)", min_value=0.0, step=1000.0, value=float(irow["amount"]))
+                                    e_freq   = st.selectbox("Frequency", FREQUENCY_OPTIONS, index=FREQUENCY_OPTIONS.index(irow["frequency"]) if irow["frequency"] in FREQUENCY_OPTIONS else 0)
+                                    e_notes  = st.text_input("Notes", value=str(irow["notes"]) if irow["notes"] else "")
+                                    esb1, esb2 = st.columns(2)
+                                    with esb1:
+                                        do_save = st.form_submit_button("💾 Save", type="primary", use_container_width=True)
+                                    with esb2:
+                                        do_cancel = st.form_submit_button("✖ Cancel", use_container_width=True)
+                                    if do_save:
+                                        if update_income_source(int(irow["id"]), source_name=e_name, income_type=e_type, amount=e_amount, frequency=e_freq, notes=e_notes):
+                                            st.session_state["edit_inc_id"] = None; st.rerun()
+                                    if do_cancel:
+                                        st.session_state["edit_inc_id"] = None; st.rerun()
+                            else:
+                                notes_html = f"<div style='color:#64748b; font-size:0.72rem; font-style:italic; margin-top:6px;'>{irow['notes']}</div>" if irow.get("notes") else ""
                                 st.markdown(f"""
-                                <div style="background:#1e293b; border-radius:8px; border-left:4px solid {action_color}; padding:12px 16px; margin-bottom:8px;">
-                                    <div style="display:flex; justify-content:space-between; align-items:center;">
-                                        <div style="font-weight:600; color:#f1f5f9;">{rec.get('title','')}</div>
-                                        <span style="background:{action_color}22; color:{action_color}; padding:3px 10px; border-radius:4px; font-size:0.82rem; font-weight:600;">{rec.get('action_type','')}</span>
-                                    </div>
-                                    <div style="color:#38bdf8; font-size:0.87rem; margin:6px 0 4px;">🏛️ {rec.get('instrument','')}</div>
-                                    <div style="color:#94a3b8; font-size:0.82rem;">{rec.get('rationale','')}</div>
-                                </div>
-                                """, unsafe_allow_html=True)
-
-                        # Sector Analysis
-                        if rebal_result.get("sector_analysis"):
-                            st.markdown("##### 🏢 Sector & Segment Analysis")
-                            for sec in rebal_result["sector_analysis"]:
-                                action_color = {"Buy": "#10b981", "Sell": "#f59e0b", "Hold": "#64748b"}.get(sec.get("action_type", ""), "#64748b")
-                                st.markdown(f"""
-                                <div style="background:#1e293b; border-radius:8px; border-left:4px solid {action_color}; padding:12px 16px; margin-bottom:8px;">
-                                    <div style="display:flex; justify-content:space-between; align-items:center;">
-                                        <div style="font-weight:600; color:#f1f5f9;">{sec.get('sector','')}</div>
-                                        <span style="background:{action_color}22; color:{action_color}; padding:3px 10px; border-radius:4px; font-size:0.82rem; font-weight:600;">{sec.get('action_type','')}</span>
-                                    </div>
-                                    <div style="color:#94a3b8; font-size:0.82rem; margin-top:6px;">{sec.get('rationale','')}</div>
-                                </div>
-                                """, unsafe_allow_html=True)
-
-            # --------------------------------
-            # INNER TAB 2: DEPLOY NEW MONEY
-            # --------------------------------
-            with adv_tab2:
-                st.markdown("#### 💰 New Money Investment Advisor")
-                st.caption("Tell us how much you have to invest and we'll suggest the best instruments based on your risk profile and country.")
-
-                nm_c1, nm_c2, nm_c3, nm_c4 = st.columns([1.5, 1.2, 1.2, 1.2])
-                with nm_c1:
-                    nm_amount = st.number_input("💵 Amount to Invest (₹)", min_value=1000.0, value=50000.0, step=5000.0, key="nm_amount")
-                with nm_c2:
-                    nm_mode = st.selectbox("Investment Mode", ["Lump Sum", "SIP (Monthly)"], key="nm_mode")
-                with nm_c3:
-                    nm_risk = st.selectbox("Risk Profile", ["Conservative", "Moderate", "Aggressive"],
-                        index=["Conservative", "Moderate", "Aggressive"].index(
-                            current_user.get("risk_tolerance", "Moderate") if current_user.get("risk_tolerance") in ["Conservative", "Moderate", "Aggressive"] else "Moderate"
-                        ), key="nm_risk_sel"
-                    )
-                with nm_c4:
-                    country_opts2 = ["India", "United States", "UAE", "United Kingdom", "Singapore", "Other"]
-                    cur_country2 = st.session_state.get("user", {}).get("country", "India")
-                    nm_country = st.selectbox("Country", country_opts2,
-                        index=country_opts2.index(cur_country2) if cur_country2 in country_opts2 else 0,
-                        key="nm_country_sel"
-                    )
-                    if nm_country != cur_country2:
-                        from database import update_user_profile
-                        update_user_profile(current_user["username"], country=nm_country)
-                        st.session_state["user"]["country"] = nm_country
-
-                if st.button("💡 Get Investment Suggestions", type="primary", use_container_width=True, key="nm_suggest_btn"):
-                    with st.spinner("Generating personalised suggestions..."):
-                        mode_str = "SIP" if "SIP" in nm_mode else "Lump Sum"
-                        nm_result = generate_new_money_advice(inv_df, nm_risk, nm_amount, mode_str, nm_country, advisor_user_context, gemini_api_key)
-                    st.session_state["nm_result"] = nm_result
-
-                nm_result = st.session_state.get("nm_result")
-                if nm_result:
-                    st.success("🎉 Suggestions Ready!")
-                    st.info(nm_result.get("summary", ""))
-
-                    if nm_result.get("detailed_plan"):
-                        st.markdown("##### 🗺️ Detailed Action Plan")
-                        with st.expander("View Step-by-Step Plan", expanded=True):
-                            for i, step in enumerate(nm_result["detailed_plan"]):
-                                st.markdown(f"**Step {i+1}:** {step}")
-
-                    st.markdown("---")
-                    st.markdown("##### 🗂️ Instrument Suggestions by Asset Class")
-
-                    CLASS_ICONS = {"equity": "🚀", "debt": "🛡️", "gold": "🪙", "tax_saving": "🏛️"}
-                    CLASS_COLORS = {"equity": "#38bdf8", "debt": "#34d399", "gold": "#fbbf24", "tax_saving": "#a78bfa"}
-
-                    for cls_key, instruments in nm_result.get("suggestions", {}).items():
-                        if not instruments:
-                            continue
-                        icon = CLASS_ICONS.get(cls_key, "📌")
-                        color = CLASS_COLORS.get(cls_key, "#94a3b8")
-                        alloc_amt = nm_result.get("allocation_split", {}).get(cls_key.capitalize(), 0)
-                        st.markdown(f"""
-                        <div style="display:flex; align-items:center; gap:10px; margin: 14px 0 6px;">
-                            <span style="font-size:1.2rem;">{icon}</span>
-                            <span style="font-size:1rem; font-weight:700; color:{color};">{cls_key.replace('_', ' ').title()}</span>
-                            <span style="background:{color}22; color:{color}; padding:2px 10px; border-radius:12px; font-size:0.82rem;">
-                                Suggested: {'₹'+f'{alloc_amt:,.0f}' if alloc_amt else 'N/A'}
-                            </span>
-                        </div>
-                        """, unsafe_allow_html=True)
-                        for instr in instruments:
-                            risk_color = {"Low": "#34d399", "Very Low": "#10b981", "Moderate": "#fbbf24", "Moderate-High": "#f97316", "High": "#ef4444"}.get(instr.get("risk", ""), "#94a3b8")
-                            st.markdown(f"""
-                            <div style="background:#1e293b; border-radius:8px; border-left:3px solid {color}; padding:10px 14px; margin-bottom:6px; display:flex; justify-content:space-between; align-items:flex-start; flex-wrap:wrap; gap:8px;">
-                                <div style="flex:1; min-width:200px;">
-                                    <div style="font-weight:600; color:#f1f5f9; font-size:0.92rem;">{instr.get('name','')}</div>
-                                    <div style="color:#64748b; font-size:0.78rem; margin-top:2px;">{instr.get('type','')} &nbsp;•&nbsp;
-                                        <span style="color:{risk_color};">Risk: {instr.get('risk','N/A')}</span>
-                                    </div>
-                                    <div style="color:#94a3b8; font-size:0.82rem; margin-top:6px;">{instr.get('rationale','')}</div>
-                                </div>
-                                <div style="text-align:right; min-width:130px;">
-                                    <div style="font-weight:700; color:{color}; font-size:0.92rem;">{instr.get('suggested_amount','')}</div>
-                                </div>
-                            </div>
-                            """, unsafe_allow_html=True)
-
-
-            # --------------------------------
-            # INNER TAB 3: INCOME & TAX PLANNER
-            # --------------------------------
-            with adv_tab3:
-                st.markdown("#### 🧾 Income Manager & Tax Planner")
-                st.caption("Log all income sources, compute your annual tax liability, and discover personalized tax-saving opportunities.")
-
-                # --- INCOME SOURCES SECTION ---
-                st.markdown("##### 💵 Income Sources")
-                income_df = get_income_sources_df(
-                    username=current_user["username"],
-                    family_id=user_family_id,
-                    view_mode=view_mode
-                )
-
-                total_monthly_income = float(income_df["monthly_equivalent"].sum()) if not income_df.empty else 0.0
-                total_annual_income = total_monthly_income * 12.0
-
-                # KPI summary row
-                if not income_df.empty:
-                    ki1, ki2, ki3 = st.columns(3)
-                    ki1.metric("📅 Total Monthly Income", format_inr(total_monthly_income))
-                    ki2.metric("📆 Total Annual Income", format_inr(total_annual_income))
-                    ki3.metric("🔢 Income Sources", str(len(income_df)))
-
-                    # Income breakdown bar chart (only when > 1 sources)
-                    if len(income_df) > 1:
-                        fig_inc = px.bar(
-                            income_df.sort_values("monthly_equivalent", ascending=True),
-                            x="monthly_equivalent", y="source_name", orientation="h",
-                            color="income_type",
-                            labels={"monthly_equivalent": "Monthly Equivalent (₹)", "source_name": "Source"},
-                            title="Income Sources Breakdown (Monthly Equivalent)",
-                            height=max(200, len(income_df) * 40)
-                        )
-                        fig_inc.update_layout(paper_bgcolor="#1e293b", plot_bgcolor="#1e293b",
-                                              margin=dict(l=20, r=20, t=40, b=20))
-                        st.plotly_chart(fig_inc, use_container_width=True)
-
-                # Initialise edit-mode tracker
-                if "edit_inc_id" not in st.session_state:
-                    st.session_state["edit_inc_id"] = None
-
-                # Income-type → icon mapping for visual scanning
-                _inc_icons = {
-                    "Salary / Regular Employment": "💼",
-                    "Business / Self-Employment": "🏢",
-                    "Freelance / Consulting": "💻",
-                    "Rental Income": "🏠",
-                    "Dividends / Investment Income": "📈",
-                    "Pension / Annuity": "🧓",
-                    "Capital Gains": "💹",
-                    "Agricultural Income": "🌾",
-                    "Gifts / Inheritance": "🎁",
-                    "Other": "💰",
-                }
-
-                # --- 3-COLUMN CARD GRID ---
-                if not income_df.empty:
-                    st.markdown("**Your Income Sources:**")
-                    inc_rows = list(income_df.iterrows())
-                    for row_start in range(0, len(inc_rows), 3):
-                        grid_cols = st.columns(3)
-                        for col_idx, (_, irow) in enumerate(inc_rows[row_start:row_start + 3]):
-                            with grid_cols[col_idx]:
-                                inc_icon = _inc_icons.get(str(irow["income_type"]), "💰")
-                                is_editing = st.session_state.get("edit_inc_id") == irow["id"]
-
-                                if is_editing:
-                                    # ── Inline edit form ──────────────────────────
-                                    st.markdown(
-                                        f"<div style='background:linear-gradient(135deg,#1e293b,#0f172a);"
-                                        f"border:2px solid #a78bfa; border-radius:12px; padding:14px 16px; margin-bottom:6px;'>"
-                                        f"<div style='font-weight:700; color:#a78bfa; font-size:0.88rem; margin-bottom:8px;'>"
-                                        f"✏️ Editing: {irow['source_name']}</div></div>",
-                                        unsafe_allow_html=True
-                                    )
-                                    with st.form(key=f"edit_inc_form_{irow['id']}"):
-                                        e_name = st.text_input("Source Name", value=str(irow["source_name"]))
-                                        e_type = st.selectbox(
-                                            "Income Type", INCOME_TYPES,
-                                            index=INCOME_TYPES.index(irow["income_type"])
-                                            if irow["income_type"] in INCOME_TYPES else 0
-                                        )
-                                        e_amount = st.number_input(
-                                            "Amount (₹)", min_value=0.0, step=1000.0,
-                                            value=float(irow["amount"])
-                                        )
-                                        e_freq = st.selectbox(
-                                            "Frequency", FREQUENCY_OPTIONS,
-                                            index=FREQUENCY_OPTIONS.index(irow["frequency"])
-                                            if irow["frequency"] in FREQUENCY_OPTIONS else 0
-                                        )
-                                        e_notes = st.text_input(
-                                            "Notes",
-                                            value=str(irow["notes"]) if irow["notes"] else ""
-                                        )
-                                        esb1, esb2 = st.columns(2)
-                                        with esb1:
-                                            do_save = st.form_submit_button(
-                                                "💾 Save", type="primary", use_container_width=True
-                                            )
-                                        with esb2:
-                                            do_cancel = st.form_submit_button(
-                                                "✖ Cancel", use_container_width=True
-                                            )
-
-                                        if do_save:
-                                            if update_income_source(
-                                                int(irow["id"]),
-                                                source_name=e_name,
-                                                income_type=e_type,
-                                                amount=e_amount,
-                                                frequency=e_freq,
-                                                notes=e_notes
-                                            ):
+                                <div style="background:linear-gradient(135deg,#1e293b,#0f172a); border:1px solid #334155;
+                                            border-radius:12px; padding:16px 18px; margin-bottom:4px; min-height:170px;">
+                                    <div style="font-size:1.5rem;">{inc_icon}</div>
+                                    <div style="font-weight:700; color:#f1f5f9; margin:6px 0 2px;">{irow['source_name']}</div>
+                                    <div style="color:#94a3b8; font-size:0.74rem; margin-bottom:10px;">{irow['income_type']}</div>
+                                    <div style="color:#38bdf8; font-weight:600;">{format_inr(float(irow['amount']))} <span style="color:#64748b; font-size:0.74rem;">/ {irow['frequency']}</span></div>
+                                    <div style="display:flex; gap:20px; margin-top:8px;">
+                                        <div><div style="color:#64748b; font-size:0.68rem;">Monthly</div><div style="color:#34d399; font-size:0.82rem; font-weight:600;">{format_inr(float(irow['monthly_equivalent']))}</div></div>
+                                        <div><div style="color:#64748b; font-size:0.68rem;">Annual</div><div style="color:#fbbf24; font-size:0.82rem; font-weight:600;">{format_inr(float(irow['monthly_equivalent'])*12)}</div></div>
+                                    </div>{notes_html}
+                                </div>""", unsafe_allow_html=True)
+                                cbtn1, cbtn2 = st.columns(2)
+                                with cbtn1:
+                                    if st.button("✏️ Edit", key=f"edit_inc_{irow['id']}", use_container_width=True):
+                                        st.session_state["edit_inc_id"] = irow["id"]; st.rerun()
+                                with cbtn2:
+                                    if st.button("🗑️ Delete", key=f"del_inc_{irow['id']}", use_container_width=True):
+                                        if delete_income_source(int(irow["id"]), user_family_id):
+                                            if st.session_state.get("edit_inc_id") == irow["id"]:
                                                 st.session_state["edit_inc_id"] = None
-                                                st.rerun()
-                                            else:
-                                                st.error("Failed to save changes.")
-                                        if do_cancel:
-                                            st.session_state["edit_inc_id"] = None
                                             st.rerun()
+            else:
+                st.info("No income sources yet. Add your first one below!")
 
-                                else:
-                                    # ── Display card ──────────────────────────────
-                                    notes_html = (
-                                        f"<div style='color:#64748b; font-size:0.72rem; margin-top:6px; "
-                                        f"font-style:italic;'>{irow['notes']}</div>"
-                                        if irow.get("notes") else ""
-                                    )
-                                    st.markdown(
-                                        f"""
-                                        <div style="background:linear-gradient(135deg,#1e293b,#0f172a);
-                                                    border:1px solid #334155; border-radius:12px;
-                                                    padding:16px 18px; margin-bottom:4px; min-height:170px;">
-                                            <div style="font-size:1.5rem; line-height:1;">{inc_icon}</div>
-                                            <div style="font-weight:700; color:#f1f5f9; font-size:0.95rem;
-                                                        margin:6px 0 2px; white-space:nowrap; overflow:hidden;
-                                                        text-overflow:ellipsis;">{irow['source_name']}</div>
-                                            <div style="color:#94a3b8; font-size:0.74rem; margin-bottom:10px;">{irow['income_type']}</div>
-                                            <div style="color:#38bdf8; font-weight:600; font-size:0.9rem;">
-                                                {format_inr(float(irow['amount']))}
-                                                <span style="color:#64748b; font-size:0.74rem;"> / {irow['frequency']}</span>
-                                            </div>
-                                            <div style="display:flex; gap:20px; margin-top:8px;">
-                                                <div>
-                                                    <div style="color:#64748b; font-size:0.68rem;">Monthly</div>
-                                                    <div style="color:#34d399; font-size:0.82rem; font-weight:600;">{format_inr(float(irow['monthly_equivalent']))}</div>
-                                                </div>
-                                                <div>
-                                                    <div style="color:#64748b; font-size:0.68rem;">Annual</div>
-                                                    <div style="color:#fbbf24; font-size:0.82rem; font-weight:600;">{format_inr(float(irow['monthly_equivalent']) * 12)}</div>
-                                                </div>
-                                            </div>
-                                            {notes_html}
-                                        </div>
-                                        """,
-                                        unsafe_allow_html=True
-                                    )
-                                    cbtn1, cbtn2 = st.columns(2)
-                                    with cbtn1:
-                                        if st.button(
-                                            "✏️ Edit", key=f"edit_inc_{irow['id']}",
-                                            use_container_width=True, help="Edit this income source"
-                                        ):
-                                            st.session_state["edit_inc_id"] = irow["id"]
-                                            st.rerun()
-                                    with cbtn2:
-                                        if st.button(
-                                            "🗑️ Delete", key=f"del_inc_{irow['id']}",
-                                            use_container_width=True, help="Delete this income source"
-                                        ):
-                                            if delete_income_source(int(irow["id"]), user_family_id):
-                                                if st.session_state.get("edit_inc_id") == irow["id"]:
-                                                    st.session_state["edit_inc_id"] = None
-                                                st.rerun()
-                                            else:
-                                                st.error("Failed to delete income source.")
-                else:
-                    st.info("No income sources yet. Add your first one below!")
-
-                # --- ADD INCOME SOURCE (persistent, always visible) ---
-                st.markdown("---")
-                st.markdown(
-                    "<div style='font-weight:700; color:#f1f5f9; font-size:0.95rem; margin-bottom:10px;'>"
-                    "➕ Add New Income Source</div>",
-                    unsafe_allow_html=True
-                )
-                with st.form("add_income_form"):
-                    ai1, ai2, ai3 = st.columns(3)
-                    with ai1:
-                        i_name = st.text_input("Source Name", placeholder="e.g. Primary Salary, Rental - Flat B")
-                        i_type = st.selectbox("Income Type", INCOME_TYPES)
-                    with ai2:
-                        i_amount = st.number_input("Amount (₹)", min_value=0.0, step=1000.0)
-                        i_freq = st.selectbox("Frequency", FREQUENCY_OPTIONS)
-                    with ai3:
-                        i_from = st.date_input("Effective From", value=datetime.date.today())
-                        i_notes = st.text_input("Notes (Optional)", placeholder="e.g. Includes bonus")
-
-                    if st.form_submit_button("💾 Add Income Source", type="primary"):
-                        if i_name and i_amount > 0:
-                            new_inc_id = add_income_source(
-                                username=current_user["username"],
-                                family_id=user_family_id,
-                                source_name=i_name,
-                                income_type=i_type,
-                                amount=i_amount,
-                                frequency=i_freq,
-                                effective_from=str(i_from),
-                                notes=i_notes
-                            )
-                            if new_inc_id:
-                                st.success(f"✅ Added income source: {i_name}")
-                                st.rerun()
-                        else:
-                            st.error("Please provide a source name and amount.")
-
-                # ═══════════════════════════════════════════════════════════
-                # ENHANCED TAX PLANNER — 4 sections
-                # ═══════════════════════════════════════════════════════════
-                st.markdown("---")
-                st.markdown("### 🏛️ Advanced Tax Planner (FY 2025-26)")
-                st.caption(f"Auto-derives interest & dividends from your portfolio · Parses capital gains from broker PDFs · Full deduction waterfall · Advance tax schedule. RBI FRSB rate: **{FRSB_RATE*100:.2f}%** (effective {FRSB_RATE_EFFECTIVE})")
-
-                # Country & Regime selectors
-                tax_c1, tax_c2 = st.columns([2, 2])
-                with tax_c1:
-                    tax_country_opts = ["India", "United States", "UAE", "United Kingdom", "Singapore", "Other"]
-                    tax_cur_country = st.session_state.get("user", {}).get("country", "India")
-                    tax_country = st.selectbox(
-                        "🌍 Country of Tax Residence", tax_country_opts,
-                        index=tax_country_opts.index(tax_cur_country) if tax_cur_country in tax_country_opts else 0,
-                        key="tax_country_sel"
-                    )
-                    if tax_country != tax_cur_country:
-                        from database import update_user_profile
-                        update_user_profile(current_user["username"], country=tax_country)
-                        st.session_state["user"]["country"] = tax_country
-                with tax_c2:
-                    if tax_country == "India":
-                        tax_regime = st.selectbox(
-                            "📋 Tax Regime", ["New Regime", "Old Regime"],
-                            key="tax_regime_sel",
-                            help="New Regime: ₹75,000 std deduction, simplified slabs. Old Regime: ₹50,000 std + 80C/80D/HRA/24b."
-                        )
+            st.markdown("---")
+            st.markdown("<div style='font-weight:700; color:#f1f5f9; margin-bottom:10px;'>➕ Add New Income Source</div>", unsafe_allow_html=True)
+            with st.form("add_income_form"):
+                ai1, ai2, ai3 = st.columns(3)
+                with ai1:
+                    i_name = st.text_input("Source Name", placeholder="e.g. Primary Salary")
+                    i_type = st.selectbox("Income Type", INCOME_TYPES)
+                with ai2:
+                    i_amount = st.number_input("Amount (₹)", min_value=0.0, step=1000.0)
+                    i_freq   = st.selectbox("Frequency", FREQUENCY_OPTIONS)
+                with ai3:
+                    i_from  = st.date_input("Effective From", value=datetime.date.today())
+                    i_notes = st.text_input("Notes (Optional)")
+                if st.form_submit_button("💾 Add Income Source", type="primary"):
+                    if i_name and i_amount > 0:
+                        new_inc_id = add_income_source(username=current_user["username"], family_id=user_family_id,
+                                                        source_name=i_name, income_type=i_type, amount=i_amount,
+                                                        frequency=i_freq, effective_from=str(i_from), notes=i_notes)
+                        if new_inc_id:
+                            st.success(f"✅ Added: {i_name}"); st.rerun()
                     else:
-                        tax_regime = "N/A"
-                        st.info(f"Tax rules auto-applied for {tax_country}.")
+                        st.error("Please provide name and amount.")
 
+            # ── Tax Planner Sections ─────────────────────────────────────────────
+            st.markdown("---")
+            st.markdown("### 🏛️ Advanced Tax Planner (FY 2025-26)")
+            tax_c1, tax_c2 = st.columns(2)
+            with tax_c1:
+                tax_country_opts = ["India", "United States", "UAE", "United Kingdom", "Singapore", "Other"]
+                tax_cur_country  = st.session_state.get("user", {}).get("country", "India")
+                tax_country      = st.selectbox("🌍 Country of Tax Residence", tax_country_opts,
+                                                index=tax_country_opts.index(tax_cur_country) if tax_cur_country in tax_country_opts else 0,
+                                                key="tax_country_sel")
+                if tax_country != tax_cur_country:
+                    from database import update_user_profile
+                    update_user_profile(current_user["username"], country=tax_country)
+                    st.session_state["user"]["country"] = tax_country
+            with tax_c2:
                 if tax_country == "India":
-                    _user_key  = current_user["username"]
-                    _fam_id    = current_user.get("family_id", 1)
-                    _fy        = "2025-26"
-                    _saved_ded = get_tax_deductions(_user_key, _fam_id, _fy)
-                    _saved_cg  = get_capital_gains(_user_key, _fam_id, _fy)
-
-                    # ─────────────────────────────────────────────────────
-                    # SECTION A — DEDUCTIONS
-                    # ─────────────────────────────────────────────────────
-                    with st.expander("📋 Section A — Deductions & TDS Details", expanded=False):
-                        st.caption("Enter your deduction details for FY 2025-26. Values are saved automatically.")
-                        _user_age = current_user.get("age", 35)
-
-                        with st.form("tax_deduction_form"):
-                            if tax_regime == "Old Regime":
-                                st.markdown("##### 80C Investments (Max ₹1.5L)")
-                                _dc1, _dc2, _dc3, _dc4 = st.columns(4)
-                                _ppf   = _dc1.number_input("PPF Contribution (₹)", min_value=0.0, value=float(_saved_ded.get("ppf_contribution", 0)), step=1000.0, key="ded_ppf")
-                                _elss  = _dc2.number_input("ELSS Investment (₹)", min_value=0.0, value=float(_saved_ded.get("elss_investment", 0)), step=1000.0, key="ded_elss")
-                                _lic   = _dc3.number_input("LIC Premium (₹)", min_value=0.0, value=float(_saved_ded.get("lic_premium", 0)), step=1000.0, key="ded_lic")
-                                _hlp   = _dc4.number_input("Home Loan Principal (₹)", min_value=0.0, value=float(_saved_ded.get("home_loan_principal", 0)), step=1000.0, key="ded_hlp")
-                                _dc5, _dc6, _dc7, _dc8 = st.columns(4)
-                                _school = _dc5.number_input("School Fees (₹)", min_value=0.0, value=float(_saved_ded.get("school_fees", 0)), step=500.0, key="ded_school")
-                                _nsc_r  = _dc6.number_input("NSC Interest Reinvested (₹)", min_value=0.0, value=float(_saved_ded.get("nsc_interest_reinvested", 0)), step=100.0, key="ded_nsc")
-                                _epf    = _dc7.number_input("EPF Contribution (₹)", min_value=0.0, value=float(_saved_ded.get("epf_contribution", 0)), step=500.0, key="ded_epf")
-                                _tsfd   = _dc8.number_input("Tax-saver FD (₹)", min_value=0.0, value=float(_saved_ded.get("tax_saver_fd", 0)), step=1000.0, key="ded_tsfd")
-
-                                _eighty_c_total = min(_ppf + _elss + _lic + _hlp + _school + _nsc_r + _epf + _tsfd, 150000)
-                                st.caption(f"📊 80C total (capped at ₹1.5L): **{format_inr(_eighty_c_total)}**")
-
-                                st.markdown("##### 80D — Health Insurance")
-                                _hc1, _hc2, _hc3 = st.columns(3)
-                                _hi_self = _hc1.number_input("Health Ins — Self & Family (₹)", min_value=0.0, value=float(_saved_ded.get("health_ins_self", 0)), step=500.0, key="ded_hi_self")
-                                _hi_par  = _hc2.number_input("Health Ins — Parents (₹)", min_value=0.0, value=float(_saved_ded.get("health_ins_parents", 0)), step=500.0, key="ded_hi_par")
-                                _par_sr  = _hc3.checkbox("Parents are Senior Citizens", value=bool(_saved_ded.get("parents_senior", 0)), key="ded_par_sr")
-
-                                st.markdown("##### HRA, Home Loan Interest & Others")
-                                _oc1, _oc2, _oc3 = st.columns(3)
-                                _hra_basic = _oc1.number_input("Basic Salary p.a. (for HRA) (₹)", min_value=0.0, value=float(_saved_ded.get("hra_basic_salary", 0)), step=1000.0, key="ded_hra_basic")
-                                _hra_recv  = _oc2.number_input("HRA Received p.a. (₹)", min_value=0.0, value=float(_saved_ded.get("hra_received", 0)), step=1000.0, key="ded_hra_recv")
-                                _rent_paid = _oc3.number_input("Rent Paid p.a. (₹)", min_value=0.0, value=float(_saved_ded.get("rent_paid", 0)), step=1000.0, key="ded_rent_paid")
-                                _oc4, _oc5, _oc6 = st.columns(3)
-                                _metro     = _oc4.checkbox("Metro City (50% HRA rule)", value=bool(_saved_ded.get("metro_city", 1)), key="ded_metro")
-                                _hl_int    = _oc5.number_input("Home Loan Interest 24(b) (₹)", min_value=0.0, max_value=200000.0, value=float(_saved_ded.get("home_loan_interest", 0)), step=1000.0, key="ded_hl_int")
-                                _nps_1b    = _oc6.number_input("NPS 80CCD(1B) Self (₹)", min_value=0.0, max_value=50000.0, value=float(_saved_ded.get("nps_80ccd_1b", 0)), step=500.0, key="ded_nps_1b")
-                            else:
-                                # New regime — minimal inputs
-                                st.info("ℹ️ **New Regime**: Only Standard Deduction (₹75,000), NPS Employer (80CCD2), and Professional Tax apply.")
-                                _ppf = _elss = _lic = _hlp = _school = _nsc_r = _epf = _tsfd = 0.0
-                                _hi_self = _hi_par = _hra_basic = _hra_recv = _rent_paid = _hl_int = _nps_1b = 0.0
-                                _par_sr = False; _metro = True; _eighty_c_total = 0.0
-
-                            # Common fields for both regimes
-                            st.markdown("##### Common Deductions")
-                            _cc1, _cc2, _cc3, _cc4 = st.columns(4)
-                            _nps_emp  = _cc1.number_input("NPS Employer 80CCD(2) (₹)", min_value=0.0, value=float(_saved_ded.get("nps_employer_80ccd2", 0)), step=500.0, key="ded_nps_emp")
-                            _prof_tax = _cc2.number_input("Professional Tax (₹, max ₹2,400)", min_value=0.0, max_value=2400.0, value=float(_saved_ded.get("professional_tax", 0)), step=200.0, key="ded_prof_tax")
-                            _sb_int   = _cc3.number_input("Savings Bank Interest (80TTA/TTB) (₹)", min_value=0.0, value=float(_saved_ded.get("savings_bank_interest", 0)), step=100.0, key="ded_sb_int")
-                            _scss_int = _cc4.number_input("SCSS Interest (for 80TTB) (₹)", min_value=0.0, value=float(_saved_ded.get("scss_interest", 0)), step=100.0, key="ded_scss_int")
-
-                            st.markdown("##### TDS & Advance Tax Already Paid")
-                            _tp1, _tp2 = st.columns(2)
-                            _tds     = _tp1.number_input("TDS Already Deducted (₹)", min_value=0.0, value=float(_saved_ded.get("tds_deducted", 0)), step=1000.0, key="ded_tds")
-                            _adv_pd  = _tp2.number_input("Advance Tax Already Paid (₹)", min_value=0.0, value=float(_saved_ded.get("advance_paid", 0)), step=1000.0, key="ded_adv_paid")
-
-                            _save_ded = st.form_submit_button("💾 Save Deduction Details", type="primary", use_container_width=True)
-                            if _save_ded:
-                                _ded_payload = {
-                                    "ppf_contribution": _ppf, "elss_investment": _elss, "lic_premium": _lic,
-                                    "home_loan_principal": _hlp, "school_fees": _school, "nsc_interest_reinvested": _nsc_r,
-                                    "epf_contribution": _epf, "tax_saver_fd": _tsfd,
-                                    "health_ins_self": _hi_self, "health_ins_parents": _hi_par, "parents_senior": int(_par_sr),
-                                    "nps_80ccd_1b": _nps_1b if tax_regime == "Old Regime" else 0,
-                                    "nps_employer_80ccd2": _nps_emp,
-                                    "home_loan_interest": _hl_int, "hra_basic_salary": _hra_basic,
-                                    "hra_received": _hra_recv, "rent_paid": _rent_paid, "metro_city": int(_metro),
-                                    "professional_tax": _prof_tax, "savings_bank_interest": _sb_int,
-                                    "scss_interest": _scss_int, "tds_deducted": _tds, "advance_paid": _adv_pd,
-                                    "age": _user_age,
-                                }
-                                if upsert_tax_deductions(_user_key, _fam_id, _fy, _ded_payload):
-                                    _saved_ded = _ded_payload
-                                    st.success("✅ Deduction details saved.")
-                                    st.rerun()
-                                else:
-                                    st.error("❌ Failed to save deduction details.")
-
-                    # ─────────────────────────────────────────────────────
-                    # SECTION B — AUTO-DERIVED PASSIVE INCOME
-                    # ─────────────────────────────────────────────────────
-                    with st.expander("💰 Section B — Passive Income from Portfolio (Auto-Calculated)", expanded=False):
-                        st.caption("Income automatically derived from your investment holdings and income sources. Override any figure if needed.")
-                        
-                        has_investments = inv_df is not None and not inv_df.empty
-                        has_incomes = income_df is not None and not income_df.empty
-                        
-                        if has_investments or has_incomes:
-                            with st.spinner("Deriving passive income from portfolio..."):
-                                _passive_entries = derive_investment_income(inv_df, income_sources_df=income_df)
-                            if _passive_entries:
-                                st.markdown(f"🔍 Found **{len(_passive_entries)}** passive income streams from your portfolio:")
-                                _override_vals = {}
-                                for _pi_idx, _pe in enumerate(_passive_entries):
-                                    _is_exempt = "EXEMPT" in _pe.get("taxability", "").upper()
-                                    _card_border = "#10b981" if _is_exempt else "#38bdf8"
-                                    _label_color = "#10b981" if _is_exempt else "#38bdf8"
-                                    st.markdown(f"""
-                                    <div style="background:#1e293b; border-radius:8px; border-left:4px solid {_card_border};
-                                                padding:10px 14px; margin-bottom:6px;">
-                                        <div style="display:flex; justify-content:space-between; align-items:center;">
-                                            <div>
-                                                <span style="font-weight:700; color:{_label_color};">{_pe['source_name']}</span>
-                                                <span style="color:#64748b; font-size:0.78rem; margin-left:8px;">{_pe['income_type']}</span>
-                                            </div>
-                                            <div style="color:{'#10b981' if _is_exempt else '#fbbf24'}; font-weight:700;">{format_inr(_pe['annual_amount'])}/yr</div>
-                                        </div>
-                                        <div style="color:#64748b; font-size:0.75rem; margin-top:4px;">{_pe['notes']}</div>
-                                        <div style="color:#475569; font-size:0.72rem;">Taxability: {_pe['taxability']}</div>
-                                    </div>
-                                    """, unsafe_allow_html=True)
-                                    _override = st.number_input(
-                                        f"Override: {_pe['source_name']} (₹/yr)",
-                                        min_value=0.0,
-                                        value=float(_pe["annual_amount"]),
-                                        step=100.0,
-                                        key=f"passive_override_{_pi_idx}",
-                                        label_visibility="collapsed"
-                                    )
-                                    _override_vals[_pi_idx] = _override
-                                st.session_state["_passive_entries"]  = _passive_entries
-                                st.session_state["_passive_overrides"] = _override_vals
-                            else:
-                                st.info("ℹ️ No passive income streams detected in your portfolio. Add FD, FRSB Bond, SGB, or equity holdings with units to auto-detect.")
-                                st.session_state["_passive_entries"]  = []
-                                st.session_state["_passive_overrides"] = {}
-                        else:
-                            st.info("ℹ️ No portfolio holdings found. Add investments in the Portfolio section to auto-derive passive income.")
-                            st.session_state["_passive_entries"]  = []
-                            st.session_state["_passive_overrides"] = {}
-
-                    # ─────────────────────────────────────────────────────
-                    # SECTION C — CAPITAL GAINS
-                    # ─────────────────────────────────────────────────────
-                    with st.expander("📈 Section C — Capital Gains (Upload or Manual Entry)", expanded=False):
-                        st.caption("Upload your broker/AIS capital gains statement to auto-extract LTCG & STCG. Or enter manually.")
-
-                        _cg_tabs = st.tabs(["📤 Upload Document", "✏️ Manual Entry", "📋 Saved Data"])
-
-                        with _cg_tabs[0]:
-                            st.markdown("""
-                            **Supported documents:**
-                            - **Zerodha**: Console → P&L → Download Tax P&L (PDF)
-                            - **ICICI Direct**: Reports → Capital Gains → Download PDF  *(Consolidated / Scrip-wise supported)*
-                            - **CAMS / KFintech**: CAS (Consolidated Account Statement) PDF
-                            - **IT Dept AIS PDF**: Income Tax Portal → AIS → Download PDF *(shows sale proceeds, not net gains)*
-                            - **IT Dept AIS JSON**: Decrypt using AIS Offline Utility first → upload decrypted JSON
-                            """)
-                            with st.expander("ℹ️ About AIS files — important note", expanded=False):
-                                st.info("""
-**AIS files from the Income Tax portal are encrypted.**
-
-The file you download (ZIP or JSON) uses password = **PAN (uppercase) + DOB (DDMMYYYY)** — e.g. `ABCDE1234F15081985`.
-
-To use it:
-1. Download **AIS Offline Utility** from incometax.gov.in → Resources
-2. Import your downloaded file and enter the password above
-3. Export the **decrypted JSON** from the utility
-4. Upload that exported JSON here
-
-**Also note:** AIS shows *sale proceeds* — not net capital gains. Your broker's P&L PDF (Zerodha / ICICI / CAMS) gives more accurate LTCG/STCG figures.
-                                """)
-                            _fmt_override = st.selectbox(
-                                "📂 Format override (if auto-detect is wrong)",
-                                options=[
-                                    "Auto-detect",
-                                    "IT Dept AIS — PDF",
-                                    "IT Dept AIS — JSON (decrypted)",
-                                    "IT Dept AIS — ZIP (encrypted)",
-                                    "ICICI Direct PDF",
-                                    "Zerodha PDF",
-                                    "CAMS / KFintech PDF",
-                                    "Anand Rathi PDF",
-                                ],
-                                index=0,
-                                key="cg_fmt_override",
-                                help="Use this if the file is detected incorrectly"
-                            )
-                            _fmt_map = {
-                                "Auto-detect":                    "auto",
-                                "IT Dept AIS — PDF":             "ais_pdf",
-                                "IT Dept AIS — JSON (decrypted)": "ais",
-                                "IT Dept AIS — ZIP (encrypted)":  "ais_zip",
-                                "ICICI Direct PDF":               "icici",
-                                "Zerodha PDF":                    "zerodha",
-                                "CAMS / KFintech PDF":            "cams",
-                                "Anand Rathi PDF":                "anand_rathi",
-                            }
-                            _cg_file = st.file_uploader(
-                                "Upload capital gains document",
-                                type=["pdf", "json", "zip"],
-                                key="cg_upload_file",
-                                help="Auto-detects: Zerodha PDF, ICICI PDF, CAMS PDF, AIS PDF, AIS JSON (decrypted), AIS ZIP"
-                            )
-                            ais_pan = None
-                            ais_dob = None
-                            if _cg_file is not None and _cg_file.name.lower().endswith(('.zip', '.json')):
-                                with st.expander("Encrypted AIS JSON/ZIP Options (Optional)", expanded=True):
-                                    st.caption("If you are uploading an encrypted AIS file directly from the Income Tax portal, enter your PAN and DOB to decrypt it automatically.")
-                                    col_pan, col_dob = st.columns(2)
-                                    ais_pan = col_pan.text_input("PAN", key="ais_pan_input", help="Used to decrypt AIS. Not saved anywhere.").strip().upper()
-                                    ais_dob = col_dob.text_input("DOB (DDMMYYYY)", key="ais_dob_input", help="e.g. 01011990").strip()
-                            
-                            if _cg_file is not None:
-                                _hint = _fmt_map.get(_fmt_override, "auto")
-                                with st.spinner(f"Parsing {_cg_file.name}..."):
-                                    _parsed_cg = parse_capital_gains(_cg_file, file_type_hint=_hint, ais_pan=ais_pan, ais_dob=ais_dob)
-                                _detected = _parsed_cg.get("detected_format", "unknown")
-                                _src      = _parsed_cg.get("source", "Unknown")
-                                st.success(f"✅ Detected as: **{_detected}** → parsed as **{_src}**")
-                                if _parsed_cg.get("parse_errors"):
-                                    for _pe in _parsed_cg["parse_errors"]:
-                                        st.warning(f"⚠️ {_pe}")
-                                if _parsed_cg.get("debug_text"):
-                                    with st.expander("🔍 Debug: Raw PDF text extracted (share this to help fix parsing)", expanded=True):
-                                        st.caption(
-                                            "The parser could not recognise the capital gains section in this PDF. "
-                                            "The raw text below is what was actually extracted — share it so the "
-                                            "correct regex patterns can be added."
-                                        )
-                                        st.code(_parsed_cg["debug_text"], language="text")
-
-                                _int_fd = _parsed_cg.get("interest_fd", 0)
-                                _int_bonds = _parsed_cg.get("interest_bonds", 0)
-                                if (_int_fd > 0 or _int_bonds > 0) and _src != "IT Dept AIS":
-                                    st.info(f"**Detected Interest Income:** The parser extracted ₹{_int_fd + _int_bonds:,.2f} in interest from your broker statement. Please ensure you manually enter this in the **Deductions & Passive Income** section, as it is not automatically saved here to prevent duplicates with your AIS data.")
-                                
-                                _ais_salary = _parsed_cg.get("salary", 0)
-                                _ais_dividend = _parsed_cg.get("dividend", 0)
-                                _ais_int_sb = _parsed_cg.get("interest_sb", 0)
-                                _ais_int_fd = _parsed_cg.get("interest_fd", 0)
-                                _ais_rent = _parsed_cg.get("rent", 0)
-                                
-                                if _src == "IT Dept AIS":
-                                    if any(v > 0 for v in [_ais_salary, _ais_dividend, _ais_int_sb, _ais_int_fd, _ais_rent]):
-                                        st.markdown("### 📥 AIS Extracted Passive & Salary Income")
-                                        st.info("The AIS contains other income streams. Review the figures below and click **Accept & Auto-fill** to apply them to your profile.")
-                                        _ais_df = pd.DataFrame([
-                                            {"Income Type": "Salary", "Amount (₹)": float(_ais_salary), "Key": "salary_income"},
-                                            {"Income Type": "Dividend", "Amount (₹)": float(_ais_dividend), "Key": "dividend_income"},
-                                            {"Income Type": "Savings Interest", "Amount (₹)": float(_ais_int_sb), "Key": "interest_income"},
-                                            {"Income Type": "Deposit Interest", "Amount (₹)": float(_ais_int_fd), "Key": "fd_interest"},
-                                            {"Income Type": "Rental Income", "Amount (₹)": float(_ais_rent), "Key": "rental_income"},
-                                        ])
-                                        _edited_ais_df = st.data_editor(
-                                            _ais_df,
-                                            use_container_width=True,
-                                            hide_index=True,
-                                            column_config={
-                                                "Income Type": st.column_config.TextColumn("Income Type", disabled=True),
-                                                "Amount (₹)": st.column_config.NumberColumn("Amount (₹)", min_value=0.0, step=1000.0, format="₹%d"),
-                                                "Key": None
-                                            },
-                                            key="ais_income_editor"
-                                        )
-                                        if st.button("✅ Accept & Auto-fill", type="primary", key="accept_ais_income"):
-                                            for _, row in _edited_ais_df.iterrows():
-                                                st.session_state[row["Key"]] = float(row["Amount (₹)"])
-                                            save_inputs(_user_key, _fam_id, _fy)
-                                            st.success("✅ Income fields updated successfully!")
-                                            st.rerun()
-
-                                st.markdown(f"**Parsed Capital Gains — {_cg_file.name}:** (Edit figures below if categorization is wrong)")
-                                _cg_display = pd.DataFrame([
-                                    {"Category": "Equity LTCG", "Amount (₹)": float(_parsed_cg["equity_ltcg"]), "Tax Rate": "12.5% (above ₹1.25L)", "Key": "equity_ltcg"},
-                                    {"Category": "Equity STCG", "Amount (₹)": float(_parsed_cg["equity_stcg"]), "Tax Rate": "20%", "Key": "equity_stcg"},
-                                    {"Category": "Equity MF LTCG", "Amount (₹)": float(_parsed_cg["equity_mf_ltcg"]), "Tax Rate": "12.5% (above ₹1.25L)", "Key": "equity_mf_ltcg"},
-                                    {"Category": "Equity MF STCG", "Amount (₹)": float(_parsed_cg["equity_mf_stcg"]), "Tax Rate": "20%", "Key": "equity_mf_stcg"},
-                                    {"Category": "Debt MF LTCG", "Amount (₹)": float(_parsed_cg["debt_mf_ltcg"]), "Tax Rate": "Slab rate", "Key": "debt_mf_ltcg"},
-                                    {"Category": "Debt MF STCG", "Amount (₹)": float(_parsed_cg["debt_mf_stcg"]), "Tax Rate": "Slab rate", "Key": "debt_mf_stcg"},
-                                    {"Category": "Property LTCG", "Amount (₹)": float(_parsed_cg["property_ltcg"]), "Tax Rate": "12.5% (no indexation)", "Key": "property_ltcg"},
-                                    {"Category": "Property STCG", "Amount (₹)": float(_parsed_cg["property_stcg"]), "Tax Rate": "Slab rate", "Key": "property_stcg"},
-                                    {"Category": "Other LTCG", "Amount (₹)": float(_parsed_cg["other_ltcg"]), "Tax Rate": "Slab rate", "Key": "other_ltcg"},
-                                    {"Category": "Other STCG", "Amount (₹)": float(_parsed_cg["other_stcg"]), "Tax Rate": "Slab rate", "Key": "other_stcg"},
-                                ])
-                                _edited_df = st.data_editor(
-                                    _cg_display,
-                                    use_container_width=True,
-                                    hide_index=True,
-                                    column_config={
-                                        "Category": st.column_config.TextColumn("Category", disabled=True),
-                                        "Amount (₹)": st.column_config.NumberColumn("Amount (₹)", min_value=0.0, step=1000.0, format="₹%d"),
-                                        "Tax Rate": st.column_config.TextColumn("Tax Rate", disabled=True),
-                                        "Key": None  # hide the key
-                                    }
-                                )
-                                
-                                # Show running totals based on live edits
-                                _live_ltcg = _edited_df.loc[_edited_df["Key"].str.endswith("_ltcg"), "Amount (₹)"].sum()
-                                _live_stcg = _edited_df.loc[_edited_df["Key"].str.endswith("_stcg"), "Amount (₹)"].sum()
-                                st.markdown(f"**Live Total LTCG: {format_inr(_live_ltcg)} | Live Total STCG: {format_inr(_live_stcg)}**")
-                                
-                                if st.button("💾 Save Capital Gains", type="primary", key="save_parsed_cg"):
-                                    # Write back edits to the parsed structure
-                                    for _, row in _edited_df.iterrows():
-                                        _parsed_cg[row["Key"]] = float(row["Amount (₹)"])
-                                    
-                                    # Recompute internal totals (like slab addition)
-                                    _parsed_cg = _sum_totals(_parsed_cg)
-                                    
-                                    if upsert_capital_gains(_user_key, _fam_id, _fy, _parsed_cg):
-                                        _saved_cg = _parsed_cg
-                                        st.success("✅ Capital gains saved.")
-                                        st.rerun()
-
-
-                        with _cg_tabs[1]:
-                            st.markdown("Enter capital gains amounts manually (all figures in ₹):")
-                            with st.form("manual_cg_form"):
-                                _m1, _m2 = st.columns(2)
-                                _m_eq_ltcg   = _m1.number_input("Equity LTCG (Listed Stocks)", min_value=0.0, value=float(_saved_cg.get("equity_ltcg", 0)), step=1000.0, key="mcg_eq_ltcg")
-                                _m_eq_stcg   = _m2.number_input("Equity STCG (Listed Stocks)", min_value=0.0, value=float(_saved_cg.get("equity_stcg", 0)), step=1000.0, key="mcg_eq_stcg")
-                                _m3, _m4 = st.columns(2)
-                                _m_eqmf_ltcg = _m3.number_input("Equity Mutual Fund LTCG", min_value=0.0, value=float(_saved_cg.get("equity_mf_ltcg", 0)), step=1000.0, key="mcg_eqmf_ltcg")
-                                _m_eqmf_stcg = _m4.number_input("Equity Mutual Fund STCG", min_value=0.0, value=float(_saved_cg.get("equity_mf_stcg", 0)), step=1000.0, key="mcg_eqmf_stcg")
-                                _m5, _m6 = st.columns(2)
-                                _m_dmf_ltcg  = _m5.number_input("Debt MF LTCG (taxed at slab)", min_value=0.0, value=float(_saved_cg.get("debt_mf_ltcg", 0)), step=1000.0, key="mcg_dmf_ltcg")
-                                _m_dmf_stcg  = _m6.number_input("Debt MF STCG (taxed at slab)", min_value=0.0, value=float(_saved_cg.get("debt_mf_stcg", 0)), step=1000.0, key="mcg_dmf_stcg")
-                                _m7, _m8 = st.columns(2)
-                                _m_prop_ltcg = _m7.number_input("Property LTCG (12.5%, no indexation)", min_value=0.0, value=float(_saved_cg.get("property_ltcg", 0)), step=10000.0, key="mcg_prop_ltcg")
-                                _m_prop_stcg = _m8.number_input("Property STCG (slab rate)", min_value=0.0, value=float(_saved_cg.get("property_stcg", 0)), step=10000.0, key="mcg_prop_stcg")
-                                _m9, _m10 = st.columns(2)
-                                _m_oth_ltcg  = _m9.number_input("Other LTCG", min_value=0.0, value=float(_saved_cg.get("other_ltcg", 0)), step=1000.0, key="mcg_oth_ltcg")
-                                _m_oth_stcg  = _m10.number_input("Other STCG", min_value=0.0, value=float(_saved_cg.get("other_stcg", 0)), step=1000.0, key="mcg_oth_stcg")
-                                _save_mcg = st.form_submit_button("💾 Save Manual Capital Gains", type="primary", use_container_width=True)
-                                if _save_mcg:
-                                    _mcg_payload = {
-                                        "equity_ltcg": _m_eq_ltcg, "equity_stcg": _m_eq_stcg,
-                                        "equity_mf_ltcg": _m_eqmf_ltcg, "equity_mf_stcg": _m_eqmf_stcg,
-                                        "debt_mf_ltcg": _m_dmf_ltcg, "debt_mf_stcg": _m_dmf_stcg,
-                                        "property_ltcg": _m_prop_ltcg, "property_stcg": _m_prop_stcg,
-                                        "other_ltcg": _m_oth_ltcg, "other_stcg": _m_oth_stcg,
-                                        "source": "Manual", "notes": "",
-                                        "slab_income_addition": _m_dmf_ltcg + _m_dmf_stcg + _m_prop_stcg + _m_oth_ltcg + _m_oth_stcg,
-                                    }
-                                    if upsert_capital_gains(_user_key, _fam_id, _fy, _mcg_payload):
-                                        _saved_cg = _mcg_payload
-                                        st.success("✅ Capital gains saved.")
-                                        st.rerun()
-
-                        with _cg_tabs[2]:
-                            if _saved_cg:
-                                st.markdown(f"**Saved CG data for FY {_fy} (source: {_saved_cg.get('source', 'N/A')}):**")
-                                _saved_cg_display = pd.DataFrame([
-                                    {"Category": "Equity LTCG", "Amount": format_inr(float(_saved_cg.get("equity_ltcg", 0)))},
-                                    {"Category": "Equity STCG", "Amount": format_inr(float(_saved_cg.get("equity_stcg", 0)))},
-                                    {"Category": "Equity MF LTCG", "Amount": format_inr(float(_saved_cg.get("equity_mf_ltcg", 0)))},
-                                    {"Category": "Equity MF STCG", "Amount": format_inr(float(_saved_cg.get("equity_mf_stcg", 0)))},
-                                    {"Category": "Debt MF LTCG", "Amount": format_inr(float(_saved_cg.get("debt_mf_ltcg", 0)))},
-                                    {"Category": "Debt MF STCG", "Amount": format_inr(float(_saved_cg.get("debt_mf_stcg", 0)))},
-                                    {"Category": "Property LTCG", "Amount": format_inr(float(_saved_cg.get("property_ltcg", 0)))},
-                                    {"Category": "Property STCG", "Amount": format_inr(float(_saved_cg.get("property_stcg", 0)))},
-                                ])
-                                st.dataframe(_saved_cg_display, use_container_width=True, hide_index=True)
-                            else:
-                                st.info("No capital gains data saved yet for FY 2025-26.")
-
-                    # ─────────────────────────────────────────────────────
-                    # SECTION D — TAX SUMMARY
-                    # ─────────────────────────────────────────────────────
-                    st.markdown("---")
-                    _run_tax = st.button("🧮 Calculate Full Tax Liability", type="primary",
-                                         use_container_width=True, key="run_full_tax_btn")
-                    if _run_tax:
-                        if income_df.empty and not st.session_state.get("_passive_entries"):
-                            st.warning("⚠️ No income sources or passive income found. Add income sources or investments first.")
-                        else:
-                            with st.spinner("Computing full tax liability..."):
-                                _tax_ded_for_compute = dict(_saved_ded)
-                                _tax_ded_for_compute["age"] = current_user.get("age", 35)
-                                _cg_for_compute = dict(_saved_cg) if _saved_cg else {}
-                                if _cg_for_compute and "slab_income_addition" not in _cg_for_compute:
-                                    _cg_for_compute["slab_income_addition"] = (
-                                        float(_cg_for_compute.get("debt_mf_ltcg", 0)) +
-                                        float(_cg_for_compute.get("debt_mf_stcg", 0)) +
-                                        float(_cg_for_compute.get("property_stcg", 0)) +
-                                        float(_cg_for_compute.get("other_ltcg", 0)) +
-                                        float(_cg_for_compute.get("other_stcg", 0))
-                                    )
-                                _p_entries  = st.session_state.get("_passive_entries", [])
-                                _p_override = st.session_state.get("_passive_overrides", {})
-                                _tax_result = compute_full_tax(
-                                    income_df, _p_entries, _p_override, _cg_for_compute,
-                                    _tax_ded_for_compute,
-                                    tds_deducted=float(_saved_ded.get("tds_deducted", 0)),
-                                    advance_paid=float(_saved_ded.get("advance_paid", 0)),
-                                    tax_regime=tax_regime,
-                                )
-
-                            # KPI Row
-                            _tk1, _tk2, _tk3, _tk4, _tk5 = st.columns(5)
-                            _tk1.metric("💰 Gross Income", format_inr(_tax_result["gross_slab_income"]))
-                            _tk2.metric("🔽 Total Deductions", format_inr(_tax_result["total_deduction"]))
-                            _tk3.metric("📊 Taxable Income", format_inr(_tax_result["taxable_income"]))
-                            _tk4.metric("🏛️ Total Tax", format_inr(_tax_result["total_tax"]))
-                            _tk5.metric("📈 Effective Rate", f"{_tax_result['effective_rate_pct']:.1f}%",
-                                        delta=f"vs {_tax_result['compare_regime']}: {format_inr(_tax_result['compare_tax'])}",
-                                        delta_color="inverse")
-
-                            # Tax breakdown card
-                            _cg_detail = _tax_result.get("cg_tax_detail", {})
-                            st.markdown(f"""
-                            <div style="background:linear-gradient(135deg,#1e293b,#0f172a); border-radius:12px;
-                                        border:1px solid #334155; padding:16px 20px; margin:12px 0;">
-                                <div style="font-weight:700; color:#f1f5f9; margin-bottom:10px; font-size:1rem;">
-                                    📋 Tax Breakdown — {tax_regime} (FY 2025-26)
-                                </div>
-                                <div style="display:grid; grid-template-columns:repeat(4,1fr); gap:12px;">
-                                    <div><div style="color:#94a3b8;font-size:0.78rem;">Slab Tax</div>
-                                         <div style="color:#38bdf8;font-weight:700;">{format_inr(_tax_result['slab_tax'])}</div></div>
-                                    <div><div style="color:#94a3b8;font-size:0.78rem;">CG Tax</div>
-                                         <div style="color:#f59e0b;font-weight:700;">{format_inr(_tax_result['cg_tax'])}</div></div>
-                                    <div><div style="color:#94a3b8;font-size:0.78rem;">TDS Deducted</div>
-                                         <div style="color:#34d399;font-weight:700;">{format_inr(_tax_result['tds_deducted'])}</div></div>
-                                    <div><div style="color:#94a3b8;font-size:0.78rem;">Balance Due</div>
-                                         <div style="color:#{'f87171' if _tax_result['balance_due'] > 0 else '34d399'};font-weight:700;">{format_inr(_tax_result['balance_due'])}</div></div>
-                                </div>
-                            </div>
-                            """, unsafe_allow_html=True)
-
-                            # CG Tax Detail
-                            if _cg_detail.get("total_cg_tax", 0) > 0:
-                                st.markdown("**📈 Capital Gains Tax Detail:**")
-                                _cg_table = pd.DataFrame([
-                                    {"Item": "Equity LTCG (total)", "Amount": format_inr(_cg_detail.get("total_equity_ltcg", 0)), "Note": f"Exempt: {format_inr(_cg_detail.get('ltcg_exempt',0))} | Taxable: {format_inr(_cg_detail.get('taxable_equity_ltcg',0))}"},
-                                    {"Item": "Equity LTCG Tax (12.5% + cess)", "Amount": format_inr(_cg_detail.get("tax_equity_ltcg", 0)), "Note": ""},
-                                    {"Item": "Equity STCG (total)", "Amount": format_inr(_cg_detail.get("total_equity_stcg", 0)), "Note": ""},
-                                    {"Item": "Equity STCG Tax (20% + cess)", "Amount": format_inr(_cg_detail.get("tax_equity_stcg", 0)), "Note": ""},
-                                    {"Item": "Property LTCG Tax (12.5% + cess)", "Amount": format_inr(_cg_detail.get("tax_property_ltcg", 0)), "Note": "No indexation"},
-                                    {"Item": "Debt MF / Other (slab)", "Amount": format_inr(_cg_detail.get("slab_income_addition", 0)), "Note": "Added to slab income above"},
-                                ])
-                                st.dataframe(_cg_table, use_container_width=True, hide_index=True)
-
-                            # Income breakdown
-                            _all_inc = _tax_result.get("income_breakdown", []) + _tax_result.get("passive_breakdown", [])
-                            if _all_inc:
-                                st.markdown("**📊 Full Income Breakdown:**")
-                                _inc_df = pd.DataFrame(_all_inc)
-                                _inc_df["annual"] = _inc_df["annual"].apply(format_inr)
-                                st.dataframe(_inc_df.rename(columns={"source":"Source","type":"Type","annual":"Annual","taxability":"Taxability"}),
-                                             use_container_width=True, hide_index=True)
-
-                            # Deduction breakdown
-                            _ded_det = _tax_result.get("deduction_detail", {})
-                            if _ded_det:
-                                st.markdown("**🔽 Deductions Applied:**")
-                                _ded_rows = [
-                                    {"Deduction": "Standard Deduction", "Amount": format_inr(_ded_det.get("standard_deduction", 0))},
-                                ]
-                                if tax_regime == "Old Regime":
-                                    _ded_rows += [
-                                        {"Deduction": "80C (PPF/ELSS/LIC etc.)", "Amount": format_inr(_ded_det.get("eighty_c", 0))},
-                                        {"Deduction": "80D (Health Insurance)", "Amount": format_inr(_ded_det.get("eighty_d", 0))},
-                                        {"Deduction": "80CCD(1B) NPS", "Amount": format_inr(_ded_det.get("nps_80ccd_1b", 0))},
-                                        {"Deduction": "24(b) Home Loan Interest", "Amount": format_inr(_ded_det.get("home_loan_interest_24b", 0))},
-                                        {"Deduction": "HRA Exemption", "Amount": format_inr(_ded_det.get("hra_exemption", 0))},
-                                        {"Deduction": f"{_ded_det.get('tta_ttb_label','80TTA')}", "Amount": format_inr(_ded_det.get("tta_ttb", 0))},
-                                    ]
-                                _ded_rows += [
-                                    {"Deduction": "Professional Tax", "Amount": format_inr(_ded_det.get("professional_tax", 0))},
-                                    {"Deduction": "NPS Employer 80CCD(2)", "Amount": format_inr(_ded_det.get("nps_employer_80ccd2", 0))},
-                                    {"Deduction": "**TOTAL**", "Amount": f"**{format_inr(_ded_det.get('total_deduction',0))}**"},
-                                ]
-                                st.dataframe(pd.DataFrame(_ded_rows), use_container_width=True, hide_index=True)
-
-                            # Advance Tax Schedule
-                            _adv_sched = _tax_result.get("advance_tax_schedule", [])
-                            if _adv_sched:
-                                # ── Extract summary metadata from last row ──
-                                _last = _adv_sched[-1]
-                                _total_234c    = _last.get("_234c_total", 0.0)
-                                _total_234b    = _last.get("_234b_total", 0.0)
-                                _deficit_234b  = _last.get("_234b_deficit", 0.0)
-                                _months_234b   = _last.get("_234b_months", 0)
-                                _as_of_date    = _last.get("_today", "")
-                                _net_liab      = _last.get("_net_liability", 0.0)
-                                _total_fine    = round(_total_234c + _total_234b, 2)
-
-                                st.markdown("#### 📅 Advance Tax Instalment Schedule (FY 2025-26)")
-                                st.caption(f"As of **{_as_of_date}** · Advance tax is required when net tax liability exceeds ₹10,000. Failure to pay on time attracts interest u/s 234B & 234C @ 1% per month.")
-
-                                # ── Build display dataframe (exclude internal _ keys) ──
-                                _display_rows = []
-                                for _row in _adv_sched:
-                                    _display_rows.append({
-                                        "Instalment":        _row["instalment"],
-                                        "Due Date":          _row["due_date"],
-                                        "Cumul. %":          _row["cumulative_pct"],
-                                        "Cumul. Amount":     format_inr(_row["cumulative_due"]),
-                                        "Pay This Time":     format_inr(_row["instalment_amount"]),
-                                        "Status":            _row["status"],
-                                        "Interest 234C":     format_inr(_row.get("interest_234c", 0.0)),
-                                        "Calc Basis (234C)": _row.get("fine_note", "—"),
-                                    })
-                                st.dataframe(
-                                    pd.DataFrame(_display_rows),
-                                    use_container_width=True, hide_index=True
-                                )
-
-                                # ── Fine Summary Cards ──────────────────────
-                                if _total_fine > 0:
-                                    st.markdown("##### ⚠️ Penal Interest Summary (u/s 234B & 234C)")
-                                    _fc1, _fc2, _fc3 = st.columns(3)
-                                    _fc1.metric(
-                                        "🔴 Interest u/s 234C",
-                                        format_inr(_total_234c),
-                                        help="1% per month on each instalment shortfall (rounded up to full months)"
-                                    )
-                                    _fc2.metric(
-                                        "🟠 Interest u/s 234B",
-                                        format_inr(_total_234b),
-                                        help=f"1% per month on deficit ₹{_deficit_234b:,.0f} for {_months_234b} month(s) since 01 Apr 2026 — applies when < 90% of net tax paid as advance tax"
-                                    )
-                                    _fc3.metric(
-                                        "💸 Total Penal Interest",
-                                        format_inr(_total_fine),
-                                        delta=f"+{format_inr(_total_fine)} over base tax",
-                                        delta_color="inverse"
-                                    )
-
-                                    # Detailed breakdown box
-                                    _fine_detail_parts = []
-                                    if _total_234c > 0:
-                                        _fine_detail_parts.append(
-                                            f"<b>234C:</b> Each instalment where cumulative paid < cumulative due attracts 1% × shortfall × months overdue. "
-                                            f"Total 234C interest = <b>{format_inr(_total_234c)}</b>."
-                                        )
-                                    if _total_234b > 0:
-                                        _fine_detail_parts.append(
-                                            f"<b>234B:</b> Net tax liability = ₹{_net_liab:,.0f}. "
-                                            f"Since advance tax paid < 90% threshold, interest on full deficit ₹{_deficit_234b:,.0f} "
-                                            f"@ 1%/month × {_months_234b} month(s) from 01 Apr 2026 = <b>{format_inr(_total_234b)}</b>."
-                                        )
-                                    if _fine_detail_parts:
-                                        st.markdown(
-                                            f"""<div style="background:#1e1c2e; border-radius:8px; border-left:4px solid #f97316;
-                                                        padding:12px 16px; margin-top:8px; font-size:0.83rem; color:#cbd5e1;">
-                                                {'<br>'.join(_fine_detail_parts)}
-                                                <br><span style="color:#64748b; font-size:0.78rem;">Rates per Income Tax Act s.234B & s.234C. 
-                                                Computed as of {_as_of_date}. Pay via Challan 280 (ITNS 280) to clear dues.</span>
-                                            </div>""",
-                                            unsafe_allow_html=True
-                                        )
-                                else:
-                                    st.success("✅ No penal interest — advance tax paid on schedule.")
-
-
-                            if not _adv_sched and _tax_result.get("total_tax", 0) > 0:
-                                st.success("✅ Net tax liability < ₹10,000 after TDS/advance paid — no advance tax required.")
-
-                             # Savings Opportunities
-                            if _tax_result.get("savings_opportunities"):
-                                st.markdown("#### 💡 Tax Saving Opportunities")
-                                for _opp in _tax_result["savings_opportunities"]:
-                                    st.markdown(f"""
-                                    <div style="background:#1e293b; border-radius:8px; border-left:4px solid #a78bfa;
-                                                padding:12px 16px; margin-bottom:8px;">
-                                        <div style="font-weight:600; color:#a78bfa; font-size:0.9rem;">🏛️ {_opp.get('opportunity','')}</div>
-                                        <div style="color:#94a3b8; font-size:0.83rem; margin-top:4px;">{_opp.get('detail','')}</div>
-                                    </div>
-                                    """, unsafe_allow_html=True)
-
-                            # ── SECTION E — PORTFOLIO REBALANCING FOR TAX EFFICIENCY ──
-                            st.markdown("---")
-                            st.markdown("#### ♻️ Portfolio Rebalancing for Tax Efficiency")
-                            st.caption("Based on your actual investment holdings and tax profile — quantified, priority-ranked actions to reduce your tax liability.")
-
-                            with st.spinner("Analysing portfolio for tax-saving rebalancing opportunities..."):
-                                _rebal_recs = compute_tax_saving_rebalance(
-                                    inv_df,
-                                    _tax_result,
-                                    _tax_ded_for_compute,
-                                    tax_regime,
-                                )
-
-                            if _rebal_recs:
-                                # ── Summary Banner ──────────────────────────
-                                _high_recs   = [r for r in _rebal_recs if r["priority"] == "High"]
-                                _total_saving = sum(r["tax_saving"] for r in _rebal_recs)
-                                _high_saving  = sum(r["tax_saving"] for r in _high_recs)
-
-                                _banner_color = "#dc2626" if _high_saving > 20_000 else "#d97706"
-                                st.markdown(f"""
-                                <div style="background:linear-gradient(135deg,#1a0a2e,#0d1b2a); border-radius:12px;
-                                            border:1px solid {_banner_color}; padding:16px 20px; margin:8px 0 16px;">
-                                    <div style="display:flex; justify-content:space-between; align-items:center; flex-wrap:wrap; gap:12px;">
-                                        <div>
-                                            <div style="font-size:1.1rem; font-weight:700; color:#f1f5f9;">
-                                                🎯 {len(_rebal_recs)} rebalancing move{"s" if len(_rebal_recs)!=1 else ""} identified
-                                            </div>
-                                            <div style="color:#94a3b8; font-size:0.85rem; margin-top:4px;">
-                                                {len(_high_recs)} high-priority action{"s" if len(_high_recs)!=1 else ""} · Based on your actual portfolio holdings
-                                            </div>
-                                        </div>
-                                        <div style="text-align:right;">
-                                            <div style="font-size:0.78rem; color:#94a3b8;">Estimated total tax saving</div>
-                                            <div style="font-size:1.6rem; font-weight:800; color:#4ade80;">~{format_inr(_total_saving)}/yr</div>
-                                        </div>
-                                    </div>
-                                </div>
-                                """, unsafe_allow_html=True)
-
-                                # ── Priority colour map ──────────────────────
-                                _PCOLOR = {"High": "#ef4444", "Medium": "#f59e0b", "Low": "#22c55e"}
-                                _PBADGE = {"High": "🔴", "Medium": "🟡", "Low": "🟢"}
-                                _SCOLOR = {
-                                    "80C": "#818cf8", "80C (EEE)": "#a78bfa", "80CCD(1B)": "#c084fc",
-                                    "80D": "#fb7185", "LTCG Harvesting": "#34d399", "LTCG vs STCG": "#2dd4bf",
-                                    "Debt Rebalance": "#60a5fa", "Portfolio Rebalance": "#f97316",
-                                    "Gold / Diversification": "#fbbf24",
-                                }
-
-                                for _rec in _rebal_recs:
-                                    _pc   = _PCOLOR.get(_rec["priority"], "#94a3b8")
-                                    _pb   = _PBADGE.get(_rec["priority"], "⚪")
-                                    _sc   = _SCOLOR.get(_rec["section"], "#64748b")
-                                    _save = _rec["tax_saving"]
-                                    _save_disp = _rec["tax_saving_str"]
-
-                                    st.markdown(f"""
-                                    <div style="background:#0f172a; border-radius:10px; border:1px solid #1e293b;
-                                                border-left:4px solid {_pc}; padding:14px 18px; margin-bottom:10px;">
-                                        <div style="display:flex; justify-content:space-between; align-items:flex-start; flex-wrap:wrap; gap:8px; margin-bottom:8px;">
-                                            <div style="display:flex; align-items:center; gap:8px; flex-wrap:wrap;">
-                                                <span style="font-weight:700; color:#f1f5f9; font-size:0.95rem;">{_rec['title']}</span>
-                                                <span style="background:{_sc}22; color:{_sc}; border:1px solid {_sc}44;
-                                                            border-radius:4px; padding:1px 7px; font-size:0.72rem; font-weight:600;">
-                                                    {_rec['section']}
-                                                </span>
-                                                <span style="background:{_pc}22; color:{_pc}; border:1px solid {_pc}44;
-                                                            border-radius:4px; padding:1px 7px; font-size:0.72rem; font-weight:600;">
-                                                    {_pb} {_rec['priority']} Priority
-                                                </span>
-                                            </div>
-                                            <div style="text-align:right; flex-shrink:0;">
-                                                <div style="font-size:0.72rem; color:#64748b;">Est. Tax Saving</div>
-                                                <div style="font-size:1.1rem; font-weight:800; color:#4ade80;">{_save_disp}</div>
-                                            </div>
-                                        </div>
-                                        <div style="background:#1e293b; border-radius:6px; padding:8px 12px; margin-bottom:8px;">
-                                            <span style="color:#64748b; font-size:0.75rem; font-weight:600; text-transform:uppercase; letter-spacing:0.05em;">Current Portfolio</span><br>
-                                            <span style="color:#cbd5e1; font-size:0.83rem;">{_rec['current_holding']}</span>
-                                        </div>
-                                        <div style="background:#0d2137; border-radius:6px; padding:8px 12px; margin-bottom:8px; border-left:2px solid #38bdf8;">
-                                            <span style="color:#38bdf8; font-size:0.75rem; font-weight:600; text-transform:uppercase; letter-spacing:0.05em;">Recommended Action</span><br>
-                                            <span style="color:#e2e8f0; font-size:0.83rem;">{_rec['action']}</span>
-                                        </div>
-                                        <div style="display:grid; grid-template-columns:1fr 1fr; gap:8px;">
-                                            <div style="background:#0a1628; border-radius:5px; padding:7px 10px;">
-                                                <span style="color:#a78bfa; font-size:0.72rem; font-weight:600;">⚖️ Legal Basis</span><br>
-                                                <span style="color:#94a3b8; font-size:0.78rem;">{_rec['rationale']}</span>
-                                            </div>
-                                            <div style="background:#1a0e0e; border-radius:5px; padding:7px 10px;">
-                                                <span style="color:#fb923c; font-size:0.72rem; font-weight:600;">⚠️ Risk / Liquidity</span><br>
-                                                <span style="color:#94a3b8; font-size:0.78rem;">{_rec['risk_note']}</span>
-                                            </div>
-                                        </div>
-                                    </div>
-                                    """, unsafe_allow_html=True)
-
-                                # ── Disclaimer ────────────────────────────────
-                                st.caption("⚠️ These are algorithmic suggestions based on your portfolio data and Indian tax law (FY 2025-26). Consult a SEBI-registered advisor or CA before making investment decisions.")
-                            else:
-                                st.success("✅ Your portfolio is well-optimised for tax efficiency. No high-impact rebalancing moves detected.")
-
-                            # What's still needed info box
-                            st.markdown("""
-                            <div style="background:#0f172a; border-radius:10px; border:1px solid #1e3a5f;
-                                        padding:14px 18px; margin-top:16px;">
-                                <div style="font-weight:700; color:#38bdf8; margin-bottom:8px;">📌 Additional Information Needed for a Complete Tax Return</div>
-                                <div style="display:grid; grid-template-columns:1fr 1fr; gap:8px; color:#94a3b8; font-size:0.82rem;">
-                                    <div>✅ <b>Form 16</b> — TDS certificate from employer</div>
-                                    <div>✅ <b>FD Interest Certificates</b> — Annual interest statements from bank</div>
-                                    <div>✅ <b>26AS / AIS</b> — Download from IT portal to verify TDS</div>
-                                    <div>✅ <b>Home Loan Statement</b> — Principal & interest breakup for 80C/24b</div>
-                                    <div>✅ <b>Rental Income</b> — Net rent after 30% standard deduction + municipal taxes</div>
-                                    <div>✅ <b>Foreign Income / DTAA</b> — If NRI or foreign accounts (FEMA/DTAA compliance)</div>
-                                    <div>✅ <b>Advance Tax Challans</b> — BSR code + date + amount for each payment</div>
-                                    <div>✅ <b>MF IDCW Statements</b> — CAMS/Kfintech dividend statements if applicable</div>
-                                </div>
-                            </div>
-                            """, unsafe_allow_html=True)
-
+                    tax_regime = st.selectbox("📋 Tax Regime", ["New Regime", "Old Regime"], key="tax_regime_sel",
+                                              help="New: ₹75k std deduction. Old: ₹50k std + 80C/80D/HRA/24b.")
                 else:
-                    # Non-India: use the legacy compute_tax_liability
-                    st.markdown("---")
-                    st.markdown("##### 🏛️ Tax Liability Calculator")
-                    _run_tax_intl = st.button("🧮 Calculate Tax Liability", type="primary", use_container_width=True, key="run_tax_btn")
-                    if _run_tax_intl:
-                        if income_df.empty:
-                            st.warning("⚠️ No income sources found. Please add at least one income source above first.")
+                    tax_regime = "N/A"
+                    st.info(f"Tax rules auto-applied for {tax_country}.")
+
+            if tax_country == "India":
+                _user_key = current_user["username"]
+                _fam_id   = current_user.get("family_id", 1)
+                _fy       = "2025-26"
+                _saved_ded = get_tax_deductions(_user_key, _fam_id, _fy)
+                _saved_cg  = get_capital_gains(_user_key, _fam_id, _fy)
+
+                # Section A — Deductions
+                with st.expander("📋 Section A — Deductions & TDS", expanded=False):
+                    st.caption("Enter deductions for FY 2025-26. Click Save to persist.")
+                    _user_age = current_user.get("age", 35)
+                    with st.form("tax_deduction_form"):
+                        if tax_regime == "Old Regime":
+                            st.markdown("##### 80C Investments (Max ₹1.5L)")
+                            _dc1, _dc2, _dc3, _dc4 = st.columns(4)
+                            _ppf   = _dc1.number_input("PPF (₹)", min_value=0.0, value=float(_saved_ded.get("ppf_contribution", 0)), step=1000.0, key="ded_ppf")
+                            _elss  = _dc2.number_input("ELSS (₹)", min_value=0.0, value=float(_saved_ded.get("elss_investment", 0)), step=1000.0, key="ded_elss")
+                            _lic   = _dc3.number_input("LIC Premium (₹)", min_value=0.0, value=float(_saved_ded.get("lic_premium", 0)), step=1000.0, key="ded_lic")
+                            _hlp   = _dc4.number_input("Home Loan Principal (₹)", min_value=0.0, value=float(_saved_ded.get("home_loan_principal", 0)), step=1000.0, key="ded_hlp")
+                            _dc5, _dc6, _dc7, _dc8 = st.columns(4)
+                            _school = _dc5.number_input("School Fees (₹)", min_value=0.0, value=float(_saved_ded.get("school_fees", 0)), step=500.0, key="ded_school")
+                            _nsc_r  = _dc6.number_input("NSC Interest Reinvested (₹)", min_value=0.0, value=float(_saved_ded.get("nsc_interest_reinvested", 0)), step=100.0, key="ded_nsc")
+                            _epf    = _dc7.number_input("EPF (₹)", min_value=0.0, value=float(_saved_ded.get("epf_contribution", 0)), step=500.0, key="ded_epf")
+                            _tsfd   = _dc8.number_input("Tax-Saver FD (₹)", min_value=0.0, value=float(_saved_ded.get("tax_saver_fd", 0)), step=1000.0, key="ded_tsfd")
+                            _eighty_c_total = min(_ppf + _elss + _lic + _hlp + _school + _nsc_r + _epf + _tsfd, 150000)
+                            st.caption(f"80C total (capped ₹1.5L): **{format_inr(_eighty_c_total)}**")
+                            st.markdown("##### 80D — Health Insurance")
+                            _hc1, _hc2, _hc3 = st.columns(3)
+                            _hi_self = _hc1.number_input("Health Ins — Self & Family (₹)", min_value=0.0, value=float(_saved_ded.get("health_ins_self", 0)), step=500.0, key="ded_hi_self")
+                            _hi_par  = _hc2.number_input("Health Ins — Parents (₹)", min_value=0.0, value=float(_saved_ded.get("health_ins_parents", 0)), step=500.0, key="ded_hi_par")
+                            _par_sr  = _hc3.checkbox("Parents Senior Citizens", value=bool(_saved_ded.get("parents_senior", 0)), key="ded_par_sr")
+                            st.markdown("##### HRA, Home Loan Interest & Others")
+                            _oc1, _oc2, _oc3 = st.columns(3)
+                            _hra_basic = _oc1.number_input("Basic Salary p.a. (₹)", min_value=0.0, value=float(_saved_ded.get("hra_basic_salary", 0)), step=1000.0, key="ded_hra_basic")
+                            _hra_recv  = _oc2.number_input("HRA Received p.a. (₹)", min_value=0.0, value=float(_saved_ded.get("hra_received", 0)), step=1000.0, key="ded_hra_recv")
+                            _rent_paid = _oc3.number_input("Rent Paid p.a. (₹)", min_value=0.0, value=float(_saved_ded.get("rent_paid", 0)), step=1000.0, key="ded_rent_paid")
+                            _oc4, _oc5, _oc6 = st.columns(3)
+                            _metro   = _oc4.checkbox("Metro City (50% HRA rule)", value=bool(_saved_ded.get("metro_city", 1)), key="ded_metro")
+                            _hl_int  = _oc5.number_input("Home Loan Interest 24(b) (₹)", min_value=0.0, max_value=200000.0, value=float(_saved_ded.get("home_loan_interest", 0)), step=1000.0, key="ded_hl_int")
+                            _nps_1b  = _oc6.number_input("NPS 80CCD(1B) (₹)", min_value=0.0, max_value=50000.0, value=float(_saved_ded.get("nps_80ccd_1b", 0)), step=500.0, key="ded_nps_1b")
                         else:
-                            with st.spinner("Computing tax liability..."):
-                                tax_result = compute_tax_liability(income_df, inv_df, tax_country, tax_regime)
-                            t1, t2, t3, t4 = st.columns(4)
-                            t1.metric("💰 Gross Annual Income", format_inr(tax_result["gross_annual_income"]))
-                            t2.metric("📊 Taxable Income", format_inr(tax_result.get("taxable_income", 0)))
-                            t3.metric("🏛️ Est. Annual Tax", format_inr(tax_result["estimated_tax"]))
-                            t4.metric("📈 Effective Tax Rate", f"{tax_result['effective_rate_pct']:.1f}%")
-                            if tax_result.get("savings_opportunities"):
-                                st.markdown("#### 💡 Tax Saving Opportunities")
-                                for opp in tax_result["savings_opportunities"]:
-                                    st.markdown(f"""
-                                    <div style="background:#1e293b; border-radius:8px; border-left:4px solid #a78bfa;
-                                                padding:12px 16px; margin-bottom:8px;">
-                                        <div style="font-weight:600; color:#a78bfa; font-size:0.9rem;">🏛️ {opp.get('opportunity','')}</div>
-                                        <div style="color:#94a3b8; font-size:0.83rem; margin-top:4px;">{opp.get('detail','')}</div>
+                            st.info("ℹ️ New Regime: Only Standard Deduction (₹75,000), NPS Employer 80CCD(2), and Professional Tax apply.")
+                            _ppf=_elss=_lic=_hlp=_school=_nsc_r=_epf=_tsfd=0.0
+                            _hi_self=_hi_par=_hra_basic=_hra_recv=_rent_paid=_hl_int=_nps_1b=0.0
+                            _par_sr=False; _metro=True; _eighty_c_total=0.0
+                        st.markdown("##### Common Deductions")
+                        _cc1, _cc2, _cc3, _cc4 = st.columns(4)
+                        _nps_emp  = _cc1.number_input("NPS Employer 80CCD(2) (₹)", min_value=0.0, value=float(_saved_ded.get("nps_employer_80ccd2", 0)), step=500.0, key="ded_nps_emp")
+                        _prof_tax = _cc2.number_input("Professional Tax (₹ max ₹2,400)", min_value=0.0, max_value=2400.0, value=float(_saved_ded.get("professional_tax", 0)), step=200.0, key="ded_prof_tax")
+                        _sb_int   = _cc3.number_input("Savings Bank Interest 80TTA/TTB (₹)", min_value=0.0, value=float(_saved_ded.get("savings_bank_interest", 0)), step=100.0, key="ded_sb_int")
+                        _scss_int = _cc4.number_input("SCSS Interest 80TTB (₹)", min_value=0.0, value=float(_saved_ded.get("scss_interest", 0)), step=100.0, key="ded_scss_int")
+                        st.markdown("##### TDS & Advance Tax Already Paid")
+                        _tp1, _tp2 = st.columns(2)
+                        _tds     = _tp1.number_input("TDS Deducted (₹)", min_value=0.0, value=float(_saved_ded.get("tds_deducted", 0)), step=1000.0, key="ded_tds")
+                        _adv_pd  = _tp2.number_input("Advance Tax Paid (₹)", min_value=0.0, value=float(_saved_ded.get("advance_paid", 0)), step=1000.0, key="ded_adv_paid")
+                        if st.form_submit_button("💾 Save Deductions", type="primary", use_container_width=True):
+                            _ded_payload = {
+                                "ppf_contribution": _ppf, "elss_investment": _elss, "lic_premium": _lic,
+                                "home_loan_principal": _hlp, "school_fees": _school, "nsc_interest_reinvested": _nsc_r,
+                                "epf_contribution": _epf, "tax_saver_fd": _tsfd,
+                                "health_ins_self": _hi_self, "health_ins_parents": _hi_par, "parents_senior": int(_par_sr),
+                                "nps_80ccd_1b": _nps_1b if tax_regime == "Old Regime" else 0,
+                                "nps_employer_80ccd2": _nps_emp, "home_loan_interest": _hl_int,
+                                "hra_basic_salary": _hra_basic, "hra_received": _hra_recv, "rent_paid": _rent_paid,
+                                "metro_city": int(_metro), "professional_tax": _prof_tax,
+                                "savings_bank_interest": _sb_int, "scss_interest": _scss_int,
+                                "tds_deducted": _tds, "advance_paid": _adv_pd, "age": _user_age,
+                            }
+                            if upsert_tax_deductions(_user_key, _fam_id, _fy, _ded_payload):
+                                _saved_ded = _ded_payload
+                                st.success("✅ Deductions saved.")
+                                st.rerun()
+                            else:
+                                st.error("❌ Failed to save.")
+
+                # Section B — Passive Income
+                with st.expander("💰 Section B — Passive Income from Portfolio (Auto-Calculated)", expanded=False):
+                    st.caption("Auto-derived from your investment holdings. Override any figure if needed.")
+                    has_investments = inv_df is not None and not inv_df.empty
+                    has_incomes     = income_df is not None and not income_df.empty
+                    if has_investments or has_incomes:
+                        with st.spinner("Deriving passive income..."):
+                            _passive_entries = derive_investment_income(inv_df, income_sources_df=income_df)
+                        if _passive_entries:
+                            st.markdown(f"🔍 Found **{len(_passive_entries)}** passive income streams:")
+                            _override_vals = {}
+                            for _pi_idx, _pe in enumerate(_passive_entries):
+                                _is_exempt   = "EXEMPT" in _pe.get("taxability", "").upper()
+                                _card_border = "#10b981" if _is_exempt else "#38bdf8"
+                                st.markdown(f"""<div style="background:#1e293b; border-radius:8px; border-left:4px solid {_card_border};
+                                    padding:10px 14px; margin-bottom:6px;">
+                                    <div style="display:flex; justify-content:space-between; align-items:center;">
+                                        <span style="font-weight:700; color:{'#10b981' if _is_exempt else '#38bdf8'};">{_pe['source_name']}</span>
+                                        <span style="color:{'#10b981' if _is_exempt else '#fbbf24'}; font-weight:700;">{format_inr(_pe['annual_amount'])}/yr</span>
                                     </div>
-                                    """, unsafe_allow_html=True)
+                                    <div style="color:#64748b; font-size:0.75rem; margin-top:3px;">{_pe['notes']} · {_pe['taxability']}</div>
+                                </div>""", unsafe_allow_html=True)
+                                _override_vals[_pi_idx] = st.number_input(f"Override: {_pe['source_name']} (₹/yr)", min_value=0.0, value=float(_pe["annual_amount"]), step=100.0, key=f"passive_override_{_pi_idx}", label_visibility="collapsed")
+                            st.session_state["_passive_entries"]  = _passive_entries
+                            st.session_state["_passive_overrides"] = _override_vals
+                        else:
+                            st.info("No passive streams detected. Add FD, FRSB Bond, SGB, or equity holdings with units.")
+                    else:
+                        st.info("No portfolio holdings found. Add investments first.")
+
+                # Section C — Capital Gains
+                with st.expander("📈 Section C — Capital Gains (Upload or Manual)", expanded=False):
+                    st.caption("Upload broker/AIS capital gains statement to auto-extract LTCG & STCG.")
+                    _cg_tabs = st.tabs(["📤 Upload Document", "✏️ Manual Entry", "📋 Saved Data"])
+                    with _cg_tabs[0]:
+                        st.markdown("""**Supported:** Zerodha PDF · ICICI Direct PDF · CAMS/KFintech CAS PDF · IT Dept AIS PDF · AIS JSON (decrypted) · AIS ZIP""")
+                        with st.expander("ℹ️ AIS files — important note"):
+                            st.info("AIS files are encrypted. Password = **PAN (uppercase) + DOB (DDMMYYYY)**. Decrypt with AIS Offline Utility → export JSON → upload here. Or use your broker's P&L PDF for more accurate LTCG/STCG figures.")
+                        _fmt_map = {"Auto-detect":"auto","IT Dept AIS — PDF":"ais_pdf","IT Dept AIS — JSON (decrypted)":"ais","IT Dept AIS — ZIP (encrypted)":"ais_zip","ICICI Direct PDF":"icici","Zerodha PDF":"zerodha","CAMS / KFintech PDF":"cams","Anand Rathi PDF":"anand_rathi"}
+                        _fmt_override = st.selectbox("Format override", list(_fmt_map.keys()), index=0, key="cg_fmt_override")
+                        _cg_file = st.file_uploader("Upload capital gains document", type=["pdf", "json", "zip"], key="cg_upload_file")
+                        ais_pan = ais_dob = None
+                        if _cg_file is not None and _cg_file.name.lower().endswith(('.zip', '.json')):
+                            with st.expander("AIS Decryption Options", expanded=True):
+                                col_pan, col_dob = st.columns(2)
+                                ais_pan = col_pan.text_input("PAN", key="ais_pan_input", help="Used to decrypt AIS. Not saved.").strip().upper()
+                                ais_dob = col_dob.text_input("DOB (DDMMYYYY)", key="ais_dob_input").strip()
+                        if _cg_file is not None:
+                            with st.spinner(f"Parsing {_cg_file.name}..."):
+                                _parsed_cg = parse_capital_gains(_cg_file, file_type_hint=_fmt_map.get(_fmt_override, "auto"), ais_pan=ais_pan, ais_dob=ais_dob)
+                            _detected = _parsed_cg.get("detected_format", "unknown"); _src = _parsed_cg.get("source", "Unknown")
+                            st.success(f"✅ Detected: **{_detected}** → parsed as **{_src}**")
+                            for _pe_err in _parsed_cg.get("parse_errors", []):
+                                st.warning(f"⚠️ {_pe_err}")
+                            if _parsed_cg.get("debug_text"):
+                                with st.expander("🔍 Debug: Raw PDF text"):
+                                    st.code(_parsed_cg["debug_text"], language="text")
+                            _cg_display = pd.DataFrame([
+                                {"Category":"Equity LTCG","Amount (₹)":float(_parsed_cg["equity_ltcg"]),"Tax Rate":"12.5% (above ₹1.25L)","Key":"equity_ltcg"},
+                                {"Category":"Equity STCG","Amount (₹)":float(_parsed_cg["equity_stcg"]),"Tax Rate":"20%","Key":"equity_stcg"},
+                                {"Category":"Equity MF LTCG","Amount (₹)":float(_parsed_cg["equity_mf_ltcg"]),"Tax Rate":"12.5% (above ₹1.25L)","Key":"equity_mf_ltcg"},
+                                {"Category":"Equity MF STCG","Amount (₹)":float(_parsed_cg["equity_mf_stcg"]),"Tax Rate":"20%","Key":"equity_mf_stcg"},
+                                {"Category":"Debt MF LTCG","Amount (₹)":float(_parsed_cg["debt_mf_ltcg"]),"Tax Rate":"Slab","Key":"debt_mf_ltcg"},
+                                {"Category":"Debt MF STCG","Amount (₹)":float(_parsed_cg["debt_mf_stcg"]),"Tax Rate":"Slab","Key":"debt_mf_stcg"},
+                                {"Category":"Property LTCG","Amount (₹)":float(_parsed_cg["property_ltcg"]),"Tax Rate":"12.5% (no indexation)","Key":"property_ltcg"},
+                                {"Category":"Property STCG","Amount (₹)":float(_parsed_cg["property_stcg"]),"Tax Rate":"Slab","Key":"property_stcg"},
+                                {"Category":"Other LTCG","Amount (₹)":float(_parsed_cg["other_ltcg"]),"Tax Rate":"Slab","Key":"other_ltcg"},
+                                {"Category":"Other STCG","Amount (₹)":float(_parsed_cg["other_stcg"]),"Tax Rate":"Slab","Key":"other_stcg"},
+                            ])
+                            _edited_df = st.data_editor(_cg_display, use_container_width=True, hide_index=True,
+                                column_config={
+                                    "Category": st.column_config.TextColumn("Category", disabled=True),
+                                    "Amount (₹)": st.column_config.NumberColumn("Amount (₹)", min_value=0.0, step=1000.0, format="₹%d"),
+                                    "Tax Rate": st.column_config.TextColumn("Tax Rate", disabled=True),
+                                    "Key": None,
+                                })
+                            _live_ltcg = _edited_df.loc[_edited_df["Key"].str.endswith("_ltcg"), "Amount (₹)"].sum()
+                            _live_stcg = _edited_df.loc[_edited_df["Key"].str.endswith("_stcg"), "Amount (₹)"].sum()
+                            st.markdown(f"**LTCG: {format_inr(_live_ltcg)} | STCG: {format_inr(_live_stcg)}**")
+                            if st.button("💾 Save Capital Gains", type="primary", key="save_parsed_cg"):
+                                for _, row in _edited_df.iterrows():
+                                    _parsed_cg[row["Key"]] = float(row["Amount (₹)"])
+                                _parsed_cg = _sum_totals(_parsed_cg)
+                                if upsert_capital_gains(_user_key, _fam_id, _fy, _parsed_cg):
+                                    _saved_cg = _parsed_cg
+                                    st.success("✅ Capital gains saved."); st.rerun()
+                    with _cg_tabs[1]:
+                        st.markdown("Enter manually (₹):")
+                        with st.form("manual_cg_form"):
+                            _m1, _m2 = st.columns(2)
+                            _m_eq_ltcg   = _m1.number_input("Equity LTCG (Stocks)", min_value=0.0, value=float(_saved_cg.get("equity_ltcg", 0)), step=1000.0, key="mcg_eq_ltcg")
+                            _m_eq_stcg   = _m2.number_input("Equity STCG (Stocks)", min_value=0.0, value=float(_saved_cg.get("equity_stcg", 0)), step=1000.0, key="mcg_eq_stcg")
+                            _m3, _m4 = st.columns(2)
+                            _m_eqmf_ltcg = _m3.number_input("Equity MF LTCG", min_value=0.0, value=float(_saved_cg.get("equity_mf_ltcg", 0)), step=1000.0, key="mcg_eqmf_ltcg")
+                            _m_eqmf_stcg = _m4.number_input("Equity MF STCG", min_value=0.0, value=float(_saved_cg.get("equity_mf_stcg", 0)), step=1000.0, key="mcg_eqmf_stcg")
+                            _m5, _m6 = st.columns(2)
+                            _m_dmf_ltcg  = _m5.number_input("Debt MF LTCG", min_value=0.0, value=float(_saved_cg.get("debt_mf_ltcg", 0)), step=1000.0, key="mcg_dmf_ltcg")
+                            _m_dmf_stcg  = _m6.number_input("Debt MF STCG", min_value=0.0, value=float(_saved_cg.get("debt_mf_stcg", 0)), step=1000.0, key="mcg_dmf_stcg")
+                            _m7, _m8 = st.columns(2)
+                            _m_prop_ltcg = _m7.number_input("Property LTCG", min_value=0.0, value=float(_saved_cg.get("property_ltcg", 0)), step=1000.0, key="mcg_prop_ltcg")
+                            _m_prop_stcg = _m8.number_input("Property STCG", min_value=0.0, value=float(_saved_cg.get("property_stcg", 0)), step=1000.0, key="mcg_prop_stcg")
+                            if st.form_submit_button("💾 Save Capital Gains", type="primary", use_container_width=True):
+                                _manual_cg = {"equity_ltcg": _m_eq_ltcg, "equity_stcg": _m_eq_stcg,
+                                              "equity_mf_ltcg": _m_eqmf_ltcg, "equity_mf_stcg": _m_eqmf_stcg,
+                                              "debt_mf_ltcg": _m_dmf_ltcg, "debt_mf_stcg": _m_dmf_stcg,
+                                              "property_ltcg": _m_prop_ltcg, "property_stcg": _m_prop_stcg,
+                                              "other_ltcg": 0.0, "other_stcg": 0.0}
+                                _manual_cg = _sum_totals(_manual_cg)
+                                if upsert_capital_gains(_user_key, _fam_id, _fy, _manual_cg):
+                                    _saved_cg = _manual_cg
+                                    st.success("✅ Saved!"); st.rerun()
+                    with _cg_tabs[2]:
+                        if _saved_cg:
+                            st.markdown("**Saved Capital Gains (FY 2025-26):**")
+                            cg_display_saved = {k: v for k, v in _saved_cg.items() if isinstance(v, (int, float)) and v > 0 and not k.startswith("_")}
+                            st.dataframe(pd.DataFrame(list(cg_display_saved.items()), columns=["Category", "Amount (₹)"]), use_container_width=True, hide_index=True)
+                        else:
+                            st.info("No capital gains saved yet.")
+
+                # ── Tax Computation ──────────────────────────────────────────────
+                st.markdown("---")
+                st.markdown("### 🧮 Compute Tax Liability")
+                _passive_entries_sess  = st.session_state.get("_passive_entries", [])
+                _passive_overrides_sess = st.session_state.get("_passive_overrides", {})
+                _passive_final = []
+                for _pi_idx, _pe in enumerate(_passive_entries_sess):
+                    _pe_copy = dict(_pe)
+                    _pe_copy["annual_amount"] = _passive_overrides_sess.get(_pi_idx, _pe["annual_amount"])
+                    _passive_final.append(_pe_copy)
+
+                if st.button("🧮 Compute Full Tax Liability", type="primary", use_container_width=True):
+                    with st.spinner("Computing..."):
+                        _ded_obj = compute_deductions(_saved_ded, tax_regime, _user_age)
+                        _cg_tax_obj = compute_cg_tax(_saved_cg)
+                        _tax_result = compute_full_tax(
+                            gross_income=total_annual_income,
+                            passive_income_entries=_passive_final,
+                            deductions_obj=_ded_obj,
+                            cg_tax_obj=_cg_tax_obj,
+                            regime=tax_regime,
+                            age=_user_age,
+                            tds_paid=float(_saved_ded.get("tds_deducted", 0)),
+                            advance_tax_paid=float(_saved_ded.get("advance_paid", 0)),
+                        )
+                    st.session_state["_tax_result"] = _tax_result
+
+                _tax_result = st.session_state.get("_tax_result")
+                if _tax_result:
+                    t1, t2, t3, t4 = st.columns(4)
+                    t1.metric("📊 Gross Income", format_inr(_tax_result.get("gross_income_total", total_annual_income)))
+                    t2.metric("🏛️ Total Deductions", format_inr(_tax_result.get("total_deductions", 0)))
+                    t3.metric("💰 Net Taxable Income", format_inr(_tax_result.get("net_taxable_income", 0)))
+                    t4.metric("🧾 Net Tax Payable", format_inr(_tax_result.get("net_tax_payable", 0)),
+                              delta=f"After TDS ({format_inr(_tax_result.get('tds_paid', 0))}) & advance tax",
+                              delta_color="inverse" if _tax_result.get("net_tax_payable", 0) > 0 else "normal")
+
+                    if _tax_result.get("advance_tax_schedule"):
+                        st.markdown("#### 📅 Advance Tax Schedule")
+                        adv_df = pd.DataFrame(_tax_result["advance_tax_schedule"])
+                        st.dataframe(adv_df, use_container_width=True, hide_index=True)
+
+                    if _tax_result.get("tax_saving_rebalance"):
+                        st.markdown("#### 💡 Tax-Saving Rebalance Suggestions")
+                        for tsr in _tax_result["tax_saving_rebalance"]:
+                            st.markdown(f"- **{tsr.get('action', '')}**: {tsr.get('description', '')} — saves **{format_inr(tsr.get('tax_saving', 0))}**")
+
 
     # ----------------------------------------------------
     # ⚙️ SETTINGS & ADMIN

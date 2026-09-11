@@ -1,5 +1,20 @@
 # Release Notes
 
+## v1.8.0 (2026-09-12)
+### Changed — Wealth & Planning Tab: Complete UX Redesign
+- **Removed 3-level tab nesting**: The old `Wealth & Planning → Budget & Wealth (wrapper) → Smart Advisor → inner tabs` structure has been eliminated entirely.
+- **5 flat top-level tabs** now replace the previous 5 nested sub-tabs:
+  - `💰 Net Worth Overview` — New dashboard showing assets-vs-liabilities bar chart, portfolio mix donut, goals progress preview, and 3 quick-action shortcut cards.
+  - `🎯 Budget & Goals` — Combines budget allocator, budget performance, and savings goals (shown as 2-column progress cards instead of a buried expander). Savings goals now have inline ➕ contribution and ⚙️ manage via `st.popover`.
+  - `📈 Investments` — Merged the old Holdings Tracker and SIP Planner into one tab. Added **AI Portfolio Review** button at the top (was previously buried at the bottom of a long scroll). Rebalance Advisor and Deploy New Money merged into a single toggled expander (eliminates one full tab). Distribution charts appear before the editable holdings grid.
+  - `🏦 Debts & EMIs` — No functional change; form layout tightened. Pay/Edit/History consolidated into a single `st.expander` per loan.
+  - `🧾 Tax Planner` — **Promoted from 3 levels deep to a top-level tab**. Previously: Wealth → Smart Advisor → Income & Tax Planner tab. Now directly accessible.
+- **Net Worth KPI strip** added at the top of the entire tab (above all sub-tabs): Portfolio Value · Unrealised Gain/Loss · Total Debt · Net Worth · Savings Rate.
+- **Target Allocation sliders moved inline** — no longer placed in `st.sidebar` (which breaks when sidebar is collapsed).
+- **SIP planner retains link-to-portfolio toggle** and now shows the Blended CAGR metric.
+- **Retirement Planner** remains in its own expander inside the Investments tab.
+
+
 ## v1.7.6 (2026-09-01)
 ### Fixed
 - **AIS PDF parsing failure and syntax error** — Fixed a severe syntax corruption in `tax_engine.py` where `_parse_ais_json` and `_parse_ais_pdf` blocks were mangled together, causing the engine to fail.
