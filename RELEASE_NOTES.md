@@ -1,5 +1,17 @@
 # Release Notes
 
+## v1.8.1 (2026-09-12)
+### Added — FinCompass Brand Identity
+- **4 brand images generated** and saved to `/assets/`: `brand_hero.jpg` (16:9 compass), `brand_360.jpg` (orbital rings), `brand_ai.jpg` (AI insights portrait), `brand_journey.jpg` (life-stage journey).
+- **Login screen**: Full-width `brand_hero.jpg` banner above auth form. Redesigned header to gradient gold/teal with compass emoji.
+- **Sidebar**: Replaced generic rupee icon URL with local `brand_360.jpg` orbital image + gradient "FinCompass" wordmark.
+- **Dashboard — First-login onboarding**: 3-column carousel on first visit (`login_count == 1`) showing all three brand images with feature captions (AI Insights · 360° View · Every Life Stage).
+- **Dashboard — Returning user welcome** (visits 2–5): Two-column warm welcome banner with `brand_journey.jpg` thumbnail.
+- **Insights & Analytics tab**: Slim `brand_ai.jpg` header strip with contextual tagline.
+- **Financial Academy tab**: Full-width `brand_journey.jpg` + branded intro card before academy content.
+- **Settings → new "ℹ️ About" tab**: Hero image + 2-column brand story (mission, key capabilities, 360 image) + full-width journey image footer.
+- **Email (email_utils.py)**: Upgraded from plain-text to rich HTML. Includes inline base64 `brand_hero.jpg` header, gradient OTP card, branded footer with "AI-Powered · 360° Wealth View". Falls back gracefully if image not found. Keeps plain-text fallback for all email clients.
+
 ## v1.8.0 (2026-09-12)
 ### Changed — Wealth & Planning Tab: Complete UX Redesign
 - **Removed 3-level tab nesting**: The old `Wealth & Planning → Budget & Wealth (wrapper) → Smart Advisor → inner tabs` structure has been eliminated entirely.

@@ -278,14 +278,24 @@ if not st.session_state.get("_turso_ok") and st.session_state.get("_turso_err"):
 # USER AUTHENTICATION SCREEN
 # ----------------------------------------------------
 if "user" not in st.session_state:
-    st.markdown("<br>", unsafe_allow_html=True)
+    # ── Hero brand banner ─────────────────────────────────────────────────────
+    import os as _os
+    _hero_path = _os.path.join(_os.path.dirname(__file__), "assets", "brand_hero.jpg")
+    if _os.path.exists(_hero_path):
+        st.image(_hero_path, use_container_width=True)
     st.markdown("""
-    <div style="max-width: 540px; margin: 20px auto; padding: 24px; border-radius: 12px; background-color: #1e293b; border: 1px solid #334155; text-align: center; box-shadow: 0 10px 25px -5px rgba(0,0,0,0.3);">
-        <h2 style="color: #38bdf8; margin-bottom: 4px;">🔐 FinCompass</h2>
-        <p style="color: #94a3b8; font-size: 0.95rem;">Multi-Family Expense Tracking, Wealth Planning & AI Analytics</p>
+    <div style="max-width: 540px; margin: 20px auto; padding: 20px 24px 8px; border-radius: 12px;
+                background: linear-gradient(135deg, #0f172a 0%, #1e293b 100%);
+                border: 1px solid #1d4ed8; text-align: center;
+                box-shadow: 0 10px 40px -5px rgba(56,189,248,0.25);">
+        <div style="font-size: 2rem; font-weight: 900;
+                    background: linear-gradient(90deg, #38bdf8, #fbbf24);
+                    -webkit-background-clip: text; -webkit-text-fill-color: transparent;
+                    margin-bottom: 4px;">🧭 FinCompass</div>
+        <p style="color: #94a3b8; font-size: 0.9rem; margin: 0;">Smart Financial Hub &nbsp;·&nbsp; AI-Powered &nbsp;·&nbsp; 360° Wealth View</p>
     </div>
     """, unsafe_allow_html=True)
-    
+
     col_l1, col_l2, col_l3 = st.columns([1, 2.4, 1])
     with col_l2:
         auth_tab1, auth_tab2, auth_tab3 = st.tabs([
@@ -486,8 +496,23 @@ else:
         st.stop() # Block rest of app from loading
 
 
-    st.sidebar.image("https://img.icons8.com/isometric/100/rupee.png", width=64)
-    st.sidebar.title("📌 Navigation & Settings")
+    # ── Sidebar brand logo ────────────────────────────────────────────────────
+    import os as _os
+    _brand360 = _os.path.join(_os.path.dirname(__file__), "assets", "brand_360.jpg")
+    if _os.path.exists(_brand360):
+        st.sidebar.image(_brand360, use_container_width=True)
+    else:
+        st.sidebar.image("https://img.icons8.com/isometric/100/rupee.png", width=64)
+    st.sidebar.markdown("""
+    <div style='text-align:center; padding: 4px 0 10px;
+                font-size: 1.1rem; font-weight: 800;
+                background: linear-gradient(90deg, #38bdf8, #fbbf24);
+                -webkit-background-clip: text; -webkit-text-fill-color: transparent;'>
+        🧭 FinCompass
+    </div>
+    """, unsafe_allow_html=True)
+    st.sidebar.caption("Smart Financial Hub")
+    st.sidebar.markdown("---")
 
     is_super_admin = (current_user["username"] == "admin" or current_user.get("role") == "Super Admin")
 
@@ -765,6 +790,54 @@ else:
 
     # ----------------------------------------------------
     if nav_selection == "🏠 Dashboard":
+        # ── Login-count tracking for progressive onboarding ───────────────────
+        _lc_key = f"login_count_{current_user['username']}"
+        st.session_state[_lc_key] = st.session_state.get(_lc_key, 0) + 1
+        _login_count = st.session_state[_lc_key]
+
+        # ── First-ever login: 3-slide onboarding carousel ────────────────────
+        import os as _os
+        _assets = _os.path.join(_os.path.dirname(__file__), "assets")
+        if _login_count == 1:
+            st.markdown("""
+            <div style='background: linear-gradient(135deg,#0f172a,#1e293b); border-radius:16px;
+                        padding: 16px 20px; margin-bottom: 20px;
+                        border: 1px solid #1d4ed8; text-align:center;'>
+                <div style='font-size:1.5rem; font-weight:800; color:#38bdf8; margin-bottom:4px;'>👋 Welcome to FinCompass!</div>
+                <div style='color:#94a3b8; font-size:0.9rem;'>Your Smart Financial Hub — here's what we offer:</div>
+            </div>
+            """, unsafe_allow_html=True)
+            ob1, ob2, ob3 = st.columns(3)
+            with ob1:
+                _p = _os.path.join(_assets, "brand_ai.jpg")
+                if _os.path.exists(_p): st.image(_p, use_container_width=True)
+                st.markdown("**🤖 AI-Powered Insights**\n\nSmart, personalised insights for every stage of life — tax savings, portfolio alerts, and spending patterns.")
+            with ob2:
+                _p = _os.path.join(_assets, "brand_360.jpg")
+                if _os.path.exists(_p): st.image(_p, use_container_width=True)
+                st.markdown("**🔄 360° Financial View**\n\nExpenses · Investments · Tax · Debt · Goals — all tracked in one single platform.")
+            with ob3:
+                _p = _os.path.join(_assets, "brand_journey.jpg")
+                if _os.path.exists(_p): st.image(_p, use_container_width=True)
+                st.markdown("**📅 Every Life Stage**\n\nFrom your first job to retirement — FinCompass guides you at every milestone.")
+            st.markdown("---")
+
+        # ── Returning user welcome banner (visits 2–5) ────────────────────────
+        elif _login_count <= 5:
+            _p = _os.path.join(_assets, "brand_journey.jpg")
+            if _os.path.exists(_p):
+                _wcol1, _wcol2 = st.columns([3, 1])
+                with _wcol1:
+                    st.markdown(f"""
+                    <div style='background: linear-gradient(135deg,#0f172a,#1e293b); border-radius:12px;
+                                padding: 14px 18px; border-left: 4px solid #38bdf8;'>
+                        <div style='font-size:1.15rem; font-weight:700; color:#38bdf8;'>👋 Welcome back, {current_user['full_name']}!</div>
+                        <div style='color:#94a3b8; font-size:0.85rem; margin-top:4px;'>Your 360° financial hub is ready. Navigate using the sidebar to manage expenses, investments, tax, and more.</div>
+                    </div>
+                    """, unsafe_allow_html=True)
+                with _wcol2:
+                    st.image(_p, use_container_width=True)
+
         st.header("🏠 Dashboard Overview")
         if st.session_state.get("is_sandbox_mode", False):
             st.info("🎯 **Sandbox Mission**: Review the simulated expenses below. Try changing the time filter to see how the dashboard updates.")
@@ -1326,6 +1399,19 @@ else:
         # 📈 INSIGHTS & ANALYTICS
         # ----------------------------------------------------
     elif nav_selection == "📈 Insights & Analytics":
+        # ── Insights brand banner ─────────────────────────────────────────────
+        import os as _os
+        _ai_img = _os.path.join(_os.path.dirname(__file__), "assets", "brand_ai.jpg")
+        if _os.path.exists(_ai_img):
+            _ib1, _ib2, _ib3 = st.columns([1, 4, 1])
+            with _ib2:
+                st.image(_ai_img, use_container_width=True)
+        st.markdown("""
+        <div style='text-align:center; margin: -8px 0 12px;
+                    font-size:0.85rem; color:#64748b; font-style:italic;'>
+            AI-Powered Insights &nbsp;·&nbsp; Spending Analytics &nbsp;·&nbsp; Trend Detection &nbsp;·&nbsp; Inflation Tracking
+        </div>
+        """, unsafe_allow_html=True)
 
         # ── KPI Strip ───────────────────────────────────────────────────────────
         ia_all_df = get_expenses_df(fy=selected_fy, username=current_user["username"], view_mode=view_mode, family_id=user_family_id)
@@ -3120,6 +3206,22 @@ else:
     # ⚙️ SETTINGS & ADMIN
     # ----------------------------------------------------
     elif nav_selection == "🎓 Financial Academy":
+        # ── Academy brand banner ──────────────────────────────────────────────
+        import os as _os
+        _jrn = _os.path.join(_os.path.dirname(__file__), "assets", "brand_journey.jpg")
+        if _os.path.exists(_jrn):
+            st.image(_jrn, use_container_width=True)
+        st.markdown("""
+        <div style='background: linear-gradient(135deg,#0f172a,#1e293b); border-radius:12px;
+                    padding: 14px 20px; margin: 8px 0 16px; text-align:center;
+                    border: 1px solid #1d4ed8;'>
+            <div style='font-size:1.2rem; font-weight:800; color:#38bdf8;'>🎓 FinCompass Financial Academy</div>
+            <div style='color:#94a3b8; font-size:0.85rem; margin-top:4px;'>
+                Wherever you are on your financial journey — from your first salary to retirement planning —<br>
+                we've got personalised learning to guide you every step of the way.
+            </div>
+        </div>
+        """, unsafe_allow_html=True)
         from financial_academy import render_financial_academy_tab
         gemini_api_key = (
             current_user.get("gemini_api_key") or
@@ -3130,7 +3232,7 @@ else:
         render_financial_academy_tab(gemini_api_key)
         
     elif nav_selection == "⚙️ Settings & Admin":
-        sa_tab1, sa_tab2, sa_tab3 = st.tabs(["💾 Data Export", "👑 Admin", "👤 Profile"])
+        sa_tab1, sa_tab2, sa_tab3, sa_tab4 = st.tabs(["💾 Data Export", "👑 Admin", "👤 Profile", "ℹ️ About"])
         
         with sa_tab3:
             st.subheader("👤 User Profile Settings")
@@ -3208,8 +3310,6 @@ else:
                     # Handle recovery info separately
                     recovery_ok = True
                     if new_email or new_sa: # if they try to update email or answer
-                        # if they just want to update email, they don't *have* to re-enter answer, but the function requires it or it overwrites it to None if empty. Wait, set_user_recovery_info overwrites the hash if answer is provided. Let's fix that. Actually, if new_sa is empty, it shouldn't overwrite the existing hash.
-                        # I'll just pass the new_sa. Wait, my set_user_recovery_info function hashes answer if provided, else None. I should adjust it to only update hash if answer is provided. Let me fix the DB function call or adjust here.
                         pass # I'll update database.py in a sec if needed
 
                     if update_user_profile(current_user["username"], profile_data):
@@ -3219,11 +3319,8 @@ else:
                         
                         # Set recovery info
                         if new_email or new_sq:
-                            # if new_sa is blank, we need a special way to NOT overwrite it, but we don't have that in set_user_recovery_info. 
-                            # If new_sa is blank, we will just use the current hash? We can't pass the current hash directly into set_user_recovery_info since it hashes it again.
                             pass
 
-                        # For simplicity, if new_sa is not provided, we should probably warn them that they must provide it to update recovery settings.
                         if new_email and not new_sa and not current_user.get("security_answer_hash"):
                             st.error("Please provide a Security Answer to set up recovery.")
                         else:
@@ -3232,7 +3329,6 @@ else:
                                 st.session_state["user"]["email"] = new_email
                                 st.session_state["user"]["security_question"] = new_sq
                             elif new_email != current_user.get("email") or new_sq != current_user.get("security_question"):
-                                # they want to update email/sq without changing answer. This might overwrite the hash to None with my current DB function!
                                 pass
                         
                         st.success("Profile updated successfully!")
