@@ -1,6 +1,14 @@
 # Release Notes
 
-## v1.9.0 (2026-09-12)
+## v1.9.1 (2026-09-12)
+### Added — Multi-File Upload in Expense Statement Parser
+- **Batch upload**: Users can now select and upload multiple files at once (PDFs, Excel, CSV, and images all in one batch).
+- **Progress bar**: A live progress indicator shows which file is currently being parsed (`Parsing 2/5: statement_aug.pdf…`).
+- **Per-file status**: Success (✅), warning (⚠️), or error (❌) messages shown for each individual file.
+- **Merged review table**: All extracted transactions from all files are combined into a single review table with a new **"Source File"** column so users can see which file each row came from.
+- **Image grid preview**: When multiple images are uploaded, thumbnails display in a responsive 3-column grid.
+
+
 ### Added — Image / Photo Scanning in Import Statement
 - **Image format support**: The AI Statement Parser now accepts JPEG, JPG, PNG, WebP, BMP, TIFF, GIF, and HEIC files alongside the existing PDF/Excel/CSV.
 - **Use cases**: Scan photos of receipts, screenshots of UPI transactions, credit card bills, or any financial document captured as an image.

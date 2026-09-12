@@ -1083,33 +1083,45 @@ else:
 
             with imp2:
                 st.markdown("##### 🤖 Expense Statement Parser")
-                st.caption("Upload a statement PDF, Excel, CSV, **or a photo/screenshot** of a receipt or bill.")
+                st.caption("Upload one or more statement PDFs, Excel, CSV, **or photos/screenshots** of receipts or bills.")
                 upload_vis    = st.radio("Visibility for Imported Entries", ["Family", "Private"],
                                         horizontal=True, key="upload_vis")
-                uploaded_file = st.file_uploader("Choose PDF, Excel, CSV, or Image",
+                uploaded_files = st.file_uploader("Choose PDF, Excel, CSV, or Image",
                                                  type=["xlsx", "xls", "csv", "pdf",
                                                        "jpg", "jpeg", "png", "webp",
                                                        "bmp", "tif", "tiff", "gif", "heic"],
-                                                 key="excel_uploader")
+                                                 key="excel_uploader",
+                                                 accept_multiple_files=True)
 
-                pdf_password = ""
-                if uploaded_file and uploaded_file.name.lower().endswith(".pdf"):
-                    pdf_password = st.text_input("PDF Password (if protected)", type="password",
-                                                 help="Enter password if your bank statement is password-protected")
-
-                # Show a preview for image uploads
                 _IMAGE_EXTS = ('.jpg', '.jpeg', '.png', '.webp', '.bmp', '.gif', '.tif', '.tiff', '.heic')
-                if uploaded_file and uploaded_file.name.lower().endswith(_IMAGE_EXTS):
-                    st.image(uploaded_file, caption="📷 Uploaded image preview", use_container_width=True)
+
+                # PDF password — only show if any uploaded file is a PDF
+                pdf_password = ""
+                if uploaded_files and any(f.name.lower().endswith(".pdf") for f in uploaded_files):
+                    pdf_password = st.text_input("PDF Password (if protected)", type="password",
+                                                 help="Applied to all password-protected PDFs in this batch")
+
+                # Show previews for image uploads
+                _img_files = [f for f in uploaded_files if f.name.lower().endswith(_IMAGE_EXTS)] if uploaded_files else []
+                if _img_files:
+                    _prev_cols = st.columns(min(len(_img_files), 3))
+                    for i, imgf in enumerate(_img_files):
+                        with _prev_cols[i % len(_prev_cols)]:
+                            st.image(imgf, caption=f"📷 {imgf.name}", use_container_width=True)
 
                 gemini_api_key = (current_user.get("gemini_api_key")
                                   or get_admin_gemini_api_key()
                                   or os.environ.get("GEMINI_API_KEY", "")
                                   or st.secrets.get("GEMINI_API_KEY", ""))
 
-                if uploaded_file:
+                if uploaded_files:
+                    _n = len(uploaded_files)
+                    st.markdown(f"📎 **{_n} file{'s' if _n > 1 else ''}** selected")
                     if st.button("🚀 Parse & Auto-Categorize", type="primary", use_container_width=True):
-                        with st.spinner("🤖 AI is reading your statement — this may take 15–30 s…"):
+                        all_frames = []
+                        progress_bar = st.progress(0, text="Starting…")
+                        for idx, uploaded_file in enumerate(uploaded_files):
+                            progress_bar.progress((idx) / _n, text=f"Parsing {idx+1}/{_n}: {uploaded_file.name}…")
                             # Images always go through AI parser; spreadsheets may use template import
                             is_image = uploaded_file.name.lower().endswith(_IMAGE_EXTS)
                             is_std = (not is_image
@@ -1122,17 +1134,18 @@ else:
                                         uploaded_file, username=current_user["username"],
                                         visibility=upload_vis, family_id=user_family_id)
                                     if df_parsed is not None and not df_parsed.empty:
+                                        df_parsed["_source_file"] = uploaded_file.name
                                         df_parsed = detect_and_flag_duplicates(
                                             df_parsed, current_user["username"], view_mode, user_family_id)
-                                        st.session_state["parsed_statement_df"] = df_parsed
-                                        st.success(f"{msg} Review below.")
+                                        all_frames.append(df_parsed)
+                                        st.success(f"✅ {uploaded_file.name}: {msg}")
                                     else:
-                                        st.error(msg)
+                                        st.warning(f"⚠️ {uploaded_file.name}: {msg}")
                                 except Exception as e:
-                                    st.error(f"Template import error: {e}. Try renaming the file to include 'statement' to force AI parsing.")
+                                    st.error(f"❌ {uploaded_file.name}: Template import error: {e}")
                             else:
                                 if not gemini_api_key:
-                                    st.error("⚠️ A Gemini API Key is required for AI parsing. Add it in **My Profile**.")
+                                    st.error(f"⚠️ {uploaded_file.name}: A Gemini API Key is required for AI parsing. Add it in **My Profile**.")
                                 else:
                                     from statement_parser import parse_expense_statement_with_gemini
                                     try:
@@ -1154,16 +1167,25 @@ else:
                                                 df_parsed["date"]   = (pd.to_datetime(df_parsed["date"], errors="coerce")
                                                                         .dt.strftime("%Y-%m-%d")
                                                                         .fillna(str(datetime.date.today())))
+                                                df_parsed["_source_file"] = uploaded_file.name
                                                 df_parsed = detect_and_flag_duplicates(
                                                     df_parsed, current_user["username"], view_mode, user_family_id)
-                                                st.session_state["parsed_statement_df"] = df_parsed
-                                                st.rerun()
+                                                all_frames.append(df_parsed)
+                                                st.success(f"✅ {uploaded_file.name}: {len(df_parsed)} transactions extracted")
                                             else:
-                                                st.warning("No expense transactions found (all filtered as Income/Refunds).")
+                                                st.warning(f"⚠️ {uploaded_file.name}: No expense transactions (all Income/Refunds).")
                                         else:
-                                            st.warning("No transactions found in the document.")
+                                            st.warning(f"⚠️ {uploaded_file.name}: No transactions found.")
                                     except Exception as e:
-                                        st.error(f"Failed to parse statement: {e}")
+                                        st.error(f"❌ {uploaded_file.name}: {e}")
+
+                        progress_bar.progress(1.0, text="Done!")
+                        if all_frames:
+                            combined_df = pd.concat(all_frames, ignore_index=True)
+                            st.session_state["parsed_statement_df"] = combined_df
+                            st.rerun()
+                        else:
+                            st.warning("No transactions extracted from any file.")
 
             # Review table — shown outside the columns so it has full width
             if "parsed_statement_df" in st.session_state:
@@ -1178,6 +1200,8 @@ else:
                         "import":            st.column_config.CheckboxColumn("Import?", default=True),
                         "duplicate_warning": st.column_config.CheckboxColumn("Duplicate?", disabled=True,
                                              help="Checked if same Date + Amount already exists."),
+                        "_source_file":      st.column_config.TextColumn("Source File", disabled=True,
+                                             help="Which uploaded file this row was extracted from."),
                         "date":              st.column_config.TextColumn("Date (YYYY-MM-DD)"),
                         "description":       st.column_config.TextColumn("Description"),
                         "amount":            st.column_config.NumberColumn("Amount", required=True),
