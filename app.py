@@ -1083,16 +1083,24 @@ else:
 
             with imp2:
                 st.markdown("##### 🤖 AI Statement Parser")
+                st.caption("Upload a statement PDF, Excel, CSV, **or a photo/screenshot** of a receipt or bill.")
                 upload_vis    = st.radio("Visibility for Imported Entries", ["Family", "Private"],
                                         horizontal=True, key="upload_vis")
-                uploaded_file = st.file_uploader("Choose PDF, Excel, or CSV",
-                                                 type=["xlsx", "xls", "csv", "pdf"],
+                uploaded_file = st.file_uploader("Choose PDF, Excel, CSV, or Image",
+                                                 type=["xlsx", "xls", "csv", "pdf",
+                                                       "jpg", "jpeg", "png", "webp",
+                                                       "bmp", "tif", "tiff", "gif", "heic"],
                                                  key="excel_uploader")
 
                 pdf_password = ""
                 if uploaded_file and uploaded_file.name.lower().endswith(".pdf"):
                     pdf_password = st.text_input("PDF Password (if protected)", type="password",
                                                  help="Enter password if your bank statement is password-protected")
+
+                # Show a preview for image uploads
+                _IMAGE_EXTS = ('.jpg', '.jpeg', '.png', '.webp', '.bmp', '.gif', '.tif', '.tiff', '.heic')
+                if uploaded_file and uploaded_file.name.lower().endswith(_IMAGE_EXTS):
+                    st.image(uploaded_file, caption="📷 Uploaded image preview", use_container_width=True)
 
                 gemini_api_key = (current_user.get("gemini_api_key")
                                   or get_admin_gemini_api_key()
@@ -1102,7 +1110,10 @@ else:
                 if uploaded_file:
                     if st.button("🚀 Parse & Auto-Categorize", type="primary", use_container_width=True):
                         with st.spinner("🤖 AI is reading your statement — this may take 15–30 s…"):
-                            is_std = (uploaded_file.name.lower().endswith((".xlsx", ".csv"))
+                            # Images always go through AI parser; spreadsheets may use template import
+                            is_image = uploaded_file.name.lower().endswith(_IMAGE_EXTS)
+                            is_std = (not is_image
+                                      and uploaded_file.name.lower().endswith((".xlsx", ".csv"))
                                       and "statement" not in uploaded_file.name.lower()
                                       and "bill" not in uploaded_file.name.lower())
                             if is_std:

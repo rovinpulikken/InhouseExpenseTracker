@@ -240,10 +240,26 @@ def _call_gemini_rest(api_key, prompt_text, file_bytes=None, mime_type=None):
 
     parts = []
 
+    # Image MIME types that must be sent as inline_data (vision mode)
+    _IMAGE_MIMES = {'image/jpeg', 'image/png', 'image/webp', 'image/gif',
+                    'image/bmp', 'image/tiff', 'image/heic', 'image/heif'}
+
     if file_bytes and mime_type:
         extracted_text = ''
 
-        if 'pdf' in mime_type:
+        if mime_type in _IMAGE_MIMES:
+            # Images go as inline_data — Gemini Vision handles OCR
+            import base64
+            b64 = base64.b64encode(file_bytes).decode('utf-8')
+            parts.append({
+                'inline_data': {
+                    'mime_type': mime_type,
+                    'data': b64
+                }
+            })
+            extracted_text = None  # no text extraction for images
+
+        elif 'pdf' in mime_type:
             # Extract all text and table data from the PDF using pdfplumber
             try:
                 with pdfplumber.open(io.BytesIO(file_bytes)) as pdf:
@@ -280,7 +296,7 @@ def _call_gemini_rest(api_key, prompt_text, file_bytes=None, mime_type=None):
             # CSV, plain text, or unknown
             extracted_text = file_bytes.decode('utf-8', errors='ignore')
 
-        if extracted_text.strip():
+        if extracted_text is not None and extracted_text.strip():
             # Cap at 60k chars to stay within token limits
             parts.append({'text': extracted_text[:60000]})
 
@@ -313,16 +329,19 @@ def parse_investment_with_gemini(file_bytes, filename, api_key):
     # Determine MIME type
     mime_type, _ = mimetypes.guess_type(filename)
     if not mime_type:
-        if filename.lower().endswith('.csv'):
-            mime_type = 'text/csv'
-        elif filename.lower().endswith('.pdf'):
-            mime_type = 'application/pdf'
-        elif filename.lower().endswith('.xlsx'):
-            mime_type = 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'
-        elif filename.lower().endswith('.xls'):
-            mime_type = 'application/vnd.ms-excel'
-        else:
-            mime_type = 'application/octet-stream'
+        fl = filename.lower()
+        if fl.endswith('.csv'):    mime_type = 'text/csv'
+        elif fl.endswith('.pdf'):  mime_type = 'application/pdf'
+        elif fl.endswith('.xlsx'): mime_type = 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'
+        elif fl.endswith('.xls'):  mime_type = 'application/vnd.ms-excel'
+        elif fl.endswith(('.jpg', '.jpeg')): mime_type = 'image/jpeg'
+        elif fl.endswith('.png'):  mime_type = 'image/png'
+        elif fl.endswith('.webp'): mime_type = 'image/webp'
+        elif fl.endswith('.bmp'):  mime_type = 'image/bmp'
+        elif fl.endswith(('.tif', '.tiff')): mime_type = 'image/tiff'
+        elif fl.endswith('.gif'):  mime_type = 'image/gif'
+        elif fl.endswith('.heic'): mime_type = 'image/heic'
+        else: mime_type = 'application/octet-stream'
 
     prompt = """
 You are an expert financial AI assistant. Your task is to extract investment holdings from the provided broker statement or portfolio document.
@@ -400,10 +419,18 @@ def parse_expense_statement_with_gemini(file_bytes, filename, api_key, pdf_passw
     # Determine MIME type
     mime_type, _ = mimetypes.guess_type(filename)
     if not mime_type:
-        if filename.lower().endswith('.csv'):    mime_type = 'text/csv'
-        elif filename.lower().endswith('.pdf'):  mime_type = 'application/pdf'
-        elif filename.lower().endswith('.xlsx'): mime_type = 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'
-        elif filename.lower().endswith('.xls'):  mime_type = 'application/vnd.ms-excel'
+        fl = filename.lower()
+        if fl.endswith('.csv'):    mime_type = 'text/csv'
+        elif fl.endswith('.pdf'):  mime_type = 'application/pdf'
+        elif fl.endswith('.xlsx'): mime_type = 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'
+        elif fl.endswith('.xls'):  mime_type = 'application/vnd.ms-excel'
+        elif fl.endswith(('.jpg', '.jpeg')): mime_type = 'image/jpeg'
+        elif fl.endswith('.png'):  mime_type = 'image/png'
+        elif fl.endswith('.webp'): mime_type = 'image/webp'
+        elif fl.endswith('.bmp'):  mime_type = 'image/bmp'
+        elif fl.endswith(('.tif', '.tiff')): mime_type = 'image/tiff'
+        elif fl.endswith('.gif'):  mime_type = 'image/gif'
+        elif fl.endswith('.heic'): mime_type = 'image/heic'
         else: mime_type = 'application/octet-stream'
 
     if filename.lower().endswith('.pdf') and pdf_password:
@@ -427,7 +454,8 @@ def parse_expense_statement_with_gemini(file_bytes, filename, api_key, pdf_passw
 
     prompt = """
 You are an expert financial AI assistant. Your task is to extract transactions from the provided bank or credit card statement.
-The document may be a PDF, CSV, or Excel file. Extract the data into a strict JSON list of dictionaries.
+The document may be a PDF, CSV, Excel file, or a PHOTO / SCREENSHOT of a statement, receipt, or bill.
+If given an image, use OCR to read all visible text and extract the transactions.
 
 Each dictionary MUST have the following keys:
 - "date": (string) Transaction date in "YYYY-MM-DD" format.

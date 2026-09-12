@@ -1,5 +1,19 @@
 # Release Notes
 
+## v1.9.0 (2026-09-12)
+### Added — Image / Photo Scanning in Import Statement
+- **Image format support**: The AI Statement Parser now accepts JPEG, JPG, PNG, WebP, BMP, TIFF, GIF, and HEIC files alongside the existing PDF/Excel/CSV.
+- **Use cases**: Scan photos of receipts, screenshots of UPI transactions, credit card bills, or any financial document captured as an image.
+- **Gemini Vision mode**: Images are sent as base64 inline_data to Gemini (vision), which performs OCR and extracts transactions automatically — no external OCR library needed.
+- **Image preview**: When an image is uploaded, a live preview is displayed below the uploader before parsing.
+- **Routing logic**: Image uploads always route through the AI parser (skip template import). PDF/Excel/CSV routing remains unchanged.
+- **Investment parser**: Also updated to accept image formats for portfolio/broker statement photos.
+- **Prompt updated**: Gemini prompt now explicitly instructs handling of photos/screenshots of statements, receipts, and bills.
+
+### Fixed — UX: In-tab branding banners replaced with slim headers
+- Removed all full-width image banners from Dashboard, Insights, and Academy tabs that forced unnecessary scrolling.
+- Replaced with single-line (36px) gradient header bars — zero scroll overhead while maintaining brand presence.
+
 ## v1.8.1 (2026-09-12)
 ### Added — FinCompass Brand Identity
 - **4 brand images generated** and saved to `/assets/`: `brand_hero.jpg` (16:9 compass), `brand_360.jpg` (orbital rings), `brand_ai.jpg` (AI insights portrait), `brand_journey.jpg` (life-stage journey).
