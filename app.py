@@ -1082,7 +1082,7 @@ else:
                 )
 
             with imp2:
-                st.markdown("##### 🤖 AI Statement Parser")
+                st.markdown("##### 🤖 Expense Statement Parser")
                 st.caption("Upload a statement PDF, Excel, CSV, **or a photo/screenshot** of a receipt or bill.")
                 upload_vis    = st.radio("Visibility for Imported Entries", ["Family", "Private"],
                                         horizontal=True, key="upload_vis")
