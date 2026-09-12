@@ -790,58 +790,19 @@ else:
 
     # ----------------------------------------------------
     if nav_selection == "🏠 Dashboard":
-        # ── Login-count tracking for progressive onboarding ───────────────────
-        _lc_key = f"login_count_{current_user['username']}"
-        st.session_state[_lc_key] = st.session_state.get(_lc_key, 0) + 1
-        _login_count = st.session_state[_lc_key]
-
-        # ── First-ever login: 3-slide onboarding carousel ────────────────────
-        import os as _os
-        _assets = _os.path.join(_os.path.dirname(__file__), "assets")
-        if _login_count == 1:
-            st.markdown("""
-            <div style='background: linear-gradient(135deg,#0f172a,#1e293b); border-radius:16px;
-                        padding: 16px 20px; margin-bottom: 20px;
-                        border: 1px solid #1d4ed8; text-align:center;'>
-                <div style='font-size:1.5rem; font-weight:800; color:#38bdf8; margin-bottom:4px;'>👋 Welcome to FinCompass!</div>
-                <div style='color:#94a3b8; font-size:0.9rem;'>Your Smart Financial Hub — here's what we offer:</div>
-            </div>
-            """, unsafe_allow_html=True)
-            ob1, ob2, ob3 = st.columns(3)
-            with ob1:
-                _p = _os.path.join(_assets, "brand_ai.jpg")
-                if _os.path.exists(_p): st.image(_p, use_container_width=True)
-                st.markdown("**🤖 AI-Powered Insights**\n\nSmart, personalised insights for every stage of life — tax savings, portfolio alerts, and spending patterns.")
-            with ob2:
-                _p = _os.path.join(_assets, "brand_360.jpg")
-                if _os.path.exists(_p): st.image(_p, use_container_width=True)
-                st.markdown("**🔄 360° Financial View**\n\nExpenses · Investments · Tax · Debt · Goals — all tracked in one single platform.")
-            with ob3:
-                _p = _os.path.join(_assets, "brand_journey.jpg")
-                if _os.path.exists(_p): st.image(_p, use_container_width=True)
-                st.markdown("**📅 Every Life Stage**\n\nFrom your first job to retirement — FinCompass guides you at every milestone.")
-            st.markdown("---")
-
-        # ── Returning user welcome banner (visits 2–5) ────────────────────────
-        elif _login_count <= 5:
-            _p = _os.path.join(_assets, "brand_journey.jpg")
-            if _os.path.exists(_p):
-                _wcol1, _wcol2 = st.columns([3, 1])
-                with _wcol1:
-                    st.markdown(f"""
-                    <div style='background: linear-gradient(135deg,#0f172a,#1e293b); border-radius:12px;
-                                padding: 14px 18px; border-left: 4px solid #38bdf8;'>
-                        <div style='font-size:1.15rem; font-weight:700; color:#38bdf8;'>👋 Welcome back, {current_user['full_name']}!</div>
-                        <div style='color:#94a3b8; font-size:0.85rem; margin-top:4px;'>Your 360° financial hub is ready. Navigate using the sidebar to manage expenses, investments, tax, and more.</div>
-                    </div>
-                    """, unsafe_allow_html=True)
-                with _wcol2:
-                    st.image(_p, use_container_width=True)
-
-        st.header("🏠 Dashboard Overview")
+        # ── Slim branded header (no scroll) ──────────────────────────────────
+        st.markdown(f"""
+        <div style='display:flex;align-items:center;gap:10px;padding:8px 14px;
+                    background:linear-gradient(90deg,#0f172a,#1e293b);
+                    border-radius:8px;border-left:3px solid #38bdf8;margin-bottom:12px;'>
+            <span style='font-size:1rem;'>🧭</span>
+            <span style='font-size:1rem;font-weight:700;color:#38bdf8;'>FinCompass</span>
+            <span style='color:#334155;'>|</span>
+            <span style='color:#94a3b8;font-size:0.85rem;'>🏠 Dashboard &nbsp;·&nbsp; Welcome back, <strong style="color:#f8fafc;">{current_user['full_name']}</strong></span>
+        </div>
+        """, unsafe_allow_html=True)
         if st.session_state.get("is_sandbox_mode", False):
             st.info("🎯 **Sandbox Mission**: Review the simulated expenses below. Try changing the time filter to see how the dashboard updates.")
-        st.write(f"Welcome back, **{current_user['username']}**!")
         
         # Consolidated Dashboard KPI Boxes
         col_left, col_right = st.columns(2)
@@ -1399,17 +1360,15 @@ else:
         # 📈 INSIGHTS & ANALYTICS
         # ----------------------------------------------------
     elif nav_selection == "📈 Insights & Analytics":
-        # ── Insights brand banner ─────────────────────────────────────────────
-        import os as _os
-        _ai_img = _os.path.join(_os.path.dirname(__file__), "assets", "brand_ai.jpg")
-        if _os.path.exists(_ai_img):
-            _ib1, _ib2, _ib3 = st.columns([1, 4, 1])
-            with _ib2:
-                st.image(_ai_img, use_container_width=True)
+        # ── Slim branded header ────────────────────────────────────────────────
         st.markdown("""
-        <div style='text-align:center; margin: -8px 0 12px;
-                    font-size:0.85rem; color:#64748b; font-style:italic;'>
-            AI-Powered Insights &nbsp;·&nbsp; Spending Analytics &nbsp;·&nbsp; Trend Detection &nbsp;·&nbsp; Inflation Tracking
+        <div style='display:flex;align-items:center;gap:10px;padding:8px 14px;
+                    background:linear-gradient(90deg,#0f172a,#1e293b);
+                    border-radius:8px;border-left:3px solid #818cf8;margin-bottom:12px;'>
+            <span style='font-size:1rem;'>🧭</span>
+            <span style='font-size:1rem;font-weight:700;color:#818cf8;'>FinCompass</span>
+            <span style='color:#334155;'>|</span>
+            <span style='color:#94a3b8;font-size:0.85rem;'>📈 Insights &amp; Analytics &nbsp;·&nbsp; AI-Powered &nbsp;·&nbsp; Spending Trends &nbsp;·&nbsp; Inflation Tracking</span>
         </div>
         """, unsafe_allow_html=True)
 
@@ -3206,20 +3165,15 @@ else:
     # ⚙️ SETTINGS & ADMIN
     # ----------------------------------------------------
     elif nav_selection == "🎓 Financial Academy":
-        # ── Academy brand banner ──────────────────────────────────────────────
-        import os as _os
-        _jrn = _os.path.join(_os.path.dirname(__file__), "assets", "brand_journey.jpg")
-        if _os.path.exists(_jrn):
-            st.image(_jrn, use_container_width=True)
+        # ── Slim branded header ────────────────────────────────────────────────
         st.markdown("""
-        <div style='background: linear-gradient(135deg,#0f172a,#1e293b); border-radius:12px;
-                    padding: 14px 20px; margin: 8px 0 16px; text-align:center;
-                    border: 1px solid #1d4ed8;'>
-            <div style='font-size:1.2rem; font-weight:800; color:#38bdf8;'>🎓 FinCompass Financial Academy</div>
-            <div style='color:#94a3b8; font-size:0.85rem; margin-top:4px;'>
-                Wherever you are on your financial journey — from your first salary to retirement planning —<br>
-                we've got personalised learning to guide you every step of the way.
-            </div>
+        <div style='display:flex;align-items:center;gap:10px;padding:8px 14px;
+                    background:linear-gradient(90deg,#0f172a,#1e293b);
+                    border-radius:8px;border-left:3px solid #34d399;margin-bottom:12px;'>
+            <span style='font-size:1rem;'>🧭</span>
+            <span style='font-size:1rem;font-weight:700;color:#34d399;'>FinCompass</span>
+            <span style='color:#334155;'>|</span>
+            <span style='color:#94a3b8;font-size:0.85rem;'>🎓 Financial Academy &nbsp;·&nbsp; Personalised Learning for Every Stage of Life</span>
         </div>
         """, unsafe_allow_html=True)
         from financial_academy import render_financial_academy_tab
