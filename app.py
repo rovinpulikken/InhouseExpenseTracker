@@ -1999,33 +1999,7 @@ else:
                         st.caption(f"**{g['goal_name']}** — {int(pct*100)}%")
                         st.progress(pct)
 
-            st.markdown("---")
-            st.markdown("##### ⚡ Quick Actions")
-            qa1, qa2, qa3 = st.columns(3)
-            with qa1:
-                st.markdown("""
-                <div style="background:linear-gradient(135deg,#1e3a5f,#0f172a); border:1px solid #38bdf8;
-                            border-radius:10px; padding:14px 16px; text-align:center; min-height:90px;">
-                    <div style="font-size:1.5rem;">📈</div>
-                    <div style="color:#38bdf8; font-weight:700; margin-top:4px; font-size:0.9rem;">Investments Tab</div>
-                    <div style="color:#64748b; font-size:0.75rem; margin-top:3px;">Add holdings · Sync prices · Rebalance</div>
-                </div>""", unsafe_allow_html=True)
-            with qa2:
-                st.markdown("""
-                <div style="background:linear-gradient(135deg,#2d1b3f,#0f172a); border:1px solid #a78bfa;
-                            border-radius:10px; padding:14px 16px; text-align:center; min-height:90px;">
-                    <div style="font-size:1.5rem;">🧾</div>
-                    <div style="color:#a78bfa; font-weight:700; margin-top:4px; font-size:0.9rem;">Tax Planner</div>
-                    <div style="color:#64748b; font-size:0.75rem; margin-top:3px;">Compute tax · Upload capital gains</div>
-                </div>""", unsafe_allow_html=True)
-            with qa3:
-                st.markdown("""
-                <div style="background:linear-gradient(135deg,#1a2f1a,#0f172a); border:1px solid #34d399;
-                            border-radius:10px; padding:14px 16px; text-align:center; min-height:90px;">
-                    <div style="font-size:1.5rem;">🎯</div>
-                    <div style="color:#34d399; font-weight:700; margin-top:4px; font-size:0.9rem;">Budget & Goals</div>
-                    <div style="color:#64748b; font-size:0.75rem; margin-top:3px;">Set budgets · Track savings goals</div>
-                </div>""", unsafe_allow_html=True)
+
 
         # ════════════════════════════════════════════════════════════════════════
         # TAB 2 ─ BUDGET & GOALS
