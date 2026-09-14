@@ -2858,6 +2858,7 @@ else:
                 compute_advance_tax_schedule, compute_full_tax,
                 compute_tax_saving_rebalance,
                 FRSB_RATE, FRSB_RATE_EFFECTIVE, _sum_totals,
+                parse_income_documents
             )
 
             st.markdown("### 🧾 Income Manager & Tax Planner")
@@ -2972,8 +2973,6 @@ else:
                 st.write("Upload your tax documents to automatically extract salary and passive income.")
                 uploaded_docs = st.file_uploader("Upload Form 16, Form 26AS, or AIS", type=["pdf"], accept_multiple_files=True, key="income_docs_uploader")
                 if uploaded_docs:
-                    from tax_engine import parse_income_documents
-                    
                     if "extracted_incomes" not in st.session_state or st.session_state.get("last_uploaded_docs") != [f.name for f in uploaded_docs]:
                         all_extracted = []
                         with st.spinner("Parsing documents..."):

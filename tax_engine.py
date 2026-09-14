@@ -2164,6 +2164,7 @@ def compute_full_tax(
 # 4. MULTI-DOCUMENT INCOME PARSER
 # ─────────────────────────────────────────────────────────────────────────────
 def parse_income_documents(raw_bytes: bytes, filename: str) -> List[Dict[str, Any]]:
+    # Added to force Streamlit Cloud reload
     """
     Parses an uploaded tax document (Form 16, Form 26AS, AIS) and extracts income sources.
     Returns a list of dictionaries: {"Source": filename, "Type": "Salary/Dividend/etc", "Description": str, "Amount": float}
