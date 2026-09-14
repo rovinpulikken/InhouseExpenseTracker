@@ -2876,69 +2876,68 @@ else:
                 ki2.metric("📆 Annual Income",  format_inr(total_annual_income))
                 ki3.metric("🔢 Sources", str(len(income_df)))
                 if len(income_df) > 1:
-                    fig_inc = px.bar(income_df.sort_values("monthly_equivalent", ascending=True),
-                                     x="monthly_equivalent", y="source_name", orientation="h", color="income_type",
-                                     labels={"monthly_equivalent": "Monthly (₹)", "source_name": ""},
-                                     template="plotly_dark", height=max(180, len(income_df) * 40))
-                    fig_inc.update_layout(paper_bgcolor="#1e293b", plot_bgcolor="#1e293b", margin=dict(l=10,r=10,t=10,b=10))
-                    st.plotly_chart(fig_inc, use_container_width=True)
-
-            if "edit_inc_id" not in st.session_state:
-                st.session_state["edit_inc_id"] = None
-            _inc_icons = {"Salary / Regular Employment": "💼", "Business / Self-Employment": "🏢",
-                          "Freelance / Consulting": "💻", "Rental Income": "🏠",
-                          "Dividends / Investment Income": "📈", "Pension / Annuity": "🧓",
-                          "Capital Gains": "💹", "Agricultural Income": "🌾", "Gifts / Inheritance": "🎁", "Other": "💰"}
+                    with st.expander("📊 View Income Analytics", expanded=False):
+                        fig_inc = px.bar(income_df.sort_values("monthly_equivalent", ascending=True),
+                                         x="monthly_equivalent", y="source_name", orientation="h", color="income_type",
+                                         labels={"monthly_equivalent": "Monthly (₹)", "source_name": ""},
+                                         template="plotly_dark", height=max(180, len(income_df) * 40))
+                        fig_inc.update_layout(paper_bgcolor="#1e293b", plot_bgcolor="#1e293b", margin=dict(l=10,r=10,t=10,b=10))
+                        st.plotly_chart(fig_inc, use_container_width=True)
 
             if not income_df.empty:
-                inc_rows = list(income_df.iterrows())
-                for row_start in range(0, len(inc_rows), 3):
-                    grid_cols = st.columns(3)
-                    for col_idx, (_, irow) in enumerate(inc_rows[row_start:row_start + 3]):
-                        with grid_cols[col_idx]:
-                            inc_icon = _inc_icons.get(str(irow["income_type"]), "💰")
-                            is_editing = st.session_state.get("edit_inc_id") == irow["id"]
-                            if is_editing:
-                                with st.form(key=f"edit_inc_form_{irow['id']}"):
-                                    e_name   = st.text_input("Source Name", value=str(irow["source_name"]))
-                                    e_type   = st.selectbox("Type", INCOME_TYPES, index=INCOME_TYPES.index(irow["income_type"]) if irow["income_type"] in INCOME_TYPES else 0)
-                                    e_amount = st.number_input("Amount (₹)", min_value=0.0, step=1000.0, value=float(irow["amount"]))
-                                    e_freq   = st.selectbox("Frequency", FREQUENCY_OPTIONS, index=FREQUENCY_OPTIONS.index(irow["frequency"]) if irow["frequency"] in FREQUENCY_OPTIONS else 0)
-                                    e_notes  = st.text_input("Notes", value=str(irow["notes"]) if irow["notes"] else "")
-                                    esb1, esb2 = st.columns(2)
-                                    with esb1:
-                                        do_save = st.form_submit_button("💾 Save", type="primary", use_container_width=True)
-                                    with esb2:
-                                        do_cancel = st.form_submit_button("✖ Cancel", use_container_width=True)
-                                    if do_save:
-                                        if update_income_source(int(irow["id"]), source_name=e_name, income_type=e_type, amount=e_amount, frequency=e_freq, notes=e_notes):
-                                            st.session_state["edit_inc_id"] = None; st.rerun()
-                                    if do_cancel:
-                                        st.session_state["edit_inc_id"] = None; st.rerun()
-                            else:
-                                notes_html = f"<div style='color:#64748b; font-size:0.72rem; font-style:italic; margin-top:6px;'>{irow['notes']}</div>" if irow.get("notes") else ""
-                                st.markdown(f"""
-                                <div style="background:linear-gradient(135deg,#1e293b,#0f172a); border:1px solid #334155;
-                                            border-radius:12px; padding:16px 18px; margin-bottom:4px; min-height:170px;">
-                                    <div style="font-size:1.5rem;">{inc_icon}</div>
-                                    <div style="font-weight:700; color:#f1f5f9; margin:6px 0 2px;">{irow['source_name']}</div>
-                                    <div style="color:#94a3b8; font-size:0.74rem; margin-bottom:10px;">{irow['income_type']}</div>
-                                    <div style="color:#38bdf8; font-weight:600;">{format_inr(float(irow['amount']))} <span style="color:#64748b; font-size:0.74rem;">/ {irow['frequency']}</span></div>
-                                    <div style="display:flex; gap:20px; margin-top:8px;">
-                                        <div><div style="color:#64748b; font-size:0.68rem;">Monthly</div><div style="color:#34d399; font-size:0.82rem; font-weight:600;">{format_inr(float(irow['monthly_equivalent']))}</div></div>
-                                        <div><div style="color:#64748b; font-size:0.68rem;">Annual</div><div style="color:#fbbf24; font-size:0.82rem; font-weight:600;">{format_inr(float(irow['monthly_equivalent'])*12)}</div></div>
-                                    </div>{notes_html}
-                                </div>""", unsafe_allow_html=True)
-                                cbtn1, cbtn2 = st.columns(2)
-                                with cbtn1:
-                                    if st.button("✏️ Edit", key=f"edit_inc_{irow['id']}", use_container_width=True):
-                                        st.session_state["edit_inc_id"] = irow["id"]; st.rerun()
-                                with cbtn2:
-                                    if st.button("🗑️ Delete", key=f"del_inc_{irow['id']}", use_container_width=True):
-                                        if delete_income_source(int(irow["id"]), user_family_id):
-                                            if st.session_state.get("edit_inc_id") == irow["id"]:
-                                                st.session_state["edit_inc_id"] = None
-                                            st.rerun()
+                st.markdown("<br>", unsafe_allow_html=True)
+                # Prepare a copy for editing
+                edit_df = income_df.copy()
+                edit_df["Delete?"] = False
+                
+                # We want to display these specific columns to the user for editing
+                display_cols = ["source_name", "income_type", "amount", "frequency", "monthly_equivalent", "Delete?"]
+                
+                edited_income_df = st.data_editor(
+                    edit_df[display_cols],
+                    column_config={
+                        "source_name": st.column_config.TextColumn("Source Name", required=True),
+                        "income_type": st.column_config.SelectboxColumn("Type", options=INCOME_TYPES, required=True),
+                        "amount": st.column_config.NumberColumn("Amount (₹)", min_value=0, format="₹%d", required=True),
+                        "frequency": st.column_config.SelectboxColumn("Frequency", options=FREQUENCY_OPTIONS, required=True),
+                        "monthly_equivalent": st.column_config.NumberColumn("Monthly Eq. (₹)", disabled=True, format="₹%d"),
+                        "Delete?": st.column_config.CheckboxColumn("🗑️ Delete", default=False)
+                    },
+                    use_container_width=True,
+                    hide_index=True,
+                    key="income_sources_editor"
+                )
+                
+                # Detect changes
+                if st.button("💾 Apply Changes", type="primary"):
+                    changes_made = False
+                    for i, row in edited_income_df.iterrows():
+                        original_row = income_df.iloc[i]
+                        inc_id = int(original_row["id"])
+                        
+                        # Deletion
+                        if row["Delete?"]:
+                            delete_income_source(inc_id, user_family_id)
+                            changes_made = True
+                        else:
+                            # Update if anything changed
+                            if (row["source_name"] != original_row["source_name"] or
+                                row["income_type"] != original_row["income_type"] or
+                                row["amount"] != original_row["amount"] or
+                                row["frequency"] != original_row["frequency"]):
+                                update_income_source(
+                                    inc_id, 
+                                    source_name=row["source_name"], 
+                                    income_type=row["income_type"], 
+                                    amount=row["amount"], 
+                                    frequency=row["frequency"], 
+                                    notes=original_row.get("notes", "")
+                                )
+                                changes_made = True
+                    
+                    if changes_made:
+                        st.success("✅ Changes applied successfully!")
+                        st.rerun()
             else:
                 st.info("No income sources yet. Add your first one below!")
 
