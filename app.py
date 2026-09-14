@@ -3195,39 +3195,37 @@ else:
                     with st.spinner("Computing..."):
                         # Ensure age is passed correctly via the deductions dict since it's used inside the engine
                         _saved_ded["age"] = _user_age
-                        _ded_obj = compute_deductions(_saved_ded, total_annual_income, tax_regime)
-                        _cg_tax_obj = compute_cg_tax(_saved_cg)
                         _tax_result = compute_full_tax(
-                            gross_income=total_annual_income,
-                            passive_income_entries=_passive_final,
-                            deductions_obj=_ded_obj,
-                            cg_tax_obj=_cg_tax_obj,
-                            regime=tax_regime,
-                            age=_user_age,
-                            tds_paid=float(_saved_ded.get("tds_deducted", 0)),
-                            advance_tax_paid=float(_saved_ded.get("advance_paid", 0)),
+                            income_sources_df=income_df,
+                            passive_income_entries=_passive_entries_sess,
+                            passive_overrides=_passive_overrides_sess,
+                            cg_data=_saved_cg,
+                            deductions=_saved_ded,
+                            tds_deducted=float(_saved_ded.get("tds_deducted", 0)),
+                            advance_paid=float(_saved_ded.get("advance_paid", 0)),
+                            tax_regime=tax_regime,
                         )
                     st.session_state["_tax_result"] = _tax_result
 
                 _tax_result = st.session_state.get("_tax_result")
                 if _tax_result:
                     t1, t2, t3, t4 = st.columns(4)
-                    t1.metric("📊 Gross Income", format_inr(_tax_result.get("gross_income_total", total_annual_income)))
-                    t2.metric("🏛️ Total Deductions", format_inr(_tax_result.get("total_deductions", 0)))
-                    t3.metric("💰 Net Taxable Income", format_inr(_tax_result.get("net_taxable_income", 0)))
-                    t4.metric("🧾 Net Tax Payable", format_inr(_tax_result.get("net_tax_payable", 0)),
-                              delta=f"After TDS ({format_inr(_tax_result.get('tds_paid', 0))}) & advance tax",
-                              delta_color="inverse" if _tax_result.get("net_tax_payable", 0) > 0 else "normal")
+                    t1.metric("📊 Gross Slab Income", format_inr(_tax_result.get("gross_slab_income", total_annual_income)))
+                    t2.metric("🏛️ Total Deductions", format_inr(_tax_result.get("total_deduction", 0)))
+                    t3.metric("💰 Net Taxable Income", format_inr(_tax_result.get("taxable_income", 0)))
+                    t4.metric("🧾 Total Tax", format_inr(_tax_result.get("total_tax", 0)),
+                              delta=f"Balance Due: {format_inr(_tax_result.get('balance_due', 0))}",
+                              delta_color="inverse" if _tax_result.get("balance_due", 0) > 0 else "normal")
 
                     if _tax_result.get("advance_tax_schedule"):
                         st.markdown("#### 📅 Advance Tax Schedule")
                         adv_df = pd.DataFrame(_tax_result["advance_tax_schedule"])
                         st.dataframe(adv_df, use_container_width=True, hide_index=True)
 
-                    if _tax_result.get("tax_saving_rebalance"):
-                        st.markdown("#### 💡 Tax-Saving Rebalance Suggestions")
-                        for tsr in _tax_result["tax_saving_rebalance"]:
-                            st.markdown(f"- **{tsr.get('action', '')}**: {tsr.get('description', '')} — saves **{format_inr(tsr.get('tax_saving', 0))}**")
+                    if _tax_result.get("savings_opportunities"):
+                        st.markdown("#### 💡 Tax-Saving Opportunities")
+                        for opp in _tax_result["savings_opportunities"]:
+                            st.markdown(f"- **{opp.get('opportunity', '')}**: {opp.get('detail', '')}")
 
 
     # ----------------------------------------------------
