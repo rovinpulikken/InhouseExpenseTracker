@@ -2177,25 +2177,56 @@ else:
             st.markdown("#### 📊 Budget Performance & Utilisation")
             budget_status = get_budget_status(target_fy_clean, username=current_user["username"], view_mode=view_mode, family_id=user_family_id)
             if not budget_status.empty:
-                for idx, row in budget_status.iterrows():
-                    cat  = row["category"]
-                    spent  = float(row["Actual_Spent"])
-                    budget = float(row["Annual_Budget"])
-                    util   = float(row["Utilization_%"])
-                    if budget > 0:
-                        c1, c2, c3 = st.columns([2, 3, 1])
-                        with c1:
-                            st.markdown(f"**{cat}**")
-                            st.caption(f"Spent: {format_inr(spent)} / Budget: {format_inr(budget)}")
-                        with c2:
-                            st.progress(min(util / 100.0, 1.0))
-                        with c3:
-                            if util > 100:
-                                st.markdown("<span class='surge-badge'>OVER</span>", unsafe_allow_html=True)
-                            elif util > 80:
-                                st.markdown("<span style='background:#78350f; color:#fde047; padding:4px 8px; border-radius:6px; font-weight:600; font-size:0.82rem;'>DANGER</span>", unsafe_allow_html=True)
-                            else:
-                                st.markdown("<span class='normal-badge'>ON TRACK</span>", unsafe_allow_html=True)
+                # Build a lookup: category → row data
+                _bs_map = {}
+                for _, row in budget_status.iterrows():
+                    _bs_map[row["category"]] = row
+
+                for group_name, group_cats in CATEGORY_GROUPS.items():
+                    # Gather rows for this group that have a budget
+                    grp_rows = [(c, _bs_map[c]) for c in group_cats if c in _bs_map and float(_bs_map[c]["Annual_Budget"]) > 0]
+                    if not grp_rows:
+                        continue
+
+                    # Group-level aggregates
+                    grp_spent  = sum(float(r["Actual_Spent"]) for _, r in grp_rows)
+                    grp_budget = sum(float(r["Annual_Budget"]) for _, r in grp_rows)
+                    grp_util   = round((grp_spent / grp_budget) * 100, 1) if grp_budget > 0 else 0
+                    grp_colour = GROUP_COLOURS.get(group_name, "#94a3b8")
+
+                    # Status badge for group header
+                    if grp_util > 100:
+                        _grp_badge = "🔴 OVER"
+                    elif grp_util > 80:
+                        _grp_badge = "🟡 DANGER"
+                    else:
+                        _grp_badge = "🟢 ON TRACK"
+
+                    with st.expander(
+                        f"{group_name}  —  {format_inr_short(grp_spent)} / {format_inr_short(grp_budget)}  ·  {grp_util}%  ·  {_grp_badge}",
+                        expanded=(grp_util > 80)
+                    ):
+                        st.markdown(f"<div style='height:3px;background:{grp_colour};border-radius:2px;margin-bottom:10px;'></div>", unsafe_allow_html=True)
+
+                        for cat, row in grp_rows:
+                            spent  = float(row["Actual_Spent"])
+                            budget = float(row["Annual_Budget"])
+                            util   = float(row["Utilization_%"])
+                            c1, c2, c3 = st.columns([2, 3, 1])
+                            with c1:
+                                st.markdown(f"**{cat}**")
+                                st.caption(f"Spent: {format_inr(spent)} / Budget: {format_inr(budget)}")
+                            with c2:
+                                st.progress(min(util / 100.0, 1.0))
+                            with c3:
+                                if util > 100:
+                                    st.markdown("<span class='surge-badge'>OVER</span>", unsafe_allow_html=True)
+                                elif util > 80:
+                                    st.markdown("<span style='background:#78350f; color:#fde047; padding:4px 8px; border-radius:6px; font-weight:600; font-size:0.82rem;'>DANGER</span>", unsafe_allow_html=True)
+                                else:
+                                    st.markdown("<span class='normal-badge'>ON TRACK</span>", unsafe_allow_html=True)
+                            if cat != grp_rows[-1][0]:
+                                st.markdown("<hr style='margin:6px 0; border-color:#334155;'>", unsafe_allow_html=True)
 
             # ── Savings Goals ─────────────────────────────────────────────────────
             st.markdown("---")
