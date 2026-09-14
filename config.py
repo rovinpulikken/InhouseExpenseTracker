@@ -38,6 +38,40 @@ DEBT_CATEGORIES = [
 # Append debt categories to standard expense categories so they appear in Budget Planner
 EXPENSE_CATEGORIES.extend(DEBT_CATEGORIES)
 
+# Logical grouping of categories for Budget & Goals display
+CATEGORY_GROUPS = {
+    "🥬 Food & Kitchen": [
+        "Groceries & Provisions", "Vegetables & Fruits",
+        "Milk & Dairy", "Dining & Swiggy/Zomato"
+    ],
+    "🏠 Home & Utilities": [
+        "Rent & Housing", "Utilities (Electricity/Water/Gas)",
+        "Domestic Help & Services", "Maintenance & Repairs"
+    ],
+    "🚗 Transport & Travel": ["Transportation & Fuel"],
+    "🎓 Education & Growth": ["Education & Books"],
+    "🏥 Health & Wellness": [
+        "Healthcare & Medicines", "Insurance & Investments"
+    ],
+    "🎭 Lifestyle & Leisure": [
+        "Entertainment & OTT", "Shopping & Apparel"
+    ],
+    "🗂 Other": ["Miscellaneous"],
+    "💳 Debt & Liabilities": DEBT_CATEGORIES,
+}
+
+GROUP_COLOURS = {
+    "🥬 Food & Kitchen": "#34d399",
+    "🏠 Home & Utilities": "#38bdf8",
+    "🚗 Transport & Travel": "#fbbf24",
+    "🎓 Education & Growth": "#a78bfa",
+    "🏥 Health & Wellness": "#f472b6",
+    "🎭 Lifestyle & Leisure": "#fb923c",
+    "🗂 Other": "#94a3b8",
+    "💳 Debt & Liabilities": "#ef4444",
+}
+
+
 def get_indian_fy(dt: datetime.date) -> str:
     """
     Returns the Indian Financial Year string (e.g. 'FY 2024-25') for a given date.

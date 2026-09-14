@@ -34,6 +34,8 @@ import live_market_tracker
 from config import (
     EXPENSE_CATEGORIES,
     DEBT_CATEGORIES,
+    CATEGORY_GROUPS,
+    GROUP_COLOURS,
     get_indian_fy,
     get_indian_quarter,
     get_indian_half_year,
@@ -2077,46 +2079,71 @@ else:
                     m = float(r["monthly_limit"]) if float(r["monthly_limit"]) > 0 else float(r["suggested_monthly"])
                     st.session_state["budget_dict"][c] = m
 
-            # ── Category adjuster ────────────────────────────────────────────────
+            # ── Grouped Category Budget Adjuster ───────────────────────────────
             st.markdown("<br>", unsafe_allow_html=True)
             st.markdown("#### ⚙️ Category Budget Adjuster")
             hist_avg_map = dict(zip(suggested_base_df["category"], suggested_base_df["hist_monthly_avg"]))
 
-            for cat in other_cats:
-                current_val = float(st.session_state["budget_dict"].get(cat, 10000.0))
-                h_avg = float(hist_avg_map.get(cat, 0.0))
-                cat_col1, cat_col2, cat_col3, cat_col4, cat_col5 = st.columns([2.5, 1.8, 2.5, 1.8, 1.8])
-                with cat_col1:
-                    st.markdown(f"**{cat}**")
-                    st.caption(f"Hist Avg: {format_inr(h_avg)} / mo")
-                with cat_col2:
-                    b_m1k = st.button("➖ ₹1k", key=f"sub_1k_{cat}")
-                    b_m5p = st.button("➖ 5%", key=f"sub_5p_{cat}")
-                    if b_m1k:
-                        st.session_state["budget_dict"][cat] = max(0.0, round(current_val - 1000.0, 2))
-                        autosave_all_budgets(); st.rerun()
-                    if b_m5p:
-                        st.session_state["budget_dict"][cat] = max(0.0, round(current_val * 0.95, 2))
-                        autosave_all_budgets(); st.rerun()
-                with cat_col3:
-                    new_val = st.number_input(f"Monthly Limit (₹)", min_value=0.0, value=float(st.session_state["budget_dict"].get(cat, 10000.0)),
-                                              step=500.0, key=f"input_m_{cat}", label_visibility="collapsed")
-                    if new_val != st.session_state["budget_dict"][cat]:
-                        st.session_state["budget_dict"][cat] = round(new_val, 2)
-                        autosave_all_budgets(); st.rerun()
-                with cat_col4:
-                    b_p1k = st.button("➕ ₹1k", key=f"add_1k_{cat}")
-                    b_p5p = st.button("➕ 5%", key=f"add_5p_{cat}")
-                    if b_p1k:
-                        st.session_state["budget_dict"][cat] = round(current_val + 1000.0, 2)
-                        autosave_all_budgets(); st.rerun()
-                    if b_p5p:
-                        st.session_state["budget_dict"][cat] = round(current_val * 1.05, 2)
-                        autosave_all_budgets(); st.rerun()
-                with cat_col5:
-                    st.markdown(f"**{format_inr_short(st.session_state['budget_dict'][cat] * 12.0)}**")
-                    st.caption("Annual Cap")
-                st.markdown("<hr style='margin:6px 0; border-color:#334155;'>", unsafe_allow_html=True)
+            for group_name, group_cats in CATEGORY_GROUPS.items():
+                # Filter to categories that are actually in the budget (skip Insurance from 'other_cats' logic)
+                display_cats = [c for c in group_cats if c in EXPENSE_CATEGORIES]
+                if not display_cats:
+                    continue
+
+                # Compute group subtotal
+                grp_total = sum(float(st.session_state["budget_dict"].get(c, 0.0)) for c in display_cats)
+                grp_colour = GROUP_COLOURS.get(group_name, "#94a3b8")
+
+                # Group header with expander
+                with st.expander(
+                    f"{group_name}  —  **{format_inr_short(grp_total)}/mo**  ·  {format_inr_short(grp_total * 12)}/yr",
+                    expanded=(grp_total > 0)
+                ):
+                    # Colour accent bar
+                    st.markdown(f"<div style='height:3px;background:{grp_colour};border-radius:2px;margin-bottom:10px;'></div>", unsafe_allow_html=True)
+
+                    for cat in display_cats:
+                        if cat == "Insurance & Investments":
+                            # Insurance auto-computed, show read-only
+                            inv_val = float(st.session_state["budget_dict"].get(cat, 0.0))
+                            st.markdown(f"**{cat}** — {format_inr_short(inv_val)}/mo *(auto: Income minus expenses)*")
+                            continue
+
+                        current_val = float(st.session_state["budget_dict"].get(cat, 0.0))
+                        h_avg = float(hist_avg_map.get(cat, 0.0))
+                        cat_col1, cat_col2, cat_col3, cat_col4, cat_col5 = st.columns([2.5, 1.8, 2.5, 1.8, 1.8])
+                        with cat_col1:
+                            st.markdown(f"**{cat}**")
+                            st.caption(f"Hist Avg: {format_inr(h_avg)} / mo")
+                        with cat_col2:
+                            b_m1k = st.button("➖ ₹1k", key=f"sub_1k_{cat}")
+                            b_m5p = st.button("➖ 5%", key=f"sub_5p_{cat}")
+                            if b_m1k:
+                                st.session_state["budget_dict"][cat] = max(0.0, round(current_val - 1000.0, 2))
+                                autosave_all_budgets(); st.rerun()
+                            if b_m5p:
+                                st.session_state["budget_dict"][cat] = max(0.0, round(current_val * 0.95, 2))
+                                autosave_all_budgets(); st.rerun()
+                        with cat_col3:
+                            new_val = st.number_input(f"Monthly Limit (₹)", min_value=0.0, value=float(st.session_state["budget_dict"].get(cat, 0.0)),
+                                                      step=500.0, key=f"input_m_{cat}", label_visibility="collapsed")
+                            if new_val != st.session_state["budget_dict"][cat]:
+                                st.session_state["budget_dict"][cat] = round(new_val, 2)
+                                autosave_all_budgets(); st.rerun()
+                        with cat_col4:
+                            b_p1k = st.button("➕ ₹1k", key=f"add_1k_{cat}")
+                            b_p5p = st.button("➕ 5%", key=f"add_5p_{cat}")
+                            if b_p1k:
+                                st.session_state["budget_dict"][cat] = round(current_val + 1000.0, 2)
+                                autosave_all_budgets(); st.rerun()
+                            if b_p5p:
+                                st.session_state["budget_dict"][cat] = round(current_val * 1.05, 2)
+                                autosave_all_budgets(); st.rerun()
+                        with cat_col5:
+                            st.markdown(f"**{format_inr_short(st.session_state['budget_dict'][cat] * 12.0)}**")
+                            st.caption("Annual Cap")
+                        if cat != display_cats[-1]:  # divider between sub-categories
+                            st.markdown("<hr style='margin:6px 0; border-color:#334155;'>", unsafe_allow_html=True)
 
             # Auto-calculated investments row
             cat = "Insurance & Investments"

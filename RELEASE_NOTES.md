@@ -1,5 +1,14 @@
 # Release Notes
 
+## v1.10.0 (2026-09-14)
+### Added — Grouped Category Budget Adjuster
+- **8 logical category groups** in Budget & Goals: Food & Kitchen, Home & Utilities, Transport & Travel, Education & Growth, Health & Wellness, Lifestyle & Leisure, Other, and Debt & Liabilities.
+- **Collapsible expanders**: Each group is a collapsible section showing group subtotal in the header (monthly + annual). Expands automatically if budget > 0.
+- **Colour-coded accent bars**: Each group has a unique colour stripe for visual distinction.
+- **Sub-categories inside groups**: Related categories (e.g., Groceries, Vegetables & Fruits, Milk & Dairy, Dining) are now visually nested under their parent group.
+- **No database changes**: Grouping is display-only. The flat `EXPENSE_CATEGORIES` list and all DB schemas remain unchanged.
+- **New config exports**: `CATEGORY_GROUPS` and `GROUP_COLOURS` added to `config.py` for reuse across the app.
+
 ## v1.9.1 (2026-09-12)
 ### Added — Multi-File Upload in Expense Statement Parser
 - **Batch upload**: Users can now select and upload multiple files at once (PDFs, Excel, CSV, and images all in one batch).
