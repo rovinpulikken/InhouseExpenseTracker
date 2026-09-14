@@ -3146,7 +3146,57 @@ else:
                                 _parsed_cg = _sum_totals(_parsed_cg)
                                 if upsert_capital_gains(_user_key, _fam_id, _fy, _parsed_cg):
                                     _saved_cg = _parsed_cg
-                                    st.success("✅ Capital gains saved."); st.rerun()
+                                    st.success("✅ Capital gains saved.")
+                                    st.rerun()
+                            
+                            _ep = _parsed_cg.get("extracted_passive", {})
+                            if any(v > 0 for v in _ep.values()):
+                                st.markdown("---")
+                                st.subheader("📄 Other Income Found in AIS")
+                                st.info("We extracted the following additional income streams from your AIS PDF.")
+                                
+                                # 1. Passive Income
+                                _pi_found = []
+                                if _ep.get("dividend", 0) > 0:
+                                    _pi_found.append({"source": "Dividend (AIS)", "annual_amount": _ep["dividend"], "taxability": "Taxable (Slab)"})
+                                if _ep.get("interest", 0) > 0:
+                                    _pi_found.append({"source": "Interest (AIS)", "annual_amount": _ep["interest"], "taxability": "Taxable (Slab)"})
+                                if _ep.get("rent", 0) > 0:
+                                    _pi_found.append({"source": "Rental Income (AIS)", "annual_amount": _ep["rent"], "taxability": "Taxable (Slab)"})
+                                
+                                if _pi_found:
+                                    st.markdown("**Passive Income**")
+                                    st.dataframe(pd.DataFrame(_pi_found), use_container_width=True, hide_index=True)
+                                    if st.button("✨ Accept & Auto-fill Passive Income", key="autofill_pi"):
+                                        if "_passive_entries" not in st.session_state:
+                                            st.session_state["_passive_entries"] = []
+                                        st.session_state["_passive_entries"].extend(_pi_found)
+                                        st.success("Added to passive income streams!")
+                                        st.rerun()
+                                        
+                                # 2. Salary Cross-check
+                                _ext_sal = _ep.get("salary", 0)
+                                if _ext_sal > 0:
+                                    st.markdown("**Salary Cross-check**")
+                                    st.write(f"AIS Salary: **{format_inr(_ext_sal)}** | Profile Salary: **{format_inr(total_annual_income)}**")
+                                    _diff = _ext_sal - total_annual_income
+                                    if abs(_diff) > 1000:
+                                        st.warning(f"⚠️ Discrepancy detected! Your profile is short by {format_inr(_diff)}.")
+                                        if _diff > 0:
+                                            if st.button("➕ Append Missing Salary to Profile", key="autofill_sal"):
+                                                # Append missing salary to database
+                                                from database import add_income_source
+                                                add_income_source(
+                                                    username=_user_key,
+                                                    family_id=_fam_id,
+                                                    source_name="AIS Salary Adjustment",
+                                                    income_type="Salary",
+                                                    amount=_diff,
+                                                    frequency="Annual"
+                                                )
+                                                st.success("Appended missing salary to your profile!")
+                                                st.rerun()
+
                     with _cg_tabs[1]:
                         st.markdown("Enter manually (₹):")
                         with st.form("manual_cg_form"):

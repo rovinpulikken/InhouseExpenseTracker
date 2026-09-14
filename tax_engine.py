@@ -1300,24 +1300,49 @@ def _parse_ais_pdf(raw_bytes: bytes, r: Dict[str, Any]) -> Dict[str, Any]:
     # ── Strategy 4: Line-by-line accumulator ─────────────────────────────
     # Scan each line: if it has an equity/MF keyword AND a currency amount,
     # accumulate into the right bucket.
-    _NUM_RE   = re.compile(r"[\u20b9Rs\s]*([0-9]{1,3}(?:,[0-9]{2,3})*(?:\.[0-9]{1,2})?)")
-    _SKIP_KW  = {"purchase", "tds", "tax deducted", "interest", "salary",
-                 "dividend", "rent", "house property", "cash deposit",
+    _NUM_RE   = re.compile(r"[\u20b9Rs\s]*([0-9]+(?:,[0-9]{2,3})*(?:\.[0-9]{1,2})?)")
+    
+    # NEW: Passive income extraction (Salary, Dividend, Rent, Interest)
+    r["extracted_passive"] = {"salary": 0.0, "dividend": 0.0, "rent": 0.0, "interest": 0.0}
+    _PASSIVE_PATTERNS = [
+        (r"\bTDS-192\b", "salary"),
+        (r"\bTDS-194\b", "dividend"),
+        (r"\bSFT-014\b", "dividend"),
+        (r"\bTDS-194I[a-z()]*\b", "rent"),
+        (r"\bTDS-194A\b", "interest"),
+        (r"\bSFT-015\b", "interest"),
+        (r"\bSFT-016\b", "interest")
+    ]
+    
+    _SKIP_KW  = {"purchase", "tds", "tax deducted", "cash deposit",
                  "credit card", "foreign", "banking"}
-    if not found_any:
-        for line in lines:
-            ll = line.lower().strip()
-            if not ll or any(k in ll for k in _SKIP_KW):
-                continue
-            nums = _NUM_RE.findall(line)
-            if not nums:
-                continue
-            try:
-                val = max(float(n.replace(",", "")) for n in nums if n.replace(",", "").replace(".", "").isdigit())
-            except ValueError:
-                continue
-            if val < 100:       # skip line numbers / small values
-                continue
+                 
+    for line in lines:
+        ll = line.lower().strip()
+        if not ll or any(k in ll for k in _SKIP_KW):
+            continue
+            
+        nums = _NUM_RE.findall(line)
+        if not nums:
+            continue
+        try:
+            val = max(float(n.replace(",", "")) for n in nums if n.replace(",", "").replace(".", "").isdigit())
+        except ValueError:
+            continue
+        if val < 100:       # skip line numbers / small values
+            continue
+            
+        # Passive income extraction check (case insensitive against original line)
+        is_passive = False
+        for pat, k in _PASSIVE_PATTERNS:
+            if re.search(pat, line, re.IGNORECASE):
+                r["extracted_passive"][k] += val
+                is_passive = True
+                
+        if is_passive:
+            continue
+
+        if not found_any:
             is_mf   = any(k in ll for k in ("mutual fund", "mf unit", "folio", "nav"))
             is_prop = any(k in ll for k in ("property", "land", "house", "building"))
             is_eq   = any(k in ll for k in ("securit", "share", "equity", "sft-017", "sft 017"))

@@ -2,6 +2,10 @@
 
 ## v1.11.0 (2026-09-14)
 ### Added & Fixed
+- **AIS PDF Passive Income Extraction**: `_parse_ais_pdf` now extracts Salary (TDS-192), Dividend, Rent, and Interest from the AIS PDF instead of just Capital Gains.
+- **Interactive AIS Auto-Fill**: After uploading an AIS PDF, users are presented with a grid of extracted passive income streams and a button to instantly inject them into the tax computation.
+- **Salary Cross-Check UI**: Analyzes the salary extracted from the AIS PDF and compares it to the user's declared profile salary. Automatically calculates the discrepancy and provides a "➕ Append Missing Salary to Profile" button to add an adjustment row directly to the database.
+- **Regex Fix for Capital Gains**: Fixed a bug where numbers with exactly four digits and no commas (like `1610`) were only partially extracted, leading to incorrect capital gains totals.
 - **Tailored Investment Course**: Overhauled the Library & Courses tab into an interactive module where users specify knowledge level, location (Local/International), and specific topics of interest (Mutual Funds, Stocks, Real estate, etc.) to generate a bespoke curriculum with AI.
 - **Income Breakdown UI**: Added a "View Income Breakdown" expander in Tax Planner to clarify where "Gross Slab Income" is derived from, making it transparent when Capital Gains (STCG) are being added to the slab income.
 - **Other LTCG Tax Fix**: Fixed a bug where 'Other LTCG' was erroneously added to slab income. It is now correctly taxed at a flat 12.5%.
