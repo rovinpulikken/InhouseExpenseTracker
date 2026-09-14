@@ -2943,26 +2943,94 @@ else:
 
             st.markdown("---")
             st.markdown("<div style='font-weight:700; color:#f1f5f9; margin-bottom:10px;'>➕ Add New Income Source</div>", unsafe_allow_html=True)
-            with st.form("add_income_form"):
-                ai1, ai2, ai3 = st.columns(3)
-                with ai1:
-                    i_name = st.text_input("Source Name", placeholder="e.g. Primary Salary")
-                    i_type = st.selectbox("Income Type", INCOME_TYPES)
-                with ai2:
-                    i_amount = st.number_input("Amount (₹)", min_value=0.0, step=1000.0)
-                    i_freq   = st.selectbox("Frequency", FREQUENCY_OPTIONS)
-                with ai3:
-                    i_from  = st.date_input("Effective From", value=datetime.date.today())
-                    i_notes = st.text_input("Notes (Optional)")
-                if st.form_submit_button("💾 Add Income Source", type="primary"):
-                    if i_name and i_amount > 0:
-                        new_inc_id = add_income_source(username=current_user["username"], family_id=user_family_id,
-                                                        source_name=i_name, income_type=i_type, amount=i_amount,
-                                                        frequency=i_freq, effective_from=str(i_from), notes=i_notes)
-                        if new_inc_id:
-                            st.success(f"✅ Added: {i_name}"); st.rerun()
+            
+            tab_manual, tab_auto = st.tabs(["✍️ Manual Entry", "📄 Auto-Extract (Form 16 / 26AS / AIS)"])
+            
+            with tab_manual:
+                with st.form("add_income_form"):
+                    ai1, ai2, ai3 = st.columns(3)
+                    with ai1:
+                        i_name = st.text_input("Source Name", placeholder="e.g. Primary Salary")
+                        i_type = st.selectbox("Income Type", INCOME_TYPES)
+                    with ai2:
+                        i_amount = st.number_input("Amount (₹)", min_value=0.0, step=1000.0)
+                        i_freq   = st.selectbox("Frequency", FREQUENCY_OPTIONS)
+                    with ai3:
+                        i_from  = st.date_input("Effective From", value=datetime.date.today())
+                        i_notes = st.text_input("Notes (Optional)")
+                    if st.form_submit_button("💾 Add Income Source", type="primary"):
+                        if i_name and i_amount > 0:
+                            new_inc_id = add_income_source(username=current_user["username"], family_id=user_family_id,
+                                                            source_name=i_name, income_type=i_type, amount=i_amount,
+                                                            frequency=i_freq, effective_from=str(i_from), notes=i_notes)
+                            if new_inc_id:
+                                st.success(f"✅ Added: {i_name}"); st.rerun()
+                        else:
+                            st.error("Please provide name and amount.")
+            
+            with tab_auto:
+                st.write("Upload your tax documents to automatically extract salary and passive income.")
+                uploaded_docs = st.file_uploader("Upload Form 16, Form 26AS, or AIS", type=["pdf"], accept_multiple_files=True, key="income_docs_uploader")
+                if uploaded_docs:
+                    from tax_engine import parse_income_documents
+                    
+                    if "extracted_incomes" not in st.session_state or st.session_state.get("last_uploaded_docs") != [f.name for f in uploaded_docs]:
+                        all_extracted = []
+                        with st.spinner("Parsing documents..."):
+                            for doc in uploaded_docs:
+                                res = parse_income_documents(doc.read(), doc.name)
+                                all_extracted.extend(res)
+                        
+                        # Add a Selected column for the dataframe
+                        for idx, item in enumerate(all_extracted):
+                            item["Selected"] = True
+                            item["Frequency"] = "Annual" # By default, tax docs show annual amounts
+                        
+                        st.session_state["extracted_incomes"] = all_extracted
+                        st.session_state["last_uploaded_docs"] = [f.name for f in uploaded_docs]
+                    
+                    if st.session_state["extracted_incomes"]:
+                        st.info("💡 **Review the extracted income below.** Uncheck any duplicates before saving.")
+                        
+                        df_extracted = pd.DataFrame(st.session_state["extracted_incomes"])
+                        
+                        edited_df = st.data_editor(
+                            df_extracted,
+                            column_config={
+                                "Selected": st.column_config.CheckboxColumn("Include?", default=True),
+                                "Source": st.column_config.TextColumn("File Name", disabled=True),
+                                "Type": st.column_config.SelectboxColumn("Type", options=INCOME_TYPES, required=True),
+                                "Description": st.column_config.TextColumn("Source Name", required=True),
+                                "Amount": st.column_config.NumberColumn("Amount (₹)", format="₹%d", min_value=0, required=True),
+                                "Frequency": st.column_config.SelectboxColumn("Frequency", options=FREQUENCY_OPTIONS, required=True),
+                            },
+                            disabled=["Source"],
+                            hide_index=True,
+                            use_container_width=True,
+                            key="income_auto_editor"
+                        )
+                        
+                        if st.button("💾 Save Selected Incomes", type="primary"):
+                            selected_rows = edited_df[edited_df["Selected"] == True]
+                            if selected_rows.empty:
+                                st.warning("No rows selected to save.")
+                            else:
+                                for _, row in selected_rows.iterrows():
+                                    add_income_source(
+                                        username=current_user["username"], 
+                                        family_id=user_family_id,
+                                        source_name=row["Description"], 
+                                        income_type=row["Type"], 
+                                        amount=row["Amount"],
+                                        frequency=row["Frequency"],
+                                        effective_from=str(datetime.date.today())
+                                    )
+                                st.session_state["extracted_incomes"] = [] # Clear out after saving
+                                st.session_state["last_uploaded_docs"] = []
+                                st.success(f"✅ Successfully added {len(selected_rows)} income sources!")
+                                st.rerun()
                     else:
-                        st.error("Please provide name and amount.")
+                        st.warning("No recognizable salary or passive income found in the uploaded documents.")
 
             # ── Tax Planner Sections ─────────────────────────────────────────────
             st.markdown("---")

@@ -2,6 +2,7 @@
 
 ## v1.11.0 (2026-09-14)
 ### Added & Fixed
+- **Multi-Document Income Auto-Extraction**: Added a new tab under "Add New Income Source" allowing users to upload multiple tax documents (Form 16, Form 26AS, AIS). The system automatically parses these files, extracts salary and other incomes, and presents them in a review grid where the user can accept, edit, or reject the extracted entries.
 - **AIS PDF Passive Income Extraction**: `_parse_ais_pdf` now extracts Salary (TDS-192), Dividend, Rent, and Interest from the AIS PDF instead of just Capital Gains.
 - **Interactive AIS Auto-Fill**: After uploading an AIS PDF, users are presented with a grid of extracted passive income streams and a button to instantly inject them into the tax computation.
 - **Salary Cross-Check UI**: Analyzes the salary extracted from the AIS PDF and compares it to the user's declared profile salary. Automatically calculates the discrepancy and provides a "➕ Append Missing Salary to Profile" button to add an adjustment row directly to the database.

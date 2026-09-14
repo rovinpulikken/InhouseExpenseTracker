@@ -2158,3 +2158,72 @@ def compute_full_tax(
         "frsb_rate":             FRSB_RATE,
         "frsb_rate_effective":   FRSB_RATE_EFFECTIVE,
     }
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# 4. MULTI-DOCUMENT INCOME PARSER
+# ─────────────────────────────────────────────────────────────────────────────
+def parse_income_documents(raw_bytes: bytes, filename: str) -> List[Dict[str, Any]]:
+    """
+    Parses an uploaded tax document (Form 16, Form 26AS, AIS) and extracts income sources.
+    Returns a list of dictionaries: {"Source": filename, "Type": "Salary/Dividend/etc", "Description": str, "Amount": float}
+    """
+    results = []
+    text = _extract_pdf_text(raw_bytes)
+    if not text:
+        return results
+
+    text_lower = text.lower()
+
+    # --- Form 16 ---
+    if "form no. 16" in text_lower or "form 16" in text_lower or "certificate under section 203" in text_lower:
+        employer_match = re.search(r"Name and address of the Employer(?:.*?)(?:\n|:)\s*([A-Za-z0-9\s,\.]+?)(?=\s*Name and address|\s*PAN|\n)", text, re.IGNORECASE)
+        employer = employer_match.group(1).strip() if employer_match else "Extracted Salary (Form 16)"
+        
+        salary_match = re.search(r"(?:Gross\s+Salary|Salary\s+as\s+per\s+provisions\s+contained\s+in\s+sec(?:tion)?\.?\s*17\(1\))[\s\.]*(?:Rs\.?)?\s*([\d,]+\.?\d*)", text, re.IGNORECASE)
+        if salary_match:
+            try:
+                amt = float(salary_match.group(1).replace(",", ""))
+                if amt > 0:
+                    results.append({"Source": filename, "Type": "Salary", "Description": employer, "Amount": amt})
+            except ValueError:
+                pass
+                
+    # --- Form 26AS ---
+    elif "form 26as" in text_lower or "annual tax statement" in text_lower:
+        lines = text.split('\n')
+        for line in lines:
+            if "192" in line and "192A" not in line:
+                m = re.search(r"([\d,]+\.\d{2})", line)
+                if m:
+                    try:
+                        amt = float(m.group(1).replace(",", ""))
+                        if amt > 0:
+                            results.append({"Source": filename, "Type": "Salary", "Description": "Extracted Salary (26AS)", "Amount": amt})
+                    except ValueError:
+                        pass
+            elif "194" in line:
+                m = re.search(r"([\d,]+\.\d{2})", line)
+                if m:
+                    try:
+                        amt = float(m.group(1).replace(",", ""))
+                        if amt > 0:
+                            results.append({"Source": filename, "Type": "Other", "Description": "Extracted Passive (26AS Sec 194)", "Amount": amt})
+                    except ValueError:
+                        pass
+
+    # --- AIS ---
+    elif "annual information statement" in text_lower or "ais" in text_lower:
+        # Re-use existing AIS parser for amounts
+        ais_res = _parse_ais_pdf(raw_bytes, {"parse_errors": [], "extracted_passive": {}})
+        ep = ais_res.get("extracted_passive", {})
+        if ep.get("salary", 0) > 0:
+            results.append({"Source": filename, "Type": "Salary", "Description": "Extracted Salary (AIS)", "Amount": ep["salary"]})
+        if ep.get("dividend", 0) > 0:
+            results.append({"Source": filename, "Type": "Other", "Description": "Extracted Dividend (AIS)", "Amount": ep["dividend"]})
+        if ep.get("rent", 0) > 0:
+            results.append({"Source": filename, "Type": "Other", "Description": "Extracted Rent (AIS)", "Amount": ep["rent"]})
+        if ep.get("interest", 0) > 0:
+            results.append({"Source": filename, "Type": "Other", "Description": "Extracted Interest (AIS)", "Amount": ep["interest"]})
+
+    return results
