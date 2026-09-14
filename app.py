@@ -3193,7 +3193,9 @@ else:
 
                 if st.button("🧮 Compute Full Tax Liability", type="primary", use_container_width=True):
                     with st.spinner("Computing..."):
-                        _ded_obj = compute_deductions(_saved_ded, tax_regime, _user_age)
+                        # Ensure age is passed correctly via the deductions dict since it's used inside the engine
+                        _saved_ded["age"] = _user_age
+                        _ded_obj = compute_deductions(_saved_ded, total_annual_income, tax_regime)
                         _cg_tax_obj = compute_cg_tax(_saved_cg)
                         _tax_result = compute_full_tax(
                             gross_income=total_annual_income,
