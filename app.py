@@ -2871,17 +2871,20 @@ else:
             total_annual_income  = total_monthly_income * 12.0
 
             if not income_df.empty:
-                ki1, ki2, ki3 = st.columns(3)
-                ki1.metric("📅 Monthly Income", format_inr(total_monthly_income))
-                ki2.metric("📆 Annual Income",  format_inr(total_annual_income))
-                ki3.metric("🔢 Sources", str(len(income_df)))
-                if len(income_df) > 1:
-                    with st.expander("📊 View Income Analytics", expanded=False):
-                        fig_inc = px.bar(income_df.sort_values("monthly_equivalent", ascending=True),
-                                         x="monthly_equivalent", y="source_name", orientation="h", color="income_type",
-                                         labels={"monthly_equivalent": "Monthly (₹)", "source_name": ""},
-                                         template="plotly_dark", height=max(180, len(income_df) * 40))
-                        fig_inc.update_layout(paper_bgcolor="#1e293b", plot_bgcolor="#1e293b", margin=dict(l=10,r=10,t=10,b=10))
+                col_kpi, col_chart = st.columns([1, 1.2])
+                with col_kpi:
+                    ki1, ki2 = st.columns(2)
+                    ki1.metric("📅 Monthly Income", format_inr(total_monthly_income))
+                    ki2.metric("📆 Annual Income",  format_inr(total_annual_income))
+                    st.metric("🔢 Total Sources", str(len(income_df)))
+                
+                with col_chart:
+                    if len(income_df) > 1:
+                        fig_inc = px.pie(income_df, values="monthly_equivalent", names="income_type", 
+                                         hole=0.45, template="plotly_dark", height=220)
+                        fig_inc.update_layout(paper_bgcolor="rgba(0,0,0,0)", plot_bgcolor="rgba(0,0,0,0)", 
+                                              margin=dict(l=10,r=10,t=10,b=10), showlegend=False)
+                        fig_inc.update_traces(textposition='inside', textinfo='percent+label')
                         st.plotly_chart(fig_inc, use_container_width=True)
 
             if not income_df.empty:
@@ -2891,7 +2894,7 @@ else:
                 edit_df["Delete?"] = False
                 
                 # We want to display these specific columns to the user for editing
-                display_cols = ["source_name", "income_type", "amount", "frequency", "monthly_equivalent", "Delete?"]
+                display_cols = ["source_name", "income_type", "amount", "frequency", "monthly_equivalent", "notes", "Delete?"]
                 
                 edited_income_df = st.data_editor(
                     edit_df[display_cols],
@@ -2901,6 +2904,7 @@ else:
                         "amount": st.column_config.NumberColumn("Amount (₹)", min_value=0, format="₹%d", required=True),
                         "frequency": st.column_config.SelectboxColumn("Frequency", options=FREQUENCY_OPTIONS, required=True),
                         "monthly_equivalent": st.column_config.NumberColumn("Monthly Eq. (₹)", disabled=True, format="₹%d"),
+                        "notes": st.column_config.TextColumn("Notes"),
                         "Delete?": st.column_config.CheckboxColumn("🗑️ Delete", default=False)
                     },
                     use_container_width=True,
@@ -2924,14 +2928,15 @@ else:
                             if (row["source_name"] != original_row["source_name"] or
                                 row["income_type"] != original_row["income_type"] or
                                 row["amount"] != original_row["amount"] or
-                                row["frequency"] != original_row["frequency"]):
+                                row["frequency"] != original_row["frequency"] or
+                                str(row["notes"]) != str(original_row.get("notes", ""))):
                                 update_income_source(
                                     inc_id, 
                                     source_name=row["source_name"], 
                                     income_type=row["income_type"], 
                                     amount=row["amount"], 
                                     frequency=row["frequency"], 
-                                    notes=original_row.get("notes", "")
+                                    notes=str(row["notes"])
                                 )
                                 changes_made = True
                     
