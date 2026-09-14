@@ -414,7 +414,7 @@ def _sum_totals(r: Dict[str, Any]) -> Dict[str, Any]:
     r["total_stcg"] = round(r["equity_stcg"] + r["equity_mf_stcg"] +
                             r["debt_mf_stcg"] + r["property_stcg"] + r["other_stcg"], 2)
     r["slab_income_addition"] = round(r["debt_mf_ltcg"] + r["debt_mf_stcg"] +
-                                      r["property_stcg"] + r["other_ltcg"] + r["other_stcg"], 2)
+                                      r["property_stcg"] + r["other_stcg"], 2)
     return r
 
 
@@ -1370,10 +1370,11 @@ def _parse_ais_pdf(raw_bytes: bytes, r: Dict[str, Any]) -> Dict[str, Any]:
             "For capital gains, use: Zerodha Console P&L PDF, ICICI Capital Gains PDF, "
             "or CAMS Consolidated Account Statement PDF."
         )
-        # ── Diagnostic: expose the raw extracted text so the UI can show it ──
-        # This helps identify what the PDF text actually looks like so regexes
-        # can be tuned to match it.
-        r["debug_text"] = text[:4000]   # first 4000 chars is enough to diagnose
+        
+    # ── Diagnostic: expose the raw extracted text so the UI can show it ──
+    # This helps identify what the PDF text actually looks like so regexes
+    # can be tuned to match it.
+    r["debug_text"] = text[:4000]   # first 4000 chars is enough to diagnose
     return _sum_totals(r)
 
 
@@ -1502,8 +1503,11 @@ def compute_cg_tax(cg_data: Dict[str, Any]) -> Dict[str, Any]:
     prop_ltcg = float(cg_data.get("property_ltcg", 0))
     tax_prop_ltcg = round(prop_ltcg * LTCG_PROPERTY_RATE * 1.04, 2)
 
+    other_ltcg = float(cg_data.get("other_ltcg", 0))
+    tax_other_ltcg = round(other_ltcg * 0.125 * 1.04, 2) # 12.5% rate under new rules
+
     slab_addition = float(cg_data.get("slab_income_addition", 0))
-    total_cg_tax = round(tax_eq_ltcg + tax_eq_stcg + tax_prop_ltcg, 2)
+    total_cg_tax = round(tax_eq_ltcg + tax_eq_stcg + tax_prop_ltcg + tax_other_ltcg, 2)
 
     return {
         "total_equity_ltcg":   round(total_eq_ltcg, 2),
@@ -1514,6 +1518,8 @@ def compute_cg_tax(cg_data: Dict[str, Any]) -> Dict[str, Any]:
         "tax_equity_stcg":     tax_eq_stcg,
         "property_ltcg":       prop_ltcg,
         "tax_property_ltcg":   tax_prop_ltcg,
+        "other_ltcg":          other_ltcg,
+        "tax_other_ltcg":      tax_other_ltcg,
         "slab_income_addition": slab_addition,
         "total_cg_tax":        total_cg_tax,
         "notes": {

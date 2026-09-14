@@ -90,8 +90,8 @@ def render_financial_academy_tab(api_key=""):
                 st.rerun()
                 
     with tabs[2]:
-        st.subheader("Library & Further Studies")
-        st.markdown("Expand your knowledge with curated resources based on your level.")
+        st.subheader("Tailored Investment Course & Library")
+        st.markdown("Expand your knowledge with a personalized course designed specifically for you.")
         
         # Build user context
         user_context = {}
@@ -116,22 +116,69 @@ def render_financial_academy_tab(api_key=""):
             except Exception as e:
                 user_context["error"] = "Could not fetch detailed financial profile."
                 
-        if st.button("✨ Generate Personalized Learning Path", type="primary", use_container_width=True):
-            with st.spinner("Analyzing your profile and finding the best resources..."):
-                from academy_assessment import generate_ai_learning_path
-                learning_path = generate_ai_learning_path(user_context, api_key)
-                st.session_state.academy_learning_path = learning_path
+        # Interactive Questionnaire
+        with st.form("course_preferences_form"):
+            st.markdown("### 🛠 Customize Your Course")
+            col1, col2, col3 = st.columns(3)
+            with col1:
+                knowledge_level = st.selectbox(
+                    "Your Knowledge Level", 
+                    ["Beginner", "Intermediate", "Advanced"],
+                    index=0
+                )
+            with col2:
+                location_pref = st.selectbox(
+                    "Investment Location",
+                    ["Local / Domestic", "International", "Both"],
+                    index=0
+                )
+            with col3:
+                interests = st.multiselect(
+                    "Topics of Interest",
+                    ["Traditional (FDs, PPF)", "Mutual Funds (Equity, Debt, Hybrid)", "Direct Stocks", "Alternate Investments (P2P, REITs, Gold)", "Real Estate / Property"],
+                    default=["Mutual Funds (Equity, Debt, Hybrid)"]
+                )
+                
+            generate_course = st.form_submit_button("✨ Generate Tailored Course")
+            
+        if generate_course:
+            if not interests:
+                st.error("Please select at least one topic of interest.")
+            else:
+                user_context["knowledge_level"] = knowledge_level
+                user_context["location_preference"] = location_pref
+                user_context["investment_interests"] = interests
+                
+                with st.spinner("Analyzing your profile and building your personalized course..."):
+                    from academy_assessment import generate_ai_learning_path
+                    learning_path_json = generate_ai_learning_path(user_context, api_key)
+                    st.session_state.academy_learning_path = learning_path_json
                 
         if "academy_learning_path" in st.session_state:
-            st.markdown("### 🎯 Your Personalized AI Learning Path")
-            st.markdown(st.session_state.academy_learning_path)
-            st.markdown("---")
+            course_data = st.session_state.academy_learning_path
+            
+            if "error" in course_data:
+                st.error(course_data["error"])
+            else:
+                st.markdown(f"## 🎯 {course_data.get('course_title', 'Your Personalized Course')}")
+                st.info(course_data.get('summary', ''))
+                
+                st.markdown("### 📚 Course Modules")
+                for idx, mod in enumerate(course_data.get('modules', [])):
+                    with st.expander(f"Module {idx+1}: {mod.get('module_name', 'Topic')}", expanded=(idx==0)):
+                        st.write(mod.get('description', ''))
+                        st.markdown("**Resources:**")
+                        for res in mod.get('resources', []):
+                            icon = "📺" if res.get("type", "").lower() == "video" else "📖"
+                            st.markdown(f"- {icon} [{res.get('title', 'Link')}]({res.get('url', '#')})")
+                
+                st.markdown("---")
             
         with st.expander("General Curated Resources", expanded=("academy_learning_path" not in st.session_state)):
             st.markdown("### YouTube Playlists")
             st.markdown("- [Zerodha Varsity: Stock Market Basics](https://zerodha.com/varsity/)")
-            st.markdown("- [Personal Finance for Beginners](https://www.youtube.com)")
+            st.markdown("- [Personal Finance for Beginners](https://www.youtube.com/results?search_query=personal+finance+for+beginners)")
             
-            st.markdown("### Udemy & Coursera")
-            st.markdown("- [Financial Planning Essentials (Coursera)](https://www.coursera.org)")
-            st.markdown("- [Investing 101 (Udemy)](https://www.udemy.com)")
+            st.markdown("### Educational Portals")
+            st.markdown("- [Zerodha Varsity](https://zerodha.com/varsity/)")
+            st.markdown("- [Investopedia](https://www.investopedia.com)")

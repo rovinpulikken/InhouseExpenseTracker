@@ -86,37 +86,54 @@ def generate_next_assessment_question(chat_history: List[Dict[str, str]], api_ke
     
     return {"error": "Failed to generate response"}
 
-def generate_ai_learning_path(user_context: Dict[str, Any], api_key: str = "") -> str:
+def generate_ai_learning_path(user_context: Dict[str, Any], api_key: str = "") -> Dict[str, Any]:
     """
-    Generates a personalized markdown syllabus with YouTube search links and articles
-    based on the user's financial context (income, debt, investments).
+    Generates a personalized structured syllabus based on the user's financial context, 
+    location preference, investment interests, and knowledge level.
     """
     client = get_gemini_client(api_key)
     if not client:
-        return "⚠️ Google Gemini API Key is missing. Please configure it in Settings to generate a personalized learning path."
+        return {"error": "⚠️ Google Gemini API Key is missing. Please configure it in Settings to generate a personalized learning path."}
         
     system_prompt = """
-    You are an expert Financial Educator. Create a personalized learning path (videos, courses, and articles) 
-    based on the user's financial profile.
+    You are an expert Financial Educator building a tailor-made, structured investment course for a user.
+    
+    You will receive the user's profile, including:
+    - Financial data (Income, Debt, Current Investments)
+    - Knowledge Level (Beginner, Intermediate, Advanced)
+    - Location Preference (Local/Domestic, International, or Both)
+    - Specific Investment Interests (e.g., Traditional, Mutual Funds, Stocks, Alternate, Property)
     
     IMPORTANT RULES FOR LINKS:
     To avoid broken video links, do NOT generate direct YouTube video IDs.
     Instead, generate YouTube search queries like this:
-    [Video Title](https://www.youtube.com/results?search_query=your+search+keywords)
+    https://www.youtube.com/results?search_query=your+search+keywords
     
-    For articles, you may link to well-known domains like Investopedia or Zerodha Varsity (e.g. https://zerodha.com/varsity/chapter/...).
+    For articles, you may link to well-known domains like Investopedia or Zerodha Varsity.
     
-    STRUCTURE:
-    Format your response in Markdown:
-    ### 📺 Recommended Video Topics
-    - [Topic 1](https://www.youtube.com/results?search_query=...) - Brief reason why.
-    - [Topic 2](https://www.youtube.com/results?search_query=...) - Brief reason why.
+    YOUR OUTPUT MUST BE EXACTLY VALID JSON. DO NOT WRAP IN MARKDOWN BLOCKS LIKE ```json.
     
-    ### 📖 Recommended Articles & Courses
-    - [Article 1](URL) - Brief reason why.
-    - [Course 1](URL) - Brief reason why.
+    Structure your JSON response as follows:
+    {
+        "course_title": "A catchy title for the personalized course",
+        "summary": "A 2-3 paragraph summary of what they should focus on, taking into account their knowledge level, debt (if any), and chosen location preference.",
+        "modules": [
+            {
+                "module_name": "Name of the topic (e.g., 'Mastering Mutual Funds' or 'Real Estate Fundamentals')",
+                "description": "Brief explanation of what this module covers and why it fits their profile.",
+                "resources": [
+                    {
+                        "title": "Resource Title (e.g., 'Index Funds vs Active Funds')",
+                        "url": "https://...",
+                        "type": "Video" or "Article" or "Course"
+                    }
+                ]
+            }
+        ]
+    }
     
-    Keep it encouraging, highly specific to their data (e.g. if they have high debt, recommend debt payoff videos), and concise.
+    Create one module for each of the user's specified investment interests. Also, create a foundational module if they have high debt or are beginners.
+    Ensure suggestions align with their location preference (e.g., if 'Local (India)', suggest domestic instruments; if 'International', suggest US/Global stocks/funds).
     """
     
     prompt = system_prompt + "\n\nUser Context:\n" + json.dumps(user_context, indent=2)
@@ -139,8 +156,12 @@ def generate_ai_learning_path(user_context: Dict[str, Any], api_key: str = "") -
                 raise api_err
                 
         if response and response.text:
-            return response.text
+            cleaned = response.text.replace("```json", "").replace("```", "").strip()
+            try:
+                return json.loads(cleaned)
+            except json.JSONDecodeError:
+                return {"error": "⚠️ AI generated malformed JSON. Please try again."}
     except Exception as e:
-        return f"⚠️ Failed to generate learning path (Gemini API Error after {max_retries} attempts): {str(e)}"
+        return {"error": f"⚠️ Failed to generate learning path (Gemini API Error after {max_retries} attempts): {str(e)}"}
     
-    return "⚠️ Failed to generate response from AI."
+    return {"error": "⚠️ Failed to generate response from AI."}

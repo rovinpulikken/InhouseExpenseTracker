@@ -3217,6 +3217,21 @@ else:
                               delta=f"Balance Due: {format_inr(_tax_result.get('balance_due', 0))}",
                               delta_color="inverse" if _tax_result.get("balance_due", 0) > 0 else "normal")
 
+                    with st.expander("🔍 View Income Breakdown"):
+                        st.markdown("**1. Income Sources**")
+                        for ib in _tax_result.get("income_breakdown", []):
+                            st.markdown(f"- {ib.get('source', 'Unknown')}: {format_inr(ib.get('annual', 0))}")
+                        st.markdown("**2. Passive Income (Taxable)**")
+                        for pb in _tax_result.get("passive_breakdown", []):
+                            if "EXEMPT" not in pb.get("taxability", "").upper():
+                                st.markdown(f"- {pb.get('source', 'Unknown')}: {format_inr(pb.get('annual', 0))}")
+                        st.markdown("**3. Capital Gains Slab Addition**")
+                        cg_add = _tax_result.get('cg_slab_addition', 0)
+                        if cg_add > 0:
+                            st.markdown(f"- Short-Term / Debt MFs added to slab: {format_inr(cg_add)}")
+                        else:
+                            st.markdown("- None")
+
                     if _tax_result.get("advance_tax_schedule"):
                         st.markdown("#### 📅 Advance Tax Schedule")
                         adv_df = pd.DataFrame(_tax_result["advance_tax_schedule"])

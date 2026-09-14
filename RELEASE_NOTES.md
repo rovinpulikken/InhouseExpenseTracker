@@ -1,5 +1,12 @@
 # Release Notes
 
+## v1.11.0 (2026-09-14)
+### Added & Fixed
+- **Tailored Investment Course**: Overhauled the Library & Courses tab into an interactive module where users specify knowledge level, location (Local/International), and specific topics of interest (Mutual Funds, Stocks, Real estate, etc.) to generate a bespoke curriculum with AI.
+- **Income Breakdown UI**: Added a "View Income Breakdown" expander in Tax Planner to clarify where "Gross Slab Income" is derived from, making it transparent when Capital Gains (STCG) are being added to the slab income.
+- **Other LTCG Tax Fix**: Fixed a bug where 'Other LTCG' was erroneously added to slab income. It is now correctly taxed at a flat 12.5%.
+- **AIS PDF Debug Mode**: Modified `_parse_ais_pdf` to unconditionally expose raw parsed text to the UI to aid in debugging layout extraction issues.
+
 ## v1.10.0 (2026-09-14)
 ### Added — Grouped Category Budget Adjuster
 - **8 logical category groups** in Budget & Goals: Food & Kitchen, Home & Utilities, Transport & Travel, Education & Growth, Health & Wellness, Lifestyle & Leisure, Other, and Debt & Liabilities.
