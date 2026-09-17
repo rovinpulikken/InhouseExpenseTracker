@@ -1935,10 +1935,11 @@ else:
         """, unsafe_allow_html=True)
 
         # ── 5 flat tabs ──────────────────────────────────────────────────────────
-        wp_tab_nw, wp_tab_budget, wp_tab_invest, wp_tab_debt, wp_tab_tax = st.tabs([
+        wp_tab_nw, wp_tab_budget, wp_tab_invest, wp_tab_insights, wp_tab_debt, wp_tab_tax = st.tabs([
             "💰 Net Worth Overview",
             "🎯 Budget & Goals",
             "📈 Investments",
+            "🧠 Market Insights",
             "🏦 Debts & EMIs",
             "🧾 Tax Planner",
         ])
@@ -2720,7 +2721,60 @@ else:
                             st.markdown(f"- {item}")
 
         # ════════════════════════════════════════════════════════════════════════
-        # TAB 4 ─ DEBTS & EMIs
+        # TAB 4 ─ MARKET INSIGHTS
+        # ════════════════════════════════════════════════════════════════════════
+        with wp_tab_insights:
+            st.markdown("### 🧠 Market Insights & Segment Strategy")
+            st.caption("AI-driven purely advisorial insights based on historical trends and macro factors.")
+            
+            from investment_planner import fetch_benchmark_trends, generate_ai_market_insight
+            
+            @st.cache_data(ttl=3600, show_spinner=False)
+            def get_trends():
+                return fetch_benchmark_trends()
+                
+            with st.spinner("Fetching historical benchmark trends..."):
+                trends = get_trends()
+                
+            if trends:
+                st.markdown("#### 📊 Current Benchmark Trends (CAGR)")
+                cols = st.columns(len(trends))
+                for i, (name, cagr) in enumerate(trends.items()):
+                    with cols[i]:
+                        st.metric(name, f"{cagr['1Y']}% (1Y)", f"{cagr['5Y']}% (5Y)")
+            
+            st.markdown("---")
+            st.markdown("#### 🤖 AI Segment Advisor")
+            st.info("Get purely advisorial insights on optimal market segments based on your profile.")
+            
+            with st.form("segment_advisory_form"):
+                sc1, sc2, sc3 = st.columns(3)
+                with sc1:
+                    hz = st.selectbox("Investment Horizon", ["Short (1-3 yrs)", "Medium (3-7 yrs)", "Long (7+ yrs)"], index=1)
+                with sc2:
+                    gl = st.selectbox("Primary Goal", ["Wealth Creation", "Capital Preservation", "Regular Income"])
+                with sc3:
+                    mv = st.selectbox("Your Macro View", ["Bullish (Optimistic)", "Neutral", "Bearish (Pessimistic)"])
+                
+                submitted = st.form_submit_button("💡 Generate Strategy", use_container_width=True)
+                
+            if submitted:
+                with st.spinner("🤖 AI Strategist is analyzing..."):
+                    default_api_key = current_user.get("gemini_api_key") or os.environ.get("GEMINI_API_KEY", "") or st.secrets.get("GEMINI_API_KEY", "")
+                    insight = generate_ai_market_insight(hz, gl, mv, trends, default_api_key)
+                    
+                    st.success("Analysis Complete!")
+                    st.markdown(f"**Strategy Summary:** {insight.get('summary', '')}")
+                    
+                    st.markdown("##### Recommended Segments")
+                    for seg in insight.get("recommended_segments", []):
+                        with st.expander(f"{seg.get('segment_name')} - {seg.get('allocation_weight', '')}"):
+                            st.write(seg.get('rationale', ''))
+                            
+                    st.warning(f"**Risk Note:** {insight.get('risk_warning', '')}")
+
+        # ════════════════════════════════════════════════════════════════════════
+        # TAB 5 ─ DEBTS & EMIs
         # ════════════════════════════════════════════════════════════════════════
         with wp_tab_debt:
             st.caption("Track loans, outstanding principal, interest rates, and simulate payoff strategies.")
@@ -2841,7 +2895,7 @@ else:
                 st.info("🎉 No active debts — you are debt-free!")
 
         # ════════════════════════════════════════════════════════════════════════
-        # TAB 5 ─ TAX PLANNER  (promoted from 3 levels deep to top-level tab)
+        # TAB 6 ─ TAX PLANNER  (promoted from 3 levels deep to top-level tab)
         # ════════════════════════════════════════════════════════════════════════
         with wp_tab_tax:
             from investment_planner import ADVISORY_DISCLAIMER

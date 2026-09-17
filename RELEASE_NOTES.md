@@ -406,3 +406,9 @@
 - **Batch User Deletion**: Upgraded the 'Delete User Account' functionality in the Admin panel to support selecting and deleting multiple users at once, streamlining user management.
 - **Global Gemini API Key**: The application now seamlessly falls back to the super admin's Gemini API key across all GenAI features (Statement Parsing, Financial Academy, Portfolio Advisory) if a sub-user hasn't set their own key.
 - **Financial Academy - Sandbox Simulator**: Phase 2 of the Financial Academy is now live. Activating "Sandbox Mode" conditionally mocks database reading and writing logic globally, replacing your real financial data with a dummy profile. Users will see guided missions (e.g., "Create a budget") across the Dashboard, Budgeting, and Investment tabs to safely practice wealth building.
+
+### Added
+- **Market Insights & Segment Strategy**: Added a dedicated tab in the Wealth & Planning section. Features real-time historical CAGR trends for Nifty 50, Midcap 150, S&P 500, and Gold using . Also includes a new AI Segment Advisor powered by Gemini that provides purely advisorial asset allocation strategies based on time horizon, investment goal, and macro market view.
+
+### Added
+- **Market Insights & Segment Strategy**: Added a dedicated tab in the Wealth & Planning section. Features real-time historical CAGR trends for Nifty 50, Midcap 150, S&P 500, and Gold using yfinance. Also includes a new AI Segment Advisor powered by Gemini that provides purely advisorial asset allocation strategies based on time horizon, investment goal, and macro market view.

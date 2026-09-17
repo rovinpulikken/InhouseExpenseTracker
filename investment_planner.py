@@ -1220,3 +1220,102 @@ def compute_tax_liability(
                     {"opportunity": "NRI India Tax (if applicable)", "detail": "Indian-sourced income (rent, FDs, dividends) may still be taxable in India. Verify DTAA implications."},
                     {"opportunity": "Corporate Structure", "detail": "Consider UAE Free Zone entity to efficiently manage business income."}
                 ]}
+
+def fetch_benchmark_trends() -> Dict[str, Dict[str, float]]:
+    """
+    Fetches the 1-year and 5-year CAGR for major benchmarks using fetch_index_historical_cagr.
+    Returns a dictionary of benchmark names mapped to their 1y and 5y CAGRs (as percentages).
+    """
+    benchmarks = {
+        "Large Cap (Nifty 50)": "^NSEI",
+        "Mid Cap (Nifty Midcap 150)": "^CRSMID",
+        "US Market (S&P 500)": "^GSPC",
+        "Gold (INR)": "GC=F" # Gold futures proxy
+    }
+    
+    results = {}
+    for name, ticker in benchmarks.items():
+        try:
+            cagr_1y = fetch_index_historical_cagr(ticker, 1) * 100.0
+            cagr_5y = fetch_index_historical_cagr(ticker, 5) * 100.0
+            results[name] = {"1Y": round(cagr_1y, 2), "5Y": round(cagr_5y, 2)}
+        except Exception as e:
+            print(f"Error fetching benchmark {name}: {e}")
+            results[name] = {"1Y": 0.0, "5Y": 0.0}
+            
+    return results
+
+
+def generate_ai_market_insight(
+    horizon: str, 
+    goal: str, 
+    macro_view: str, 
+    historical_trends: Dict[str, Dict[str, float]],
+    api_key: str = ""
+) -> Dict[str, Any]:
+    """
+    Generates a purely advisorial AI insight on which investment segments to focus on,
+    using historical benchmark trends and user inputs.
+    """
+    try:
+        from google import genai
+        import os
+        _key = api_key or os.environ.get("GEMINI_API_KEY", "") or ""
+        if not _key:
+            try:
+                import streamlit as st
+                _key = st.secrets.get("GEMINI_API_KEY", "")
+            except Exception:
+                pass
+                
+        if _key:
+            client = genai.Client(api_key=_key)
+            prompt = f"""
+            Act as an expert Macro Strategist & Wealth Advisor.
+            
+            Current Historical Benchmark Trends (CAGR %):
+            {historical_trends}
+            
+            User's Profile & Intent:
+            - Investment Time Horizon: {horizon}
+            - Primary Goal: {goal}
+            - User's Macro Market View: {macro_view}
+            
+            Based on the historical trends and the user's specific inputs, provide purely advisorial insights 
+            on which market segments (e.g., Large Cap, Mid Cap, US Equity, Debt, Gold) the user should consider focusing on.
+            
+            Format response strictly as JSON with keys:
+            - 'summary': A 2-3 sentence overarching strategy summary.
+            - 'recommended_segments': List of dicts with keys {{'segment_name', 'rationale', 'allocation_weight' (string like "Overweight", "Neutral", "Underweight")}}. Max 4 segments.
+            - 'risk_warning': A 1 sentence cautionary note about the primary risk of this strategy.
+            """
+            
+            response = client.models.generate_content(
+                model="gemini-3.5-flash",
+                contents=prompt
+            )
+            if response and response.text:
+                import json
+                import re
+                text = response.text
+                match = re.search(r'```(?:json)?\s*(\{.*?\})\s*```', text, re.DOTALL)
+                if match:
+                    json_str = match.group(1)
+                else:
+                    json_str = text[text.find("{"):text.rfind("}")+1]
+                
+                parsed = json.loads(json_str)
+                return parsed
+    except Exception as e:
+        print(f"AI Market Insight Error: {e}")
+        pass
+        
+    # Fallback
+    return {
+        "summary": "AI Advisory is currently unavailable. Please review historical trends and align with your risk tolerance.",
+        "recommended_segments": [
+            {"segment_name": "Large Cap", "rationale": "Stable growth and dividends.", "allocation_weight": "Overweight"},
+            {"segment_name": "Debt / Fixed Income", "rationale": "Capital preservation.", "allocation_weight": "Neutral"}
+        ],
+        "risk_warning": "Always diversify across asset classes to mitigate volatility."
+    }
