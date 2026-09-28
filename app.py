@@ -280,26 +280,31 @@ if not st.session_state.get("_turso_ok") and st.session_state.get("_turso_err"):
 # USER AUTHENTICATION SCREEN
 # ----------------------------------------------------
 if "user" not in st.session_state:
-    # ── Hero brand banner ─────────────────────────────────────────────────────
     import os as _os
     _hero_path = _os.path.join(_os.path.dirname(__file__), "assets", "brand_hero.jpg")
-    if _os.path.exists(_hero_path):
-        st.image(_hero_path, use_container_width=True)
-    st.markdown("""
-    <div style="max-width: 540px; margin: 20px auto; padding: 20px 24px 8px; border-radius: 12px;
-                background: linear-gradient(135deg, #0f172a 0%, #1e293b 100%);
-                border: 1px solid #1d4ed8; text-align: center;
-                box-shadow: 0 10px 40px -5px rgba(56,189,248,0.25);">
-        <div style="font-size: 2rem; font-weight: 900;
-                    background: linear-gradient(90deg, #38bdf8, #fbbf24);
-                    -webkit-background-clip: text; -webkit-text-fill-color: transparent;
-                    margin-bottom: 4px;">🧭 FinCompass</div>
-        <p style="color: #94a3b8; font-size: 0.9rem; margin: 0;">Smart Financial Hub &nbsp;·&nbsp; AI-Powered &nbsp;·&nbsp; 360° Wealth View</p>
-    </div>
-    """, unsafe_allow_html=True)
-
-    col_l1, col_l2, col_l3 = st.columns([1, 2.4, 1])
-    with col_l2:
+    
+    # ── Centered Layout for Login ──────────────────────────────────────────────
+    st.markdown("<br>", unsafe_allow_html=True)  # Push down slightly for vertical centering
+    main_left, main_right = st.columns([1.2, 1], gap="large")
+    
+    with main_left:
+        if _os.path.exists(_hero_path):
+            st.image(_hero_path, use_container_width=True)
+            
+    with main_right:
+        st.markdown("""
+        <div style="max-width: 100%; margin: 0 auto 20px; padding: 20px 24px 8px; border-radius: 12px;
+                    background: linear-gradient(135deg, #0f172a 0%, #1e293b 100%);
+                    border: 1px solid #1d4ed8; text-align: center;
+                    box-shadow: 0 10px 40px -5px rgba(56,189,248,0.25);">
+            <div style="font-size: 2rem; font-weight: 900;
+                        background: linear-gradient(90deg, #38bdf8, #fbbf24);
+                        -webkit-background-clip: text; -webkit-text-fill-color: transparent;
+                        margin-bottom: 4px;">🧭 FinCompass</div>
+            <p style="color: #94a3b8; font-size: 0.9rem; margin: 0;">Smart Financial Hub &nbsp;·&nbsp; AI-Powered &nbsp;·&nbsp; 360° Wealth View</p>
+        </div>
+        """, unsafe_allow_html=True)
+    
         auth_tab1, auth_tab2, auth_tab3 = st.tabs([
             "🔑 Sign In",
             "🏠 Register New Family",

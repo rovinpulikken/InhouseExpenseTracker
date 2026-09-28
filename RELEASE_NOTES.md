@@ -412,3 +412,6 @@
 
 ### Added
 - **Market Insights & Segment Strategy**: Added a dedicated tab in the Wealth & Planning section. Features real-time historical CAGR trends for Nifty 50, Midcap 150, S&P 500, and Gold using yfinance. Also includes a new AI Segment Advisor powered by Gemini that provides purely advisorial asset allocation strategies based on time horizon, investment goal, and macro market view.
+
+### Changed
+- **Login Screen UI**: Redesigned the login screen to a side-by-side layout (hero image on the left, login form on the right) so users no longer have to scroll down to sign in.
