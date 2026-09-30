@@ -418,3 +418,5 @@
 
 ### Added
 - **Market Insights Conversational UI**: Transformed the Market Insights & Segment Strategy tab into an interactive, conversational chat interface featuring an AI "investment strategist" persona powered by Gemini, replacing the static advisory form.
+
+- Added exponential backoff retry logic and fallback models (`gemini-1.5-pro`, `gemini-1.5-flash`) to AI chat in case of 503/429 errors from `gemini-3.5-flash`.

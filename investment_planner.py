@@ -1323,40 +1323,62 @@ def generate_ai_market_insight(
 def generate_strategist_chat_response(messages: List[Dict[str, str]], api_key: str = "") -> str:
     """
     Calls the Gemini API to get a chat response for the investment strategist persona.
+    Implements retries with exponential backoff and a model fallback strategy.
     """
+    import time
+    
+    _key = api_key or os.environ.get("GEMINI_API_KEY", "") or ""
+    if not _key:
+        try:
+            import streamlit as st
+            _key = st.secrets.get("GEMINI_API_KEY", "")
+        except Exception:
+            pass
+            
+    if not _key:
+        return "Please configure the GEMINI_API_KEY to enable chat functionality."
+
     try:
         from google import genai
-        import os
-        _key = api_key or os.environ.get("GEMINI_API_KEY", "") or ""
-        if not _key:
-            try:
-                import streamlit as st
-                _key = st.secrets.get("GEMINI_API_KEY", "")
-            except Exception:
-                pass
-                
-        if _key:
-            client = genai.Client(api_key=_key)
-            
-            # Format messages for Gemini genai.Client
-            # Flatten chat history into a single string prompt to ensure compatibility
-            prompt_parts = []
-            for msg in messages:
-                role = "USER" if msg["role"] == "user" else "STRATEGIST"
-                prompt_parts.append(f"[{role}]: {msg['content']}")
-            
-            prompt = "\n\n".join(prompt_parts)
-            prompt += "\n\n[STRATEGIST]:"
-            
-            response = client.models.generate_content(
-                model="gemini-3.5-flash",
-                contents=prompt
-            )
-            if response and response.text:
-                return response.text
+        client = genai.Client(api_key=_key)
+        
+        # Format messages for Gemini genai.Client
+        # Flatten chat history into a single string prompt to ensure compatibility
+        prompt_parts = []
+        for msg in messages:
+            role = "USER" if msg["role"] == "user" else "STRATEGIST"
+            prompt_parts.append(f"[{role}]: {msg['content']}")
+        
+        prompt = "\n\n".join(prompt_parts)
+        prompt += "\n\n[STRATEGIST]:"
+        
+        # Models to try in order (Fallback Strategy)
+        models = ["gemini-3.5-flash", "gemini-1.5-pro", "gemini-1.5-flash"]
+        max_retries = 3
+        
+        for model in models:
+            for attempt in range(max_retries):
+                try:
+                    response = client.models.generate_content(
+                        model=model,
+                        contents=prompt
+                    )
+                    if response and response.text:
+                        return response.text
+                except Exception as e:
+                    err_msg = str(e)
+                    # If it's a 503 UNAVAILABLE, or 429 TOO MANY REQUESTS, we back off and retry
+                    if "503" in err_msg or "429" in err_msg or "UNAVAILABLE" in err_msg:
+                        if attempt < max_retries - 1:
+                            time.sleep(2 ** attempt) # Exponential backoff: 1s, 2s, 4s...
+                            continue
+                    
+                    # If it's a different error or we've exhausted retries for this model, break and try the next model
+                    print(f"Model {model} failed on attempt {attempt+1}: {err_msg}")
+                    break # Break the retry loop, move to the next model
+                    
+        return "I'm currently unable to access my analysis tools due to high server demand. Please try again later."
     except Exception as e:
         import traceback
         print(f"Chat AI Error: {traceback.format_exc()}")
         return f"I'm currently unable to access my analysis tools. Please try again later. (Error: {str(e)})"
-        
-    return "Please configure the GEMINI_API_KEY to enable chat functionality."
