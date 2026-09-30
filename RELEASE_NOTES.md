@@ -415,3 +415,6 @@
 
 ### Changed
 - **Login Screen UI**: Redesigned the login screen to a side-by-side layout (hero image on the left, login form on the right) so users no longer have to scroll down to sign in.
+
+### Added
+- **Market Insights Conversational UI**: Transformed the Market Insights & Segment Strategy tab into an interactive, conversational chat interface featuring an AI "investment strategist" persona powered by Gemini, replacing the static advisory form.

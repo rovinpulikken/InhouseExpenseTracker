@@ -1319,3 +1319,42 @@ def generate_ai_market_insight(
         ],
         "risk_warning": "Always diversify across asset classes to mitigate volatility."
     }
+
+def generate_strategist_chat_response(messages: List[Dict[str, str]], api_key: str = "") -> str:
+    """
+    Calls the Gemini API to get a chat response for the investment strategist persona.
+    """
+    try:
+        from google import genai
+        import os
+        _key = api_key or os.environ.get("GEMINI_API_KEY", "") or ""
+        if not _key:
+            try:
+                import streamlit as st
+                _key = st.secrets.get("GEMINI_API_KEY", "")
+            except Exception:
+                pass
+                
+        if _key:
+            client = genai.Client(api_key=_key)
+            
+            # Format messages for Gemini genai.Client
+            contents = []
+            for msg in messages:
+                role = "user" if msg["role"] == "user" else "model"
+                contents.append({
+                    "role": role,
+                    "parts": [{"text": msg["content"]}]
+                })
+            
+            response = client.models.generate_content(
+                model="gemini-3.5-flash",
+                contents=contents
+            )
+            if response and response.text:
+                return response.text
+    except Exception as e:
+        print(f"Chat AI Error: {e}")
+        return "I'm currently unable to access my analysis tools. Please try again later."
+        
+    return "Please configure the GEMINI_API_KEY to enable chat functionality."
