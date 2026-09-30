@@ -2768,7 +2768,7 @@ else:
                 st.session_state.strategist_messages.append({"role": "user", "content": prompt})
 
                 # Prepare context
-                from utils import format_inr_short
+                from config import format_inr_short
                 inv_splits = ""
                 if not inv_df.empty:
                     splits = inv_df.groupby("investment_type")["current_value"].sum().to_dict()
