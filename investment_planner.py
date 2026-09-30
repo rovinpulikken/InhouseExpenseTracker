@@ -1339,22 +1339,24 @@ def generate_strategist_chat_response(messages: List[Dict[str, str]], api_key: s
             client = genai.Client(api_key=_key)
             
             # Format messages for Gemini genai.Client
-            contents = []
+            # Flatten chat history into a single string prompt to ensure compatibility
+            prompt_parts = []
             for msg in messages:
-                role = "user" if msg["role"] == "user" else "model"
-                contents.append({
-                    "role": role,
-                    "parts": [{"text": msg["content"]}]
-                })
+                role = "USER" if msg["role"] == "user" else "STRATEGIST"
+                prompt_parts.append(f"[{role}]: {msg['content']}")
+            
+            prompt = "\n\n".join(prompt_parts)
+            prompt += "\n\n[STRATEGIST]:"
             
             response = client.models.generate_content(
                 model="gemini-3.5-flash",
-                contents=contents
+                contents=prompt
             )
             if response and response.text:
                 return response.text
     except Exception as e:
-        print(f"Chat AI Error: {e}")
-        return "I'm currently unable to access my analysis tools. Please try again later."
+        import traceback
+        print(f"Chat AI Error: {traceback.format_exc()}")
+        return f"I'm currently unable to access my analysis tools. Please try again later. (Error: {str(e)})"
         
     return "Please configure the GEMINI_API_KEY to enable chat functionality."
