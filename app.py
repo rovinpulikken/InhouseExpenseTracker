@@ -2768,7 +2768,15 @@ else:
                 st.session_state.strategist_messages.append({"role": "user", "content": prompt})
 
                 # Prepare context
-                context_str = f"\n\n[System Context: Current Market Trends: {trends}]"
+                from utils import format_inr_short
+                inv_splits = ""
+                if not inv_df.empty:
+                    splits = inv_df.groupby("investment_type")["current_value"].sum().to_dict()
+                    splits_str = ", ".join([f"{k}: {format_inr_short(v)}" for k, v in splits.items()])
+                    inv_splits = f" Investment Splits: {splits_str}."
+                
+                user_financials = f"User's Net Worth: {format_inr_short(net_worth)}, Total Portfolio: {format_inr_short(tot_portfolio)}.{inv_splits}"
+                context_str = f"\n\n[System Context:\nCurrent Market Trends: {trends}\n{user_financials}]"
                 
                 # Prepare messages for LLM API call
                 messages_for_llm = [
