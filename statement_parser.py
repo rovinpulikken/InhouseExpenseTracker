@@ -307,8 +307,8 @@ def _call_gemini_rest(api_key, prompt_text, file_bytes=None, mime_type=None):
         }]
     }
 
-    models_to_try = ['gemini-3.5-flash', 'gemini-1.5-pro', 'gemini-1.5-flash']
-    max_retries = 3
+    models_to_try = ['gemini-3.5-flash']
+    max_retries = 5
     last_error = None
     
     for model in models_to_try:

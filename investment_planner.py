@@ -1353,8 +1353,8 @@ def generate_strategist_chat_response(messages: List[Dict[str, str]], api_key: s
         prompt += "\n\n[STRATEGIST]:"
         
         # Models to try in order (Fallback Strategy)
-        models = ["gemini-3.5-flash", "gemini-1.5-pro", "gemini-1.5-flash"]
-        max_retries = 3
+        models = ["gemini-3.5-flash"]
+        max_retries = 5
         
         for model in models:
             for attempt in range(max_retries):

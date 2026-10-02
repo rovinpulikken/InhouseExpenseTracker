@@ -424,3 +424,5 @@
 - Provided AI Strategist chat with access to user's net worth, total portfolio, and investment splits.
 
 - Applied exponential backoff and model fallback to bank statement PDF parser to fix 503 errors during uploads.
+
+- Removed fallback to `gemini-1.5-flash` across all GenAI modules because new user API keys are restricted from accessing older 1.5 models (throws 404). Increased exponential backoff retries for `gemini-3.5-flash` to handle transient load instead.
