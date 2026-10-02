@@ -1021,10 +1021,13 @@ def insert_expenses(
             
         t_type = row.get("transaction_type", "Expense")
         
+        row_source = row.get("_source_file")
+        actual_source = f"AI Import ({row_source})" if row_source else source
+        
         cursor.execute("""
             INSERT INTO expenses (expense_date, financial_year, quarter, half_year, category, description, amount, source_note, username, visibility, family_id, transaction_type)
             VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-        """, (dt.isoformat(), fy, q_code, h_code, cat, str(desc), amt, source, user_clean, row_vis, fam_id, t_type))
+        """, (dt.isoformat(), fy, q_code, h_code, cat, str(desc), amt, actual_source, user_clean, row_vis, fam_id, t_type))
         count += 1
         
     conn.commit()

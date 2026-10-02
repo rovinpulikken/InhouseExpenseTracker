@@ -1238,7 +1238,7 @@ else:
                             if valid_records:
                                 cnt = insert_expenses(
                                     valid_records,
-                                    source=f"AI Import ({uploaded_file.name})",
+                                    source="AI Import / Bulk",
                                     username=current_user["username"],
                                     visibility=upload_vis,
                                     family_id=user_family_id,
