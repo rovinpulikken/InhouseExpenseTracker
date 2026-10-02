@@ -422,3 +422,5 @@
 - Added exponential backoff retry logic and fallback models (`gemini-1.5-pro`, `gemini-1.5-flash`) to AI chat in case of 503/429 errors from `gemini-3.5-flash`.
 
 - Provided AI Strategist chat with access to user's net worth, total portfolio, and investment splits.
+
+- Applied exponential backoff and model fallback to bank statement PDF parser to fix 503 errors during uploads.

@@ -234,9 +234,7 @@ def _call_gemini_rest(api_key, prompt_text, file_bytes=None, mime_type=None):
     This avoids ALL inline_data / multimodal 400 errors regardless of key tier or model.
     """
     import requests
-
-    model = 'gemini-3.5-flash'
-    url = f'https://generativelanguage.googleapis.com/v1beta/models/{model}:generateContent?key={api_key}'
+    import time
 
     parts = []
 
@@ -309,16 +307,44 @@ def _call_gemini_rest(api_key, prompt_text, file_bytes=None, mime_type=None):
         }]
     }
 
-    response = requests.post(url, json=payload, timeout=120)
-    if response.status_code != 200:
-        raise Exception(f"{response.status_code} {response.reason}. {response.json()}")
-
-    result = response.json()
-    raw_text = result['candidates'][0]['content']['parts'][0]['text'].strip()
-    # Strip markdown code fences if present
-    raw_text = re.sub(r'```json\s*', '', raw_text)
-    raw_text = re.sub(r'```\s*', '', raw_text)
-    return raw_text.strip()
+    models_to_try = ['gemini-3.5-flash', 'gemini-1.5-pro', 'gemini-1.5-flash']
+    max_retries = 3
+    last_error = None
+    
+    for model in models_to_try:
+        url = f'https://generativelanguage.googleapis.com/v1beta/models/{model}:generateContent?key={api_key}'
+        for attempt in range(max_retries):
+            try:
+                response = requests.post(url, json=payload, timeout=120)
+                if response.status_code == 200:
+                    result = response.json()
+                    raw_text = result['candidates'][0]['content']['parts'][0]['text'].strip()
+                    # Strip markdown code fences if present
+                    raw_text = re.sub(r'```json\s*', '', raw_text)
+                    raw_text = re.sub(r'```\s*', '', raw_text)
+                    return raw_text.strip()
+                
+                err_msg = f"{response.status_code} {response.reason}. {response.json()}"
+                if response.status_code in [503, 429]:
+                    if attempt < max_retries - 1:
+                        time.sleep(2 ** attempt)
+                        continue
+                        
+                last_error = Exception(err_msg)
+                print(f"Model {model} failed on attempt {attempt+1}: {err_msg}")
+                break # Try next model if retries exhausted or non-transient error
+            except Exception as e:
+                last_error = e
+                err_str = str(e)
+                print(f"Model {model} failed on attempt {attempt+1}: {err_str}")
+                if "503" in err_str or "429" in err_str or "UNAVAILABLE" in err_str:
+                    if attempt < max_retries - 1:
+                        time.sleep(2 ** attempt)
+                        continue
+                break
+                
+    if last_error:
+        raise last_error
 
 
 def parse_investment_with_gemini(file_bytes, filename, api_key):
