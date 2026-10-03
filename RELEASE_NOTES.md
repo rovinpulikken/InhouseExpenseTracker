@@ -432,3 +432,5 @@
 - Added an experimental IMAP Email Sync feature to automatically extract GPay and Amazon Pay transactions directly from email receipts.
 
 - Moved IMAP configuration out of `secrets.toml` and directly into the **My Profile** settings UI under **API Configurations** for easier user access. Added database schema support for `imap_email` and `imap_app_password`.
+
+- Fixed a logic bug preventing Password Recovery Settings (Email & Security Question) from saving in the database if the Security Answer was unchanged.

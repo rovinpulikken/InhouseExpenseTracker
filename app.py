@@ -3606,7 +3606,9 @@ else:
                                 st.session_state["user"]["email"] = new_email
                                 st.session_state["user"]["security_question"] = new_sq
                             elif new_email != current_user.get("email") or new_sq != current_user.get("security_question"):
-                                pass
+                                set_user_recovery_info(current_user["username"], new_email, new_sq, "")
+                                st.session_state["user"]["email"] = new_email
+                                st.session_state["user"]["security_question"] = new_sq
                         
                         st.success("Profile updated successfully!")
                         st.rerun()
