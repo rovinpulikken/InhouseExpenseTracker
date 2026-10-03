@@ -283,6 +283,10 @@ def init_db():
         cursor.execute("ALTER TABLE users ADD COLUMN family_id INTEGER DEFAULT 1")
     if "gemini_api_key" not in u_cols:
         cursor.execute("ALTER TABLE users ADD COLUMN gemini_api_key TEXT")
+    if "imap_email" not in u_cols:
+        cursor.execute("ALTER TABLE users ADD COLUMN imap_email TEXT")
+    if "imap_app_password" not in u_cols:
+        cursor.execute("ALTER TABLE users ADD COLUMN imap_app_password TEXT")
     if "age" not in u_cols:
         cursor.execute("ALTER TABLE users ADD COLUMN age INTEGER DEFAULT 35")
     if "sex" not in u_cols:
@@ -833,7 +837,7 @@ def update_user_profile(username: str, profile_data: dict) -> bool:
         update_fields = []
         params = []
         for key, value in profile_data.items():
-            if key in ["full_name", "age", "sex", "dob", "address", "city", "state", "country", "income_range", "occupation", "marital_status", "risk_tolerance", "gemini_api_key"]:
+            if key in ["full_name", "age", "sex", "dob", "address", "city", "state", "country", "income_range", "occupation", "marital_status", "risk_tolerance", "gemini_api_key", "imap_email", "imap_app_password"]:
                 update_fields.append(f"{key} = ?")
                 params.append(value)
                 

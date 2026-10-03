@@ -6,22 +6,19 @@ import pandas as pd
 import streamlit as st
 from statement_parser import parse_expense_statement_with_gemini
 
-def fetch_recent_transaction_emails(days=3):
+def fetch_recent_transaction_emails(imap_username, imap_password, days=3):
     """
     Connects to IMAP server and fetches recent emails from known payment providers.
     Returns a list of dictionaries with date, subject, and body text.
     """
-    if "imap" not in st.secrets:
-        raise ValueError("IMAP configuration is missing in .streamlit/secrets.toml under [imap]")
+    if not imap_username or not imap_password:
+        raise ValueError("IMAP email or app password is not configured in your profile.")
         
-    conf = st.secrets["imap"]
-    username = conf.get("username")
-    password = conf.get("password")
-    server = conf.get("server", "imap.gmail.com")
-    port = conf.get("port", 993)
+    server = "imap.gmail.com"
+    port = 993
     
     mail = imaplib.IMAP4_SSL(server, port)
-    mail.login(username, password)
+    mail.login(imap_username, imap_password)
     mail.select("inbox")
     
     date_since = (datetime.date.today() - datetime.timedelta(days=days)).strftime("%d-%b-%Y")

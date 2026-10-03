@@ -430,3 +430,5 @@
 - Fixed a `NameError` that crashed the app when saving AI-imported transactions to the database due to an out-of-scope file reference.
 
 - Added an experimental IMAP Email Sync feature to automatically extract GPay and Amazon Pay transactions directly from email receipts.
+
+- Moved IMAP configuration out of `secrets.toml` and directly into the **My Profile** settings UI under **API Configurations** for easier user access. Added database schema support for `imap_email` and `imap_app_password`.

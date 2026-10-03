@@ -1196,17 +1196,23 @@ else:
                             
                 st.markdown("---")
                 with st.expander("📩 Sync from Email (Amazon Pay / GPay Receipts)"):
-                    st.info("Sync your latest GPay and Amazon Pay receipts directly from your email. Requires [imap] configured in secrets.toml and an active Gemini API key.")
+                    st.info("Sync your latest GPay and Amazon Pay receipts directly from your email. Requires IMAP credentials in your **My Profile** settings.")
                     imap_days = st.slider("Look back how many days?", 1, 30, 3)
                     
                     if st.button("Start Email Sync", type="primary"):
                         if not gemini_api_key:
                             st.error("A Gemini API Key is required. Add it in **My Profile**.")
+                        elif not current_user.get("imap_email") or not current_user.get("imap_app_password"):
+                            st.error("IMAP Email or App Password is not configured. Add them in **My Profile** under API Configurations.")
                         else:
                             try:
                                 from imap_sync import fetch_recent_transaction_emails, parse_emails_to_dataframe
                                 with st.spinner("Connecting to email and searching..."):
-                                    emails_list = fetch_recent_transaction_emails(days=imap_days)
+                                    emails_list = fetch_recent_transaction_emails(
+                                        current_user["imap_email"], 
+                                        current_user["imap_app_password"], 
+                                        days=imap_days
+                                    )
                                 if not emails_list:
                                     st.warning(f"No payment emails found in the last {imap_days} days.")
                                 else:
@@ -3550,6 +3556,8 @@ else:
                 
                 st.markdown("#### 4. API Configurations")
                 new_api_key = st.text_input("Gemini API Key", value=current_user.get("gemini_api_key", ""), type="password", help="Required for AI-powered features like Unstructured Statement Import.")
+                new_imap_email = st.text_input("IMAP Email Address", value=current_user.get("imap_email", ""), placeholder="your.email@gmail.com", help="Email used for syncing GPay/Amazon Pay receipts.")
+                new_imap_password = st.text_input("IMAP App Password", value=current_user.get("imap_app_password", ""), type="password", help="16-character App Password (not your normal password). Required for Email Sync.")
                 
                 st.markdown("#### 5. Password Recovery Settings")
                 new_email = st.text_input("Recovery Email Address", value=current_user.get("email", ""), placeholder="your_email@example.com")
@@ -3572,7 +3580,9 @@ else:
                         "occupation": new_occ,
                         "marital_status": new_marital,
                         "risk_tolerance": new_risk,
-                        "gemini_api_key": new_api_key
+                        "gemini_api_key": new_api_key,
+                        "imap_email": new_imap_email,
+                        "imap_app_password": new_imap_password
                     }
                     # Handle recovery info separately
                     recovery_ok = True
