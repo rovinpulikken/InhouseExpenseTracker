@@ -428,3 +428,5 @@
 - Removed fallback to `gemini-1.5-flash` across all GenAI modules because new user API keys are restricted from accessing older 1.5 models (throws 404). Increased exponential backoff retries for `gemini-3.5-flash` to handle transient load instead.
 
 - Fixed a `NameError` that crashed the app when saving AI-imported transactions to the database due to an out-of-scope file reference.
+
+- Added an experimental IMAP Email Sync feature to automatically extract GPay and Amazon Pay transactions directly from email receipts.

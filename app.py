@@ -1193,6 +1193,42 @@ else:
                             st.rerun()
                         else:
                             st.warning("No transactions extracted from any file.")
+                            
+                st.markdown("---")
+                with st.expander("📩 Sync from Email (Amazon Pay / GPay Receipts)"):
+                    st.info("Sync your latest GPay and Amazon Pay receipts directly from your email. Requires [imap] configured in secrets.toml and an active Gemini API key.")
+                    imap_days = st.slider("Look back how many days?", 1, 30, 3)
+                    
+                    if st.button("Start Email Sync", type="primary"):
+                        if not gemini_api_key:
+                            st.error("A Gemini API Key is required. Add it in **My Profile**.")
+                        else:
+                            try:
+                                from imap_sync import fetch_recent_transaction_emails, parse_emails_to_dataframe
+                                with st.spinner("Connecting to email and searching..."):
+                                    emails_list = fetch_recent_transaction_emails(days=imap_days)
+                                if not emails_list:
+                                    st.warning(f"No payment emails found in the last {imap_days} days.")
+                                else:
+                                    st.success(f"Found {len(emails_list)} payment emails. Extracting with AI...")
+                                    with st.spinner("AI parsing..."):
+                                        df_emails = parse_emails_to_dataframe(emails_list, gemini_api_key)
+                                    if df_emails is not None and not df_emails.empty:
+                                        # Detect duplicates
+                                        df_emails = detect_and_flag_duplicates(
+                                            df_emails, current_user["username"], view_mode, user_family_id)
+                                        # Merge if other files were uploaded and parsed
+                                        if "parsed_statement_df" in st.session_state:
+                                            st.session_state["parsed_statement_df"] = pd.concat([st.session_state["parsed_statement_df"], df_emails], ignore_index=True)
+                                        else:
+                                            st.session_state["parsed_statement_df"] = df_emails
+                                        st.success("Extracted transactions from emails successfully.")
+                                        import time; time.sleep(1)
+                                        st.rerun()
+                                    else:
+                                        st.warning("Could not extract any expenses from the emails.")
+                            except Exception as e:
+                                st.error(f"Email Sync Error: {e}")
 
             # Review table — shown outside the columns so it has full width
             if "parsed_statement_df" in st.session_state:
