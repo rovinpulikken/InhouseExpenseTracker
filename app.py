@@ -601,9 +601,19 @@ else:
         st.markdown("#### 📂 Grouped Holdings Summary")
         st.caption("Expand categories below to view summarized totals and detailed sub-groupings.")
         
-        # Add Recommendation logic based on returns
-        def get_rec(ret):
+        # Add Recommendation logic based on returns and user triggers
+        def get_rec(row):
+            ret = row.get("returns_pct")
             if pd.isna(ret): return "Hold ⏳"
+            
+            stop_loss = row.get("stop_loss_pct", 0.0)
+            target_profit = row.get("target_profit_pct", 0.0)
+            
+            if stop_loss < 0 and ret <= stop_loss:
+                return "🔴 TRIGGER: Stop Loss Hit!"
+            if target_profit > 0 and ret >= target_profit:
+                return "🟢 TRIGGER: Target Hit!"
+                
             if ret <= -15: return "Risk ⚠️"
             elif ret >= 20: return "Sell 🎯"
             elif -5 <= ret <= 10: return "Buy ❇️"
@@ -611,7 +621,7 @@ else:
             
         _df = holdings_df.copy()
         if "returns_pct" in _df.columns:
-            _df["Recommendation"] = _df["returns_pct"].apply(get_rec)
+            _df["Recommendation"] = _df.apply(get_rec, axis=1)
         else:
             _df["Recommendation"] = "Hold ⏳"
         
@@ -2382,6 +2392,66 @@ else:
                         with st.expander(f"**{rec.get('title', 'Recommendation')}**"):
                             st.markdown(f"**Observation**: {rec.get('observation', '')}")
                             st.markdown(f"**Suggestion**: {rec.get('suggestion', '')}")
+                
+                # Movers & Shakers Widget
+                st.markdown("---")
+                st.markdown("##### 🚀 Movers & Shakers")
+                if "returns_pct" in inv_df.columns:
+                    avg_portfolio_return = inv_df["returns_pct"].mean()
+                    st.caption(f"Portfolio Average Return: **{avg_portfolio_return:.2f}%**")
+                    
+                    ms_c1, ms_c2 = st.columns(2)
+                    
+                    # Fastest Rising
+                    with ms_c1:
+                        st.markdown("**Fastest Rising (vs Avg)**")
+                        rising = inv_df[inv_df["returns_pct"] > avg_portfolio_return].sort_values("returns_pct", ascending=False).head(3)
+                        if rising.empty:
+                            st.info("No assets beating the average right now.")
+                        else:
+                            for _, r in rising.iterrows():
+                                name = r.get("resolved_name") or r.get("description")
+                                diff = r["returns_pct"] - avg_portfolio_return
+                                st.markdown(f"- 🟢 **{name}**: {r['returns_pct']:.2f}% *(+{diff:.2f}% vs avg)*")
+                                
+                    # Fastest Falling
+                    with ms_c2:
+                        st.markdown("**Fastest Falling (vs Avg)**")
+                        falling = inv_df[inv_df["returns_pct"] < avg_portfolio_return].sort_values("returns_pct", ascending=True).head(3)
+                        if falling.empty:
+                            st.info("No assets lagging the average right now.")
+                        else:
+                            for _, r in falling.iterrows():
+                                name = r.get("resolved_name") or r.get("description")
+                                diff = avg_portfolio_return - r["returns_pct"]
+                                st.markdown(f"- 🔴 **{name}**: {r['returns_pct']:.2f}% *(-{diff:.2f}% vs avg)*")
+                                
+                                # AI Replacement trigger for worst performers
+                                if st.button(f"🔍 Optimize {name}", key=f"opt_{r['id']}"):
+                                    st.session_state["optimize_target"] = dict(r)
+                                    st.rerun()
+
+                # Optimization Modal Logic
+                if "optimize_target" in st.session_state:
+                    tgt = st.session_state["optimize_target"]
+                    with st.expander(f"🤖 AI Optimization for {tgt.get('resolved_name') or tgt.get('description')}", expanded=True):
+                        st.warning(f"This asset is underperforming. Return: {tgt.get('returns_pct', 0):.2f}%")
+                        if st.button("Generate Replacements (Uses Gemini)"):
+                            with st.spinner("Analyzing market alternatives..."):
+                                prompt = f"The user holds {tgt.get('resolved_name') or tgt.get('description')} in the {tgt.get('sector_segment')} sector, which is underperforming. Suggest 3 better-performing alternatives in the Indian market with a brief rationale."
+                                try:
+                                    from gemini_helper import get_gemini_client
+                                    client = get_gemini_client(current_user.get("gemini_api_key") or os.environ.get("GEMINI_API_KEY", "") or st.secrets.get("GEMINI_API_KEY", ""))
+                                    response = client.models.generate_content(
+                                        model='gemini-2.5-flash',
+                                        contents=prompt
+                                    )
+                                    st.markdown(response.text)
+                                except Exception as e:
+                                    st.error(f"Failed to generate alternatives: {e}")
+                        if st.button("Close Optimizer"):
+                            del st.session_state["optimize_target"]
+                            st.rerun()
 
             else:
                 st.info("💡 No holdings yet. Add your first investment below.")
@@ -2495,7 +2565,7 @@ else:
                     display_cols = ["id", "description", "resolved_name", "platform", "investment_type",
                                     "investment_amount", "year_invested", "current_value",
                                     "units", "avg_buy_price", "market_cap", "sector_segment",
-                                    "unrealized_gain", "returns_pct"]
+                                    "stop_loss_pct", "target_profit_pct", "unrealized_gain", "returns_pct"]
                     edited_holdings = st.data_editor(
                         filt_inv[display_cols] if not filt_inv.empty else filt_inv,
                         column_config={
@@ -2511,6 +2581,8 @@ else:
                             "avg_buy_price": st.column_config.NumberColumn("Avg Price", format="₹ %.2f"),
                             "market_cap": st.column_config.SelectboxColumn("Market Cap", options=["Large Cap", "Mid Cap", "Small Cap", "Multi Cap", "Unknown"]),
                             "sector_segment": st.column_config.TextColumn("Sector"),
+                            "stop_loss_pct": st.column_config.NumberColumn("Stop Loss %", format="%.2f", min_value=-100.0, max_value=0.0, step=1.0, help="Target loss percentage to trigger an alert (e.g. -10)"),
+                            "target_profit_pct": st.column_config.NumberColumn("Target Profit %", format="%.2f", min_value=0.0, step=1.0, help="Target profit percentage to trigger an alert (e.g. 20)"),
                             "unrealized_gain": st.column_config.NumberColumn("Gain/Loss (₹)", format="₹ %.2f", disabled=True),
                             "returns_pct": st.column_config.NumberColumn("Return %", format="%.2f %%", disabled=True),
                         },

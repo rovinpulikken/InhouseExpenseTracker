@@ -438,3 +438,5 @@
 - Included 'ordered' keyword in email subject filtering to capture more Amazon/GPay receipts during IMAP sync.
 
 - Added support for fetching and parsing PDF bank statements directly from emails during IMAP sync. Added a new Bank Statement PDF Password input in the UI to decrypt attachments.
+
+- Added Advanced Investment Insights: Included Stop Loss and Target Profit triggers, Movers & Shakers widget to track relative momentum, and an AI-driven Optimization tool to suggest replacements for underperforming assets.
