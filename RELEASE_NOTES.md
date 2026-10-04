@@ -436,3 +436,5 @@
 - Fixed a logic bug preventing Password Recovery Settings (Email & Security Question) from saving in the database if the Security Answer was unchanged.
 
 - Included 'ordered' keyword in email subject filtering to capture more Amazon/GPay receipts during IMAP sync.
+
+- Added support for fetching and parsing PDF bank statements directly from emails during IMAP sync. Added a new Bank Statement PDF Password input in the UI to decrypt attachments.

@@ -1195,9 +1195,10 @@ else:
                             st.warning("No transactions extracted from any file.")
                             
                 st.markdown("---")
-                with st.expander("📩 Sync from Email (Amazon Pay / GPay Receipts)"):
-                    st.info("Sync your latest GPay and Amazon Pay receipts directly from your email. Requires IMAP credentials in your **My Profile** settings.")
+                with st.expander("📩 Sync from Email (Amazon Pay / GPay Receipts / Statements)"):
+                    st.info("Sync your latest GPay, Amazon Pay receipts, and PDF bank statements directly from your email. Requires IMAP credentials in your **My Profile** settings.")
                     imap_days = st.slider("Look back how many days?", 1, 30, 3)
+                    email_pdf_password = st.text_input("Bank Statement PDF Password (Optional)", type="password", help="If your bank sends password-protected PDF statements via email, enter the password here.")
                     
                     if st.button("Start Email Sync", type="primary"):
                         if not gemini_api_key:
@@ -1218,7 +1219,7 @@ else:
                                 else:
                                     st.success(f"Found {len(emails_list)} payment emails. Extracting with AI...")
                                     with st.spinner("AI parsing..."):
-                                        df_emails = parse_emails_to_dataframe(emails_list, gemini_api_key)
+                                        df_emails = parse_emails_to_dataframe(emails_list, gemini_api_key, email_pdf_password)
                                     if df_emails is not None and not df_emails.empty:
                                         # Detect duplicates
                                         df_emails = detect_and_flag_duplicates(
