@@ -2533,7 +2533,7 @@ else:
                 st.markdown("---")
 
                 # Distribution charts
-                chart_c1, chart_c2, chart_c3 = st.columns(3)
+                chart_c1, chart_c2, chart_c3, chart_c4 = st.columns(4)
                 with chart_c1:
                     st.markdown("##### Asset Type")
                     fig_type = px.pie(inv_df, names="investment_type", values="current_value", hole=0.4, template="plotly_dark")
@@ -2545,13 +2545,57 @@ else:
                     fig_mc.update_layout(margin=dict(l=5,r=5,t=10,b=5), height=220)
                     st.plotly_chart(fig_mc, use_container_width=True)
                 with chart_c3:
+                    st.markdown("##### Sector / Theme")
+                    # Filter out "Unknown" or "" for better visualization
+                    sec_df = inv_df[inv_df["sector_segment"].astype(str).str.strip().astype(bool)]
+                    if not sec_df.empty:
+                        fig_sec = px.pie(sec_df, names="sector_segment", values="current_value", hole=0.4, template="plotly_dark")
+                        fig_sec.update_layout(margin=dict(l=5,r=5,t=10,b=5), height=220)
+                        st.plotly_chart(fig_sec, use_container_width=True)
+                    else:
+                        st.info("No sector data.")
+                with chart_c4:
                     st.markdown("##### Platform")
                     fig_plat = px.bar(inv_df.groupby("platform", as_index=False)["current_value"].sum(),
                                       x="platform", y="current_value", color="platform", template="plotly_dark",
                                       labels={"current_value": "₹", "platform": ""})
                     fig_plat.update_layout(paper_bgcolor="#1e293b", plot_bgcolor="#1e293b", margin=dict(l=5,r=5,t=10,b=5), height=220, showlegend=False)
                     st.plotly_chart(fig_plat, use_container_width=True)
+                    
+                # Sector Concentration Alerts
+                st.markdown("---")
+                if "sector_segment" in inv_df.columns:
+                    sector_totals = inv_df.groupby("sector_segment")["current_value"].sum()
+                    for sec, val in sector_totals.items():
+                        if pd.isna(sec) or sec == "Unknown" or str(sec).strip() == "": continue
+                        pct = (val / tot_portfolio) * 100
+                        if pct > 30.0:
+                            st.warning(f"⚠️ **High Concentration Risk**: You have **{pct:.1f}%** of your portfolio ({format_inr(val)}) in the **{sec}** sector. Consider diversifying to reduce risk.")
+                            
+                # Dividend & Yield Projections
+                st.markdown("##### 💸 Projected Annual Passive Income (Estimated)")
+                # Rough estimates based on typical yields
+                def estimate_yield(row):
+                    itype = str(row.get("investment_type")).lower()
+                    if "fd" in itype or "fixed deposit" in itype or "bond" in itype: return 0.065
+                    elif "dividend" in itype: return 0.04
+                    elif "equity" in itype or "stock" in itype: return 0.015
+                    elif "mutual fund" in itype: return 0.005 # assuming mostly growth funds
+                    return 0.0
+                
+                inv_df["est_yield"] = inv_df.apply(estimate_yield, axis=1)
+                inv_df["est_annual_income"] = inv_df["current_value"] * inv_df["est_yield"]
+                total_annual_income = inv_df["est_annual_income"].sum()
+                overall_yield = (total_annual_income / tot_portfolio) * 100 if tot_portfolio > 0 else 0
+                
+                inc_c1, inc_c2, inc_c3 = st.columns([1, 1, 2])
+                inc_c1.metric("Projected Annual Income", format_inr(total_annual_income))
+                inc_c2.metric("Avg Portfolio Yield", f"{overall_yield:.2f}%")
+                with inc_c3:
+                    st.caption("Estimates are based on asset class averages (e.g. FDs ~6.5%, Stocks ~1.5%, MFs ~0.5%). Real dividends will vary.")
 
+                st.markdown("<br>", unsafe_allow_html=True)
+                
                 # Grouped summary
                 render_grouped_portfolio_summary(inv_df)
 

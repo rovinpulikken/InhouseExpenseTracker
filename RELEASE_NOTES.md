@@ -440,3 +440,5 @@
 - Added support for fetching and parsing PDF bank statements directly from emails during IMAP sync. Added a new Bank Statement PDF Password input in the UI to decrypt attachments.
 
 - Added Advanced Investment Insights: Included Stop Loss and Target Profit triggers, Movers & Shakers widget to track relative momentum, and an AI-driven Optimization tool to suggest replacements for underperforming assets.
+
+- Added Advanced Investment Insights (Part 2): Sector Concentration Alerts, Sector/Theme distribution charts, and Projected Annual Passive Income (Dividend) estimation.
