@@ -59,7 +59,8 @@ def fetch_recent_transaction_emails(imap_username, imap_password, days=3):
                               "amazonpay" in sender_lower or 
                               "paid" in subj_lower or 
                               "debited" in subj_lower or 
-                              "transaction" in subj_lower)
+                              "transaction" in subj_lower or
+                              "ordered" in subj_lower)
                               
                 if not is_payment:
                     continue
