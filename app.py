@@ -2935,9 +2935,9 @@ else:
                     
                     cols = ["description", "resolved_name", "investment_type", "market_cap", "sector_segment", "current_value", "returns_pct"]
                     available_cols = [c for c in cols if c in inv_df.columns]
-                    details_str = inv_df[available_cols].to_markdown(index=False)
+                    details_str = inv_df[available_cols].to_csv(index=False)
                     
-                    inv_splits = f" Investment Splits: {splits_str}.\n\nDetailed Holdings:\n{details_str}"
+                    inv_splits = f" Investment Splits: {splits_str}.\n\nDetailed Holdings (CSV format):\n{details_str}"
                 
                 user_financials = f"User's Net Worth: {format_inr_short(net_worth)}, Total Portfolio: {format_inr_short(tot_portfolio)}.{inv_splits}"
                 context_str = f"\n\n[System Context:\nCurrent Market Trends: {trends}\n{user_financials}]"
