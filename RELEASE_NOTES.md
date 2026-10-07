@@ -442,3 +442,5 @@
 - Added Advanced Investment Insights: Included Stop Loss and Target Profit triggers, Movers & Shakers widget to track relative momentum, and an AI-driven Optimization tool to suggest replacements for underperforming assets.
 
 - Added Advanced Investment Insights (Part 2): Sector Concentration Alerts, Sector/Theme distribution charts, and Projected Annual Passive Income (Dividend) estimation.
+
+- Fixed an issue where the AI Market Insights strategist did not have access to the user's detailed portfolio holdings, resulting in generic advice. The context prompt now includes a complete breakdown of specific assets, sectors, and their relative performance.
