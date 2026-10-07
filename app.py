@@ -2392,7 +2392,41 @@ else:
                         with st.expander(f"**{rec.get('title', 'Recommendation')}**"):
                             st.markdown(f"**Observation**: {rec.get('observation', '')}")
                             st.markdown(f"**Suggestion**: {rec.get('suggestion', '')}")
-                
+                # Automated Investment Playbook
+                st.markdown("---")
+                with st.expander("📖 Automated Investment Playbook"):
+                    st.markdown("Set up standard market rules to get automated alerts on your portfolio.")
+                    pb_c1, pb_c2 = st.columns(2)
+                    with pb_c1:
+                        rule_tp = st.checkbox("Alert me to Take Profits at +25%", value=True, key="rule_tp")
+                        rule_sl = st.checkbox("Enforce -8% Stop Loss on Individual Stocks", value=False, key="rule_sl")
+                    with pb_c2:
+                        rule_ad = st.checkbox("Notify me to Average Down on -15% drops", value=True, key="rule_ad")
+                        rule_fr = st.checkbox("Highlight 'Free Ride' (+100% gain) opportunities", value=True, key="rule_fr")
+                    
+                    if "returns_pct" in inv_df.columns:
+                        playbook_alerts = []
+                        for _, r in inv_df.iterrows():
+                            name = r.get("resolved_name") or r.get("description")
+                            ret = r["returns_pct"]
+                            itype = str(r.get("investment_type", "")).lower()
+                            
+                            if rule_fr and ret >= 100:
+                                playbook_alerts.append(f"🎉 **{name}** is up {ret:.2f}%. **Action:** Consider a 'Free Ride' (sell 50% to retrieve principal).")
+                            elif rule_tp and ret >= 25 and ret < 100:
+                                playbook_alerts.append(f"📈 **{name}** is up {ret:.2f}%. **Action:** Take Profit Zone (Consider locking in some gains).")
+                            elif rule_sl and ret <= -8 and ("stock" in itype or "equity" in itype):
+                                playbook_alerts.append(f"🚨 **{name}** triggered Stop-Loss ({ret:.2f}%). **Action:** Cut losses (-8% rule for Stocks).")
+                            elif rule_ad and ret <= -15 and ("mutual fund" in itype or "etf" in itype or "index" in itype):
+                                playbook_alerts.append(f"🛒 **{name}** dropped by {ret:.2f}%. **Action:** Buy the Dip (Average down on quality funds).")
+                        
+                        if playbook_alerts:
+                            st.markdown("##### 🔔 Active Playbook Alerts")
+                            for alert in playbook_alerts:
+                                st.info(alert)
+                        else:
+                            st.success("No active playbook alerts right now. Your portfolio is sailing smoothly!")
+
                 # Movers & Shakers Widget
                 st.markdown("---")
                 st.markdown("##### 🚀 Movers & Shakers")

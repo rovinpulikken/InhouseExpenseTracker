@@ -446,3 +446,5 @@
 - Fixed an issue where the AI Market Insights strategist did not have access to the user's detailed portfolio holdings, resulting in generic advice. The context prompt now includes a complete breakdown of specific assets, sectors, and their relative performance.
 
 - Fixed missing tabulate dependency error in Streamlit Cloud by passing portfolio data to AI using CSV format instead of Markdown.
+
+- Added 'Automated Investment Playbook' rules engine to the Investments tab to track automated Take Profit, Stop Loss, and Average Down thresholds.
