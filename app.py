@@ -1115,7 +1115,7 @@ else:
                 # PDF password — only show if any uploaded file is a PDF
                 pdf_password = ""
                 if uploaded_files and any(f.name.lower().endswith(".pdf") for f in uploaded_files):
-                    pdf_password = st.text_input("PDF Password (if protected)", type="password",
+                    pdf_password = st.text_input("PDF Password (if protected)", value=current_user.get("pdf_password", ""), type="password",
                                                  help="Applied to all password-protected PDFs in this batch")
 
                 # Show previews for image uploads
@@ -1135,6 +1135,10 @@ else:
                     _n = len(uploaded_files)
                     st.markdown(f"📎 **{_n} file{'s' if _n > 1 else ''}** selected")
                     if st.button("🚀 Parse & Auto-Categorize", type="primary", use_container_width=True):
+                        if pdf_password and pdf_password.strip() != current_user.get("pdf_password", ""):
+                            update_user_profile(current_user["username"], {"pdf_password": pdf_password.strip()})
+                            current_user["pdf_password"] = pdf_password.strip()
+                            st.session_state["user"]["pdf_password"] = pdf_password.strip()
                         all_frames = []
                         progress_bar = st.progress(0, text="Starting…")
                         for idx, uploaded_file in enumerate(uploaded_files):
@@ -1206,22 +1210,86 @@ else:
                             
                 st.markdown("---")
                 with st.expander("📩 Sync from Email (Amazon Pay / GPay Receipts / Statements)"):
-                    st.info("Sync your latest GPay, Amazon Pay receipts, and PDF bank statements directly from your email. Requires IMAP credentials in your **My Profile** settings.")
-                    imap_days = st.slider("Look back how many days?", 1, 30, 3)
-                    email_pdf_password = st.text_input("Bank Statement PDF Password (Optional)", type="password", help="If your bank sends password-protected PDF statements via email, enter the password here.")
+                    st.info("Sync your latest GPay, Amazon Pay receipts, and PDF bank/credit card statements directly from your email.")
                     
-                    if st.button("Start Email Sync", type="primary"):
+                    sc1, sc2 = st.columns(2)
+                    with sc1:
+                        sync_imap_email = st.text_input(
+                            "IMAP Email (Gmail)", 
+                            value=current_user.get("imap_email") or "", 
+                            placeholder="your.email@gmail.com",
+                            help="Gmail address from which to sync transaction receipts and statements.",
+                            key="sync_imap_email_input"
+                        )
+                        imap_days = st.slider("Look back how many days?", 1, 30, 3, key="sync_imap_days_slider")
+                    with sc2:
+                        sync_imap_pwd = st.text_input(
+                            "IMAP App Password (16 characters)", 
+                            value=current_user.get("imap_app_password") or "", 
+                            type="password", 
+                            help="16-character App Password generated from your Google Account (not your normal Gmail password).",
+                            key="sync_imap_pwd_input"
+                        )
+                        email_pdf_password = st.text_input(
+                            "Bank Statement PDF Password (Optional)", 
+                            value=current_user.get("pdf_password") or "",
+                            type="password", 
+                            help="If your bank or credit card sends password-protected PDF statements, enter the password here.",
+                            key="sync_email_pdf_password_input"
+                        )
+                    
+                    sync_btn_col1, sync_btn_col2 = st.columns([1, 2])
+                    with sync_btn_col1:
+                        if st.button("💾 Save Credentials", key="btn_save_sync_creds", use_container_width=True):
+                            clean_sync_email = sync_imap_email.strip()
+                            clean_sync_pwd = sync_imap_pwd.strip().replace(" ", "")
+                            clean_pdf_pwd = email_pdf_password.strip()
+                            update_user_profile(current_user["username"], {
+                                "imap_email": clean_sync_email,
+                                "imap_app_password": clean_sync_pwd,
+                                "pdf_password": clean_pdf_pwd
+                            })
+                            current_user["imap_email"] = clean_sync_email
+                            current_user["imap_app_password"] = clean_sync_pwd
+                            current_user["pdf_password"] = clean_pdf_pwd
+                            st.session_state["user"]["imap_email"] = clean_sync_email
+                            st.session_state["user"]["imap_app_password"] = clean_sync_pwd
+                            st.session_state["user"]["pdf_password"] = clean_pdf_pwd
+                            st.success("✅ Credentials & passwords saved successfully to your profile!")
+                    
+                    with sync_btn_col2:
+                        start_sync_clicked = st.button("🚀 Start Email Sync", type="primary", use_container_width=True)
+
+                    if start_sync_clicked:
+                        active_email = sync_imap_email.strip() or current_user.get("imap_email", "")
+                        active_pwd = sync_imap_pwd.strip().replace(" ", "") or current_user.get("imap_app_password", "")
+                        active_pdf_pwd = email_pdf_password.strip() or current_user.get("pdf_password", "")
+                        
+                        # Auto-persist credentials if entered or updated
+                        if active_email and active_pwd:
+                            update_user_profile(current_user["username"], {
+                                "imap_email": active_email,
+                                "imap_app_password": active_pwd,
+                                "pdf_password": active_pdf_pwd
+                            })
+                            current_user["imap_email"] = active_email
+                            current_user["imap_app_password"] = active_pwd
+                            current_user["pdf_password"] = active_pdf_pwd
+                            st.session_state["user"]["imap_email"] = active_email
+                            st.session_state["user"]["imap_app_password"] = active_pwd
+                            st.session_state["user"]["pdf_password"] = active_pdf_pwd
+                        
                         if not gemini_api_key:
                             st.error("A Gemini API Key is required. Add it in **My Profile**.")
-                        elif not current_user.get("imap_email") or not current_user.get("imap_app_password"):
-                            st.error("IMAP Email or App Password is not configured. Add them in **My Profile** under API Configurations.")
+                        elif not active_email or not active_pwd:
+                            st.error("Please enter your IMAP Email and 16-character App Password above.")
                         else:
                             try:
                                 from imap_sync import fetch_recent_transaction_emails, parse_emails_to_dataframe
                                 with st.spinner("Connecting to email and searching..."):
                                     emails_list = fetch_recent_transaction_emails(
-                                        current_user["imap_email"], 
-                                        current_user["imap_app_password"], 
+                                        active_email, 
+                                        active_pwd, 
                                         days=imap_days
                                     )
                                 if not emails_list:
@@ -1229,7 +1297,7 @@ else:
                                 else:
                                     st.success(f"Found {len(emails_list)} payment emails. Extracting with AI...")
                                     with st.spinner("AI parsing..."):
-                                        df_emails = parse_emails_to_dataframe(emails_list, gemini_api_key, email_pdf_password)
+                                        df_emails = parse_emails_to_dataframe(emails_list, gemini_api_key, active_pdf_pwd)
                                     if df_emails is not None and not df_emails.empty:
                                         # Detect duplicates
                                         df_emails = detect_and_flag_duplicates(
@@ -3710,10 +3778,11 @@ else:
                     cur_risk = current_user.get("risk_tolerance", "Moderate")
                     new_risk = st.selectbox("Risk Tolerance (Wealth Planner)", risk_opts, index=risk_opts.index(cur_risk) if cur_risk in risk_opts else 1)
                 
-                st.markdown("#### 4. API Configurations")
+                st.markdown("#### 4. API & Integration Configurations")
                 new_api_key = st.text_input("Gemini API Key", value=current_user.get("gemini_api_key", ""), type="password", help="Required for AI-powered features like Unstructured Statement Import.")
                 new_imap_email = st.text_input("IMAP Email Address", value=current_user.get("imap_email", ""), placeholder="your.email@gmail.com", help="Email used for syncing GPay/Amazon Pay receipts.")
                 new_imap_password = st.text_input("IMAP App Password", value=current_user.get("imap_app_password", ""), type="password", help="16-character App Password (not your normal password). Required for Email Sync.")
+                new_pdf_password = st.text_input("Bank / Credit Card Statement PDF Password", value=current_user.get("pdf_password", ""), type="password", help="Default password to open encrypted bank and credit card PDF statements.")
                 
                 st.markdown("#### 5. Password Recovery Settings")
                 new_email = st.text_input("Recovery Email Address", value=current_user.get("email", ""), placeholder="your_email@example.com")
@@ -3738,7 +3807,8 @@ else:
                         "risk_tolerance": new_risk,
                         "gemini_api_key": new_api_key,
                         "imap_email": new_imap_email,
-                        "imap_app_password": new_imap_password
+                        "imap_app_password": new_imap_password,
+                        "pdf_password": new_pdf_password
                     }
                     # Handle recovery info separately
                     recovery_ok = True

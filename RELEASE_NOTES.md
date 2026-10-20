@@ -450,3 +450,7 @@
 - Added 'Automated Investment Playbook' rules engine to the Investments tab to track automated Take Profit, Stop Loss, and Average Down thresholds.
 
 - Sanitized IMAP email and app password input by stripping whitespace and removing spaces to ensure seamless login even when pasting 16-character codes with spaces.
+
+- Fixed a credential persistence bug where `imap_email` and `imap_app_password` were omitted in `authenticate_user` queries, causing them to be lost from session state upon re-login.
+- Added direct inline configuration and a dedicated 'Save Credentials' button inside the 'Sync from Email' expander, allowing users to enter, view, and save their Gmail address and 16-character App Password directly without navigating away.
+- Added database persistence for Bank / Credit Card Statement PDF passwords (`pdf_password`) in user profile, auto-populating and auto-saving across both file uploads and email sync.

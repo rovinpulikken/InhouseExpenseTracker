@@ -287,6 +287,8 @@ def init_db():
         cursor.execute("ALTER TABLE users ADD COLUMN imap_email TEXT")
     if "imap_app_password" not in u_cols:
         cursor.execute("ALTER TABLE users ADD COLUMN imap_app_password TEXT")
+    if "pdf_password" not in u_cols:
+        cursor.execute("ALTER TABLE users ADD COLUMN pdf_password TEXT DEFAULT ''")
     if "age" not in u_cols:
         cursor.execute("ALTER TABLE users ADD COLUMN age INTEGER DEFAULT 35")
     if "sex" not in u_cols:
@@ -337,7 +339,6 @@ def init_db():
         cursor.execute("ALTER TABLE expenses ADD COLUMN half_year TEXT DEFAULT 'H1'")
     if "transaction_type" not in e_cols:
         cursor.execute("ALTER TABLE expenses ADD COLUMN transaction_type TEXT DEFAULT 'Expense'")
-        cursor.execute("ALTER TABLE expenses ADD COLUMN half_year TEXT DEFAULT 'H1'")
     if "username" not in e_cols:
         cursor.execute("ALTER TABLE expenses ADD COLUMN username TEXT DEFAULT 'admin'")
     if "visibility" not in e_cols:
@@ -783,7 +784,8 @@ def authenticate_user(username: str, password_attempt: str) -> Optional[Dict[str
     cursor.execute("""
         SELECT u.id, u.username, u.password_hash, u.full_name, u.role, u.family_id, f.family_name, f.family_code, 
                u.gemini_api_key, u.age, u.sex, u.dob, u.address, u.city, u.state, u.country, u.income_range, 
-               u.occupation, u.marital_status, u.risk_tolerance, u.email, u.security_question
+               u.occupation, u.marital_status, u.risk_tolerance, u.email, u.security_question,
+               u.imap_email, u.imap_app_password, u.pdf_password
         FROM users u
         LEFT JOIN families f ON u.family_id = f.id
         WHERE u.username = ?
@@ -803,7 +805,8 @@ def authenticate_user(username: str, password_attempt: str) -> Optional[Dict[str
             "gemini_api_key": row[8], "age": row[9] if row[9] is not None else 35,
             "sex": row[10], "dob": row[11], "address": row[12], "city": row[13], "state": row[14], 
             "country": row[15], "income_range": row[16], "occupation": row[17], "marital_status": row[18], "risk_tolerance": row[19],
-            "email": row[20], "security_question": row[21]
+            "email": row[20], "security_question": row[21],
+            "imap_email": row[22] or "", "imap_app_password": row[23] or "", "pdf_password": row[24] or ""
         }
     
     if verify_password(user_dict["password_hash"], password_attempt):
@@ -843,7 +846,7 @@ def update_user_profile(username: str, profile_data: dict) -> bool:
         update_fields = []
         params = []
         for key, value in profile_data.items():
-            if key in ["full_name", "age", "sex", "dob", "address", "city", "state", "country", "income_range", "occupation", "marital_status", "risk_tolerance", "gemini_api_key", "imap_email", "imap_app_password"]:
+            if key in ["full_name", "age", "sex", "dob", "address", "city", "state", "country", "income_range", "occupation", "marital_status", "risk_tolerance", "gemini_api_key", "imap_email", "imap_app_password", "pdf_password"]:
                 update_fields.append(f"{key} = ?")
                 params.append(value)
                 
