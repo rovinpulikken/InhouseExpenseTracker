@@ -454,3 +454,4 @@
 - Fixed a credential persistence bug where `imap_email` and `imap_app_password` were omitted in `authenticate_user` queries, causing them to be lost from session state upon re-login.
 - Added direct inline configuration and a dedicated 'Save Credentials' button inside the 'Sync from Email' expander, allowing users to enter, view, and save their Gmail address and 16-character App Password directly without navigating away.
 - Added database persistence for Bank / Credit Card Statement PDF passwords (`pdf_password`) in user profile, auto-populating and auto-saving across both file uploads and email sync.
+- Added an interactive 'Which Email ID & Password should I use?' quick guide directly inside the 'Sync from Email' expander with step-by-step instructions, link to Google App Passwords, and enhanced tooltips.

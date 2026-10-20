@@ -1212,13 +1212,27 @@ else:
                 with st.expander("📩 Sync from Email (Amazon Pay / GPay Receipts / Statements)"):
                     st.info("Sync your latest GPay, Amazon Pay receipts, and PDF bank/credit card statements directly from your email.")
                     
+                    with st.expander("💡 Which Email ID & Password should I use? (Quick Guide)", expanded=False):
+                        st.markdown("""
+                        - **Which Email ID to enter?**  
+                          Enter the **Gmail address where your financial alerts arrive** (e.g., where your bank sends statements, or where you get Google Pay / Amazon Pay transaction receipts).
+                        - **Which Password to enter?**  
+                          Do **not** use your personal Google account password (Google blocks apps from logging in with standard passwords). You need a **16-character Google App Password**.
+                        - **How to generate your 16-character App Password (takes 1 minute):**  
+                          1. Ensure **2-Step Verification** is turned ON in your [Google Account Security Settings](https://myaccount.google.com/security).  
+                          2. Open [Google App Passwords](https://myaccount.google.com/apppasswords).  
+                          3. Name the app (e.g. `Expense Tracker`) and click **Create**.  
+                          4. Copy the generated 16-character password and paste it into the **IMAP App Password** field below.  
+                          5. Click **💾 Save Credentials** — it will be saved in your database so you never have to enter it again!
+                        """)
+                    
                     sc1, sc2 = st.columns(2)
                     with sc1:
                         sync_imap_email = st.text_input(
                             "IMAP Email (Gmail)", 
                             value=current_user.get("imap_email") or "", 
                             placeholder="your.email@gmail.com",
-                            help="Gmail address from which to sync transaction receipts and statements.",
+                            help="Enter the Gmail account where you receive bank statements, credit card alerts, GPay receipts, or Amazon Pay orders.",
                             key="sync_imap_email_input"
                         )
                         imap_days = st.slider("Look back how many days?", 1, 30, 3, key="sync_imap_days_slider")
@@ -1227,7 +1241,7 @@ else:
                             "IMAP App Password (16 characters)", 
                             value=current_user.get("imap_app_password") or "", 
                             type="password", 
-                            help="16-character App Password generated from your Google Account (not your normal Gmail password).",
+                            help="16-character App Password from myaccount.google.com/apppasswords (NOT your personal Google login password).",
                             key="sync_imap_pwd_input"
                         )
                         email_pdf_password = st.text_input(
@@ -3780,8 +3794,8 @@ else:
                 
                 st.markdown("#### 4. API & Integration Configurations")
                 new_api_key = st.text_input("Gemini API Key", value=current_user.get("gemini_api_key", ""), type="password", help="Required for AI-powered features like Unstructured Statement Import.")
-                new_imap_email = st.text_input("IMAP Email Address", value=current_user.get("imap_email", ""), placeholder="your.email@gmail.com", help="Email used for syncing GPay/Amazon Pay receipts.")
-                new_imap_password = st.text_input("IMAP App Password", value=current_user.get("imap_app_password", ""), type="password", help="16-character App Password (not your normal password). Required for Email Sync.")
+                new_imap_email = st.text_input("IMAP Email Address (Gmail)", value=current_user.get("imap_email", ""), placeholder="your.email@gmail.com", help="The Gmail address where your bank statements, GPay receipts, and Amazon Pay alerts are delivered.")
+                new_imap_password = st.text_input("IMAP App Password (16 characters)", value=current_user.get("imap_app_password", ""), type="password", help="16-character Google App Password from myaccount.google.com/apppasswords (NOT your normal Google login password).")
                 new_pdf_password = st.text_input("Bank / Credit Card Statement PDF Password", value=current_user.get("pdf_password", ""), type="password", help="Default password to open encrypted bank and credit card PDF statements.")
                 
                 st.markdown("#### 5. Password Recovery Settings")
