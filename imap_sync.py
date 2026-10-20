@@ -17,6 +17,9 @@ def fetch_recent_transaction_emails(imap_username, imap_password, days=3):
     server = "imap.gmail.com"
     port = 993
     
+    imap_username = (imap_username or "").strip()
+    imap_password = (imap_password or "").strip().replace(" ", "")
+    
     mail = imaplib.IMAP4_SSL(server, port)
     mail.login(imap_username, imap_password)
     mail.select("inbox")

@@ -448,3 +448,5 @@
 - Fixed missing tabulate dependency error in Streamlit Cloud by passing portfolio data to AI using CSV format instead of Markdown.
 
 - Added 'Automated Investment Playbook' rules engine to the Investments tab to track automated Take Profit, Stop Loss, and Average Down thresholds.
+
+- Sanitized IMAP email and app password input by stripping whitespace and removing spaces to ensure seamless login even when pasting 16-character codes with spaces.
