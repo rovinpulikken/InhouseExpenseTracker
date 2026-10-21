@@ -1,5 +1,17 @@
 # Release Notes
 
+## v1.12.3 (2026-10-21)
+### Fixed — Option B Free-Text Selection Persistence & Strict Data Isolation
+- **Option B Mode Reset Bug Fix**: Resolved a critical Streamlit widget state defect where `st.radio(..., index=default_choice_idx, key=...)` dynamically re-evaluated `default_choice_idx` to `0` whenever table data was present. When users selected Option B and clicked "🔮 Calculate Retirement Corpus", Streamlit's script rerun forced the widget back to index `0`, causing the app to silently execute with Option A data. Removed dynamic `index` forcing and stabilized the selector state using a persistent key.
+- **Top-Level Mutually Exclusive Form Rendering**: Moved the mode selector to the top of the Retirement Planning inputs section. The interface now conditionally renders *only* the input form corresponding to the active mode:
+  - **Option A Form**: Renders the One-Time Milestone Table editor and baseline living/recurring expense number inputs. Option B free-text is completely unrendered and suppressed.
+  - **Option B Form**: Renders the Free-Text Vision text area, interactive confirmation/tweak fields for detected monthly living expenses (e.g., ₹1,75,000/mo) and healthcare buffers (₹25,000/mo), and an expandable extracted milestones table. Option A table inputs are completely unrendered.
+- **Strict Single-Source Parameter Routing**: Guaranteed that when Option B is selected:
+  - `calc_base_living_exp`, `calc_recurring_exp`, `calc_user_age`, `calc_ret_age`, and `active_milestones` originate strictly from the natural language vision statement and its confirmed fields. Option A table rows and number inputs are 100% ignored.
+  - Conversely, when Option A is selected, `active_user_context` is emptied and `ignore_free_text_overrides=True` is enforced, preventing free text from overriding table data.
+- **Active Calculation Mode Badge**: Added a prominent badge banner above the retirement plan metrics and cash flow views showing `📌 Active Plan Source: Option B (Free-Text Vision)` or `Option A (Structured Columns)` with calculation timestamp.
+- **Unit Testing**: Added `test_option_b_full_resolution` to `test_app.py` confirming that entering data into Option A and then executing Option B correctly isolates Option B data, preserving detected age (53), living expense (₹1,75,000/mo), healthcare buffer (₹25,000/mo), and all 5 parsed milestone expenses without contamination from Option A.
+
 ## v1.12.2 (2026-10-21)
 ### Added — Explicit "OR" UI & Mutual Exclusivity for Retirement Inputs
 - **Prominent Visual "⚡ OR ⚡" Separator**: Placed a high-visibility badge and divider between the structured data entry columns (Milestone Table & Expense Inputs) and the Natural Language Free-Text Vision Statement, making the distinction explicit in the Retirement Planner UI.

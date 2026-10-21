@@ -556,6 +556,14 @@ def extract_free_text_parameters(text: str, base_age: int = 50, current_year: in
             res["detected_age"] = detected_age
             base_age = detected_age
 
+    # 1b. Detect desired retirement age (e.g. "retire at 55", "retiring at 58", "retirement age 60")
+    res["detected_retirement_age"] = None
+    ret_age_match = re.search(r"(?:retire\s+at|retiring\s+at|retirement\s+age(?:\s+is)?)\s*(\d{2})\b", raw_text, re.I)
+    if ret_age_match:
+        det_ret = int(ret_age_match.group(1))
+        if base_age < det_ret <= 100:
+            res["detected_retirement_age"] = det_ret
+
     # 2. Detect monthly living expenses (e.g., "monthly expense of 1.75 lakhs", "cost of living is 150,000", "150,000/mo")
     # Clean numbered list markers at start of text, newlines, or sentences (e.g. '1. ', '2) ', '(1) ') so they are not captured as amounts
     clean_text = re.sub(r"(?:^|[\n\r;.]|\b)\s*(?:\(?\d{1,2}\)|\d{1,2}[.)])\s+", " ", raw_text)
@@ -636,13 +644,13 @@ def extract_free_text_parameters(text: str, base_age: int = 50, current_year: in
         # Pattern B: Single milestone with specific Calendar Year
         # Handles: "additional marriage expense of 50 lakhs in 2035", "50L in 2030 for home renovation", "50L for wedding in 2035"
         yr_match = re.search(
-            rf"([a-z\s'_-]+)?(?:expense|outlay|cost|budget)?\s*(?:of|:)?\s*{AMT_REGEX}\s+(?:in|by|around)\s+(\d{{4}})(?:\s+(?:for|towards)\s+(.*))?",
+            rf"([a-z\s'_-]+)?(?:expense|outlay|cost|budget)?\s*(?:of|:)?\s*{AMT_REGEX}\s+(?:in|by|around|at)\s+(\d{{4}})(?:\s+(?:for|towards)\s+(.*))?",
             s_clean, re.I
         )
         if not yr_match:
             # Check: [amt] for [purpose] in [yr]
             yr_match_alt = re.search(
-                rf"{AMT_REGEX}\s+(?:for|towards)\s+([a-z\s'_-]+)\s+(?:in|by|around)\s+(\d{{4}})",
+                rf"{AMT_REGEX}\s+(?:for|towards)\s+([a-z\s'_-]+)\s+(?:in|by|around|at)\s+(\d{{4}})",
                 s_clean, re.I
             )
             if yr_match_alt:
@@ -691,11 +699,40 @@ def extract_free_text_parameters(text: str, base_age: int = 50, current_year: in
                 })
                 continue
                 
-        # Pattern C: Milestone with explicit Age (e.g. "marriage 40 lakhs at age 60", "25 lakhs at 58 for house renovation")
+        # Pattern C: Milestone with explicit Age (e.g. "marriage 40 lakhs at age 60", "25 lakhs at 58 for house renovation", "25 lakhs for house renovation at age 55")
         age_milestone = re.search(
             rf"([a-z\s'_-]+)?(?:expense|outlay|cost)?\s*(?:of|:)?\s*{AMT_REGEX}\s+(?:at\s+age|at)\s+(\d{{2}})(?:\s+(?:for|towards)\s+(.*))?",
             s_clean, re.I
         )
+        if not age_milestone:
+            age_milestone_alt = re.search(
+                rf"{AMT_REGEX}\s+(?:for|towards)\s+([a-z\s'_-]+)\s+(?:at\s+age|at)\s+(\d{{2}})",
+                s_clean, re.I
+            )
+            if age_milestone_alt:
+                amt_str = age_milestone_alt.group(1)
+                desc = age_milestone_alt.group(2).strip()
+                target_age = int(age_milestone_alt.group(3))
+                amt = parse_indian_amount(amt_str)
+                if amt > 0 and base_age <= target_age <= 100:
+                    desc = re.sub(r"^(?:additinoal|additional|fixed|one-time|lump\s*sum)\s*", "", desc, flags=re.I).strip()
+                    desc = re.sub(r"[().]", "", desc).strip()
+                    if re.search(r"marr", desc, re.I):
+                        desc = "Child's Marriage"
+                        has_marriage_milestone = True
+                    elif not desc or len(desc) < 3:
+                        desc = "Milestone Outlay"
+                    else:
+                        desc = desc.title()
+                    yr = current_year + (target_age - base_age)
+                    res["milestones"].append({
+                        "description": f"{desc} (Age {target_age})",
+                        "amount": amt,
+                        "age": target_age,
+                        "calendar_year": yr,
+                        "source": "Retirement Vision (Free Text)"
+                    })
+                    continue
         if age_milestone:
             prefix_desc = (age_milestone.group(1) or "").strip()
             amt_str = age_milestone.group(2)
@@ -918,8 +955,7 @@ def generate_detailed_retirement_expense_plan(
 
     # If living expense was detected in free-text vision and was not explicitly overridden
     if not ignore_free_text_overrides and parsed_meta.get("monthly_living_expense") and parsed_meta["monthly_living_expense"] >= 5000.0:
-        if base_monthly_expense <= 50000.0 or base_monthly_expense == 0.0:
-            base_monthly_expense = float(parsed_meta["monthly_living_expense"])
+        base_monthly_expense = float(parsed_meta["monthly_living_expense"])
 
     # If no milestones were passed from table, extract any milestones from free-text vision
     if not ignore_free_text_overrides and not processed_milestones and parsed_meta.get("milestones"):

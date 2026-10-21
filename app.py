@@ -3051,267 +3051,335 @@ else:
                         options=[("Nifty 50 (India)", "^NSEI"), ("BSE Sensex", "^BSESN"), ("S&P 500 (US)", "^GSPC"), ("NASDAQ", "^IXIC")],
                         format_func=lambda x: x[0])
                     hist_years = st.selectbox("Historical Data Period", options=[5, 10, 15, 20], index=1, format_func=lambda x: f"Last {x} Years")
-                add_col1, add_col2 = st.columns(2)
-                with add_col1:
-                    st.caption("📋 **Option A: Milestone Expenses Table (Data Entry Column)**")
-                    one_time_exp_df = st.data_editor(pd.DataFrame([{"Expense Description": "", "Amount (₹)": 0.0, "Age": min(ret_age, u_age + 5)}]), num_rows="dynamic", key="one_time_exp_editor", use_container_width=True, hide_index=True)
-                with add_col2:
-                    st.caption("💳 **Baseline Living & Additional Recurring Expenses**")
-                    approx_living_exp = float(round(total_spent / max(1, num_months) if not df_fy.empty else 50000.0, -3))
-                    base_ret_living_exp = st.number_input("Current Monthly Living Expense (₹)", min_value=5000.0, value=max(10000.0, approx_living_exp), step=5000.0, help="Your baseline living expenses today. Used to calculate how living expenses shoot up with inflation by retirement age.", key="ret_base_living_expense")
-                    add_recurring_exp = st.number_input("Additional Monthly Recurring Expenses (₹)", min_value=0.0, value=0.0, step=5000.0, help="Any extra ongoing expenses planned (e.g. specialized medical care, dependents).")
-                # Extract milestones entered manually into the data editor table
-                table_milestones = []
-                for _, row in one_time_exp_df.iterrows():
-                    try: amt = float(row.get("Amount (₹)", 0) or 0)
-                    except: amt = 0.0
-                    try: age_val = int(row.get("Age", u_age) or u_age)
-                    except: age_val = u_age
-                    desc_str = str(row.get("Expense Description", "") or "").strip()
-                    if amt > 0:
-                        table_milestones.append({
-                            "amount": amt,
-                            "age": age_val,
-                            "description": desc_str or "Milestone Goal",
-                            "source": "One-Time Milestone Table"
-                        })
-                table_has_data = len(table_milestones) > 0
-
-                # Explicit visual OR divider between Data Entry Columns and Free-Text Vision
+                # ── Explicit Input Mode Selector: Use ONLY ONE (Option A OR Option B) ──
                 st.markdown("""
-                <div style="display: flex; align-items: center; justify-content: center; margin: 18px 0 14px 0;">
-                    <div style="flex-grow: 1; height: 1px; background: #334155;"></div>
-                    <span style="background: linear-gradient(135deg, #0284c7, #2563eb); color: white; padding: 4px 22px; border-radius: 20px; font-weight: 800; font-size: 0.92rem; letter-spacing: 0.1em; margin: 0 16px; box-shadow: 0 2px 10px rgba(2, 132, 199, 0.45); border: 1px solid rgba(255,255,255,0.2);">
-                        ⚡ OR ⚡
-                    </span>
-                    <div style="flex-grow: 1; height: 1px; background: #334155;"></div>
+                <div style="margin: 16px 0 10px 0; padding: 12px 16px; background: rgba(30, 41, 59, 0.6); border: 1px solid #334155; border-radius: 8px;">
+                    <div style="font-weight: 700; color: #f8fafc; font-size: 0.96rem; margin-bottom: 4px;">
+                        🎯 Choose Milestone & Expense Input Mode:
+                    </div>
+                    <div style="color: #94a3b8; font-size: 0.82rem;">
+                        Select either <b>Option A (Structured Table & Fields)</b> <i>OR</i> <b>Option B (Free-Text Vision)</b>. The system strictly uses only your chosen option — the other is completely bypassed.
+                    </div>
                 </div>
                 """, unsafe_allow_html=True)
 
-                st.caption("💬 **Option B: Free-Text Retirement Vision & Lifestyle Statement (Natural Language)**")
-                ret_user_context = st.text_area(
-                    "Retirement Vision & Lifestyle Goals (Free-Text)",
-                    placeholder="e.g. 1. I am 53 now. Monthly living expense of 1.5 lakhs. Fixed expense of 7 lakhs a year starting 2027 for daughter's education. Marriage expense of 50 lakhs in 2035. Standard medical expense required.",
-                    help="Enter your vision in plain English. The AI engine will parse your age, living expense, medical buffers, and milestones automatically.",
-                    key="ret_user_context_input",
-                    label_visibility="collapsed"
-                )
-
-                # Parse free-text retirement vision for milestones, living expenses, medical buffer, and age
-                import importlib
-                import investment_planner
-                try:
-                    if not hasattr(investment_planner, "extract_free_text_parameters"):
-                        importlib.reload(investment_planner)
-                except Exception:
-                    pass
-
-                def _safe_extract_free_text_parameters(text: str, base_age: int = 50, current_year: int = None) -> dict:
-                    fn = getattr(investment_planner, "extract_free_text_parameters", None)
-                    if callable(fn):
-                        try:
-                            return fn(text, base_age=base_age, current_year=current_year)
-                        except Exception as e:
-                            print(f"Error calling investment_planner.extract_free_text_parameters: {e}")
-                    
-                    # Infallible inline fallback if running module was cached without latest function
-                    import re
-                    from datetime import datetime
-                    if current_year is None:
-                        current_year = datetime.now().year
-                    res = {
-                        "detected_age": None,
-                        "monthly_living_expense": None,
-                        "monthly_medical_expense": None,
-                        "milestones": [],
-                        "suggestions": []
-                    }
-                    if not text or not str(text).strip():
-                        return res
-                    raw = str(text).strip()
-                    
-                    def _parse_amt(val_str):
-                        s = str(val_str or "").lower().strip().replace(",", "")
-                        m = re.search(r"(\d+(?:\.\d+)?)\s*(?:crores?|cr\b)", s)
-                        if m: return float(m.group(1)) * 10000000.0
-                        m = re.search(r"(\d+(?:\.\d+)?)\s*(?:lakhs?|lacs?|lac|l\b)", s)
-                        if m: return float(m.group(1)) * 100000.0
-                        m = re.search(r"(\d+(?:\.\d+)?)\s*(?:thousands?|k\b)", s)
-                        if m: return float(m.group(1)) * 1000.0
-                        m = re.search(r"(\d+(?:\.\d+)?)", s)
-                        if m: return float(m.group(1))
-                        return 0.0
-
-                    age_m = re.search(r"(?:i am|my age is|current age is|current age|currently|turning)\s*(\d{2})\b", raw, re.I)
-                    if not age_m:
-                        age_m = re.search(r"\b(\d{2})\s*(?:years old|yrs old)\s*(?:now|currently)?\b", raw, re.I)
-                    if age_m:
-                        d_age = int(age_m.group(1))
-                        if 20 <= d_age <= 95:
-                            res["detected_age"] = d_age
-                            base_age = d_age
-
-                    # Clean numbered list markers at start of text, newlines, or sentences (e.g. '1. ', '2) ', '(1) ') so they are not captured as amounts
-                    clean_raw = re.sub(r"(?:^|[\n\r;.]|\b)\s*(?:\(?\d{1,2}\)|\d{1,2}[.)])\s+", " ", raw)
-
-                    # Forward pattern: cost of living / living expense / monthly expense / household expense
-                    fwd_pattern = r"(?:cost\s+of\s+living|living\s+(?:expense(?:s)?|cost(?:s)?)|household\s+expense(?:s)?|monthly\s+(?:living|expense(?:s)?|cost(?:s)?|budget|outflow)?|current\s+(?:monthly\s+)?expense(?:s)?)\s*(?:is|at|of|:)?\s*([₹\d\.,]+(?:\s*(?:lakhs?|lacs?|lac|l\b|cr|crores?|k\b|thousand))?)"
-                    for mm in re.finditer(fwd_pattern, clean_raw, re.I):
-                        v = _parse_amt(mm.group(1))
-                        if v >= 1000.0:
-                            res["monthly_living_expense"] = v
-                            break
-                    if res["monthly_living_expense"] is None:
-                        rev_pattern = r"([₹\d\.,]+\s*(?:lakhs?|lacs?|lac|l\b|cr|crores?|k\b|thousand)?)\s*(?:(?:a|per|\/)\s*month|(?:a|per|\/)\s*mo\b|each\s+month|monthly|p\.?m\.?\b)"
-                        for rm in re.finditer(rev_pattern, clean_raw, re.I):
-                            v = _parse_amt(rm.group(1))
-                            if v >= 1000.0:
-                                res["monthly_living_expense"] = v
-                                break
-
-                    if re.search(r"(?:medical|health|hospital)\s+(?:expense|contingency|buffer|cost)", raw, re.I):
-                        med_m = re.search(r"(?:medical|health)\s+(?:expense|contingency|buffer|cost)\s*(?:of|is|:)?\s*([₹\d\.,]+(?:\s*(?:lakhs?|lacs?|lac|l\b|cr|k\b|thousand))?)", raw, re.I)
-                        if med_m:
-                            mv = _parse_amt(med_m.group(1))
-                            res["monthly_medical_expense"] = mv if 0 < mv <= 100000 else (round(mv/12.0, 2) if mv > 100000 else 25000.0)
-                        else:
-                            res["monthly_medical_expense"] = 25000.0
-                        res["suggestions"].append("Added standard ₹25,000/month healthcare & medical buffer (escalates with medical inflation).")
-
-                    AMT_RGX = r"([₹\d\.,]+\s*(?:lakhs?|lacs?|lac|l\b|cr|crores?|k\b)?)"
-                    sentences = re.split(r"(?<!\d)\.(?!\d)|\n|;", raw)
-                    has_edu, has_marr = False, False
-                    for s in sentences:
-                        sc = s.strip()
-                        if not sc: continue
-                        rec_edu = re.search(rf"(?:fixed\s+expense|fee|cost|expense)?\s*of\s+{AMT_RGX}\s+(?:a|per)\s+year\s+starting\s+(\d{{4}})(?:\s+for\s+(.*?))?(?:$|\.|\))", sc, re.I)
-                        if rec_edu:
-                            amt = _parse_amt(rec_edu.group(1))
-                            syr = int(rec_edu.group(2))
-                            purp = re.sub(r"[().]", "", (rec_edu.group(3) or "Education")).strip() or "Education"
-                            for i in range(4):
-                                yr = syr + i
-                                res["milestones"].append({
-                                    "description": f"{purp.title()} (Yr {i+1}/4 - {yr})",
-                                    "amount": amt,
-                                    "age": max(base_age, base_age + (yr - current_year)),
-                                    "calendar_year": yr,
-                                    "source": "Retirement Vision (Free Text)"
-                                })
-                            has_edu = True
-                            continue
-                        yrm = re.search(rf"([a-z\s'_-]+)?(?:expense|outlay|cost|budget)?\s*(?:of|:)?\s*{AMT_RGX}\s+(?:in|by|around)\s+(\d{{4}})(?:\s+(?:for|towards)\s+(.*))?", sc, re.I)
-                        if yrm:
-                            pfx = (yrm.group(1) or "").strip()
-                            amt = _parse_amt(yrm.group(2))
-                            yr = int(yrm.group(3))
-                            pfx2 = (yrm.group(4) or "").strip()
-                            if amt > 0 and 2024 <= yr <= 2080:
-                                d = pfx2 or pfx or "Milestone Goal"
-                                d = re.sub(r"^(?:additinoal|additional|fixed|one-time|lump\s*sum)\s*", "", d, flags=re.I).strip()
-                                d = re.sub(r"[().]", "", d).strip()
-                                if re.search(r"marr", d, re.I):
-                                    d = "Child's Marriage"
-                                    has_marr = True
-                                else:
-                                    d = d.title() if len(d) >= 3 else "Milestone Outlay"
-                                res["milestones"].append({
-                                    "description": f"{d} ({yr})",
-                                    "amount": amt,
-                                    "age": max(base_age, base_age + (yr - current_year)),
-                                    "calendar_year": yr,
-                                    "source": "Retirement Vision (Free Text)"
-                                })
-                                continue
-                        agm = re.search(rf"([a-z\s'_-]+)?(?:expense|outlay|cost)?\s*(?:of|:)?\s*{AMT_RGX}\s+(?:at\s+age|at)\s+(\d{{2}})(?:\s+(?:for|towards)\s+(.*))?", sc, re.I)
-                        if agm:
-                            pfx = (agm.group(1) or "").strip()
-                            amt = _parse_amt(agm.group(2))
-                            ta = int(agm.group(3))
-                            pfx2 = (agm.group(4) or "").strip()
-                            if amt > 0 and base_age <= ta <= 100:
-                                d = pfx2 or pfx or "Milestone Goal"
-                                d = re.sub(r"^(?:additinoal|additional|fixed|one-time|lump\s*sum)\s*", "", d, flags=re.I).strip()
-                                d = re.sub(r"[().]", "", d).strip()
-                                if re.search(r"marr", d, re.I):
-                                    d = "Child's Marriage"
-                                    has_marr = True
-                                else:
-                                    d = d.title() if len(d) >= 3 else "Milestone Outlay"
-                                yr = current_year + (ta - base_age)
-                                res["milestones"].append({
-                                    "description": f"{d} (Age {ta})",
-                                    "amount": amt,
-                                    "age": ta,
-                                    "calendar_year": yr,
-                                    "source": "Retirement Vision (Free Text)"
-                                })
-
-                    if has_edu:
-                        res["suggestions"].append("🎓 **Education Fund De-risking**: Higher education expenses begin soon (2027). Funds needed within 1–4 years should be systematically ring-fenced into High-Quality Target Maturity Debt Funds or Arbitrage Funds to protect against stock market volatility.")
-                    if has_marr:
-                        res["suggestions"].append("💍 **Marriage Goal Glide-Path (2035)**: With ~9 years to 2035, maintain an aggressive-hybrid or multi-asset allocation until 2032, followed by a gradual 3-year STP (Systematic Transfer Plan) into short-duration debt to lock in the ₹50L+ inflated capital.")
-                    if res["monthly_living_expense"] and res["monthly_living_expense"] >= 150000:
-                        res["suggestions"].append(f"🛡️ **High-Budget Emergency Reserve**: At {res['monthly_living_expense']/100000:.2f}L/month living expense, maintain at least 6 months (₹{res['monthly_living_expense']*6/100000:.1f} Lakhs) in liquid/overnight funds as an untouchable buffer.")
-                        res["suggestions"].append("🏥 **Comprehensive Health Insurance**: In addition to standard medical buffers, secure a ₹1 Crore Super Top-Up Health Insurance policy with a ₹10-15 Lakh deductible to guard against critical illness without depleting your retirement corpus.")
-
-                    return res
-
-                parsed_context = _safe_extract_free_text_parameters(
-                    ret_user_context,
-                    base_age=u_age,
-                    current_year=datetime.datetime.now().year
-                )
-                text_milestones = parsed_context.get("milestones", [])
-                text_has_data = len(text_milestones) > 0
-
-                # ── Explicit Input Mode Selector: Use ONLY ONE (Structured Columns OR Free Text) ──
-                default_choice_idx = 1 if (bool(ret_user_context.strip()) and not table_has_data) else 0
-
                 ret_input_mode = st.radio(
-                    "🎯 Select Milestone & Expense Input Source (Uses ONLY ONE — Table OR Free Text):",
+                    "Retirement Input Source Mode",
                     options=[
                         "📋 Option A: Structured Data Entry Columns (Milestone Table & Expense Inputs)",
                         "💬 Option B: Natural Language Free-Text Vision Statement"
                     ],
-                    index=default_choice_idx,
+                    key="ret_input_source_selection_v2",
                     horizontal=True,
-                    key="ret_input_source_selection",
-                    help="Choose which input method to use. Only one will be used in calculations — the other is completely ignored."
+                    label_visibility="collapsed"
                 )
 
                 is_free_text_mode = "Option B" in ret_input_mode
 
-                if is_free_text_mode:
-                    active_milestones = text_milestones
-                    calc_base_living_exp = float(parsed_context["monthly_living_expense"]) if (parsed_context.get("monthly_living_expense") and float(parsed_context["monthly_living_expense"]) >= 5000.0) else base_ret_living_exp
-                    calc_recurring_exp = float(parsed_context.get("monthly_medical_expense") or 0.0)
-                    calc_user_age = int(parsed_context.get("detected_age") or u_age)
+                if not is_free_text_mode:
+                    add_col1, add_col2 = st.columns(2)
+                    with add_col1:
+                        st.caption("📋 **Option A: Milestone Expenses Table (Data Entry Column)**")
+                        one_time_exp_df = st.data_editor(
+                            pd.DataFrame([{"Expense Description": "", "Amount (₹)": 0.0, "Age": min(ret_age, u_age + 5)}]),
+                            num_rows="dynamic",
+                            key="one_time_exp_editor",
+                            use_container_width=True,
+                            hide_index=True
+                        )
+                    with add_col2:
+                        st.caption("💳 **Baseline Living & Additional Recurring Expenses**")
+                        approx_living_exp = float(round(total_spent / max(1, num_months) if not df_fy.empty else 50000.0, -3))
+                        base_ret_living_exp = st.number_input(
+                            "Current Monthly Living Expense (₹)",
+                            min_value=5000.0,
+                            value=max(10000.0, approx_living_exp),
+                            step=5000.0,
+                            help="Your baseline living expenses today. Used to calculate how living expenses shoot up with inflation by retirement age.",
+                            key="ret_base_living_expense"
+                        )
+                        add_recurring_exp = st.number_input(
+                            "Additional Monthly Recurring Expenses (₹)",
+                            min_value=0.0,
+                            value=0.0,
+                            step=5000.0,
+                            help="Any extra ongoing expenses planned (e.g. specialized medical care, dependents).",
+                            key="ret_add_recurring_expense"
+                        )
 
-                    st.markdown(f"""
-                    <div style="background: rgba(14, 165, 233, 0.12); border: 1px solid rgba(14, 165, 233, 0.35); border-left: 4px solid #38bdf8; border-radius: 6px; padding: 10px 14px; margin: 8px 0 12px 0;">
-                        <div style="font-weight: 700; color: #38bdf8; font-size: 0.95rem;">✨ Active Source: Natural Language Free-Text Vision (Option B)</div>
-                        <div style="color: #cbd5e1; font-size: 0.85rem; margin-top: 3px;">
-                            Factoring <b>{len(active_milestones)} milestone(s)</b>, living expense of <b>{format_inr(calc_base_living_exp)}/mo</b>{f", and medical buffer of {format_inr(calc_recurring_exp)}/mo" if calc_recurring_exp > 0 else ""}{f", current age <b>{calc_user_age}</b>" if calc_user_age != u_age else ""}. 
-                            <br><span style="color: #94a3b8; font-size: 0.8rem;">🔒 <i>Structured data entry table and recurring number inputs in Option A are completely bypassed.</i></span>
-                        </div>
-                    </div>
-                    """, unsafe_allow_html=True)
-                else:
+                    table_milestones = []
+                    for _, row in one_time_exp_df.iterrows():
+                        try: amt = float(row.get("Amount (₹)", 0) or 0)
+                        except: amt = 0.0
+                        try: age_val = int(row.get("Age", u_age) or u_age)
+                        except: age_val = u_age
+                        desc_str = str(row.get("Expense Description", "") or "").strip()
+                        if amt > 0:
+                            table_milestones.append({
+                                "amount": amt,
+                                "age": age_val,
+                                "description": desc_str or "Milestone Goal",
+                                "source": "One-Time Milestone Table"
+                            })
+
+                    active_source_label = "📋 Option A: Structured Data Entry Columns"
                     active_milestones = table_milestones
-                    calc_base_living_exp = base_ret_living_exp
-                    calc_recurring_exp = add_recurring_exp
-                    calc_user_age = u_age
+                    calc_base_living_exp = float(base_ret_living_exp)
+                    calc_recurring_exp = float(add_recurring_exp)
+                    calc_user_age = int(u_age)
+                    calc_ret_age = int(ret_age)
+                    active_user_context = ""  # Strictly empty so Option B never affects calculations!
+                    ignore_free_text = True
 
                     st.markdown(f"""
-                    <div style="background: rgba(16, 185, 129, 0.12); border: 1px solid rgba(16, 185, 129, 0.35); border-left: 4px solid #10b981; border-radius: 6px; padding: 10px 14px; margin: 8px 0 12px 0;">
-                        <div style="font-weight: 700; color: #34d399; font-size: 0.95rem;">✨ Active Source: Structured Data Entry Columns (Option A)</div>
+                    <div style="background: rgba(16, 185, 129, 0.12); border: 1px solid rgba(16, 185, 129, 0.35); border-left: 4px solid #10b981; border-radius: 6px; padding: 10px 14px; margin: 8px 0 14px 0;">
+                        <div style="font-weight: 700; color: #34d399; font-size: 0.95rem;">✨ Active Source: Option A (Structured Data Entry Columns)</div>
                         <div style="color: #cbd5e1; font-size: 0.85rem; margin-top: 3px;">
                             Factoring <b>{len(active_milestones)} milestone(s)</b> from table, living expense of <b>{format_inr(calc_base_living_exp)}/mo</b>{f", and recurring expense of {format_inr(calc_recurring_exp)}/mo" if calc_recurring_exp > 0 else ""}. 
-                            <br><span style="color: #94a3b8; font-size: 0.8rem;">🔒 <i>Free-text milestones and expense overrides in Option B are completely bypassed.</i></span>
+                            <br><span style="color: #94a3b8; font-size: 0.8rem;">🔒 <i>Option B (Free-Text Retirement Vision) is completely bypassed and ignored.</i></span>
                         </div>
                     </div>
                     """, unsafe_allow_html=True)
+
+                else:
+                    st.caption("💬 **Option B: Free-Text Retirement Vision & Lifestyle Statement (Natural Language)**")
+                    ret_user_context = st.text_area(
+                        "Retirement Vision & Lifestyle Goals (Free-Text)",
+                        placeholder="e.g. 1. I am 53 now. Monthly living expense of 1.75 lakhs. Fixed expense of 7 lakhs a year starting 2027 for daughter's education. Marriage expense of 50 lakhs in 2035. Standard medical expense required.",
+                        help="Enter your vision in plain English. The AI engine parses age, retirement age, living expenses, medical buffer, and milestones automatically.",
+                        key="ret_user_context_input",
+                        height=120
+                    )
+
+                    import importlib
+                    import investment_planner
+                    try:
+                        importlib.reload(investment_planner)
+                    except Exception:
+                        pass
+
+                    def _safe_extract_free_text_parameters(text: str, base_age: int = 50, current_year: int = None) -> dict:
+                        fn = getattr(investment_planner, "extract_free_text_parameters", None)
+                        if callable(fn):
+                            try:
+                                return fn(text, base_age=base_age, current_year=current_year)
+                            except Exception as e:
+                                print(f"Error calling investment_planner.extract_free_text_parameters: {e}")
+                        
+                        import re
+                        from datetime import datetime
+                        if current_year is None:
+                            current_year = datetime.now().year
+                        res = {
+                            "detected_age": None,
+                            "detected_retirement_age": None,
+                            "monthly_living_expense": None,
+                            "monthly_medical_expense": None,
+                            "milestones": [],
+                            "suggestions": []
+                        }
+                        if not text or not str(text).strip():
+                            return res
+                        raw = str(text).strip()
+
+                        def _parse_amt(val_str):
+                            s = str(val_str or "").lower().strip().replace(",", "")
+                            m = re.search(r"(\d+(?:\.\d+)?)\s*(?:crores?|cr\b)", s)
+                            if m: return float(m.group(1)) * 10000000.0
+                            m = re.search(r"(\d+(?:\.\d+)?)\s*(?:lakhs?|lacs?|lac|l\b)", s)
+                            if m: return float(m.group(1)) * 100000.0
+                            m = re.search(r"(\d+(?:\.\d+)?)\s*(?:thousands?|k\b)", s)
+                            if m: return float(m.group(1)) * 1000.0
+                            m = re.search(r"(\d+(?:\.\d+)?)", s)
+                            if m: return float(m.group(1))
+                            return 0.0
+
+                        age_m = re.search(r"(?:i am|my age is|current age is|current age|currently|turning)\s*(\d{2})\b", raw, re.I)
+                        if not age_m:
+                            age_m = re.search(r"\b(\d{2})\s*(?:years old|yrs old)\s*(?:now|currently)?\b", raw, re.I)
+                        if age_m:
+                            d_age = int(age_m.group(1))
+                            if 20 <= d_age <= 95:
+                                res["detected_age"] = d_age
+                                base_age = d_age
+
+                        ret_m = re.search(r"(?:retire\s+at|retiring\s+at|plan\s+to\s+retire\s+at|target\s+retirement\s+age|retirement\s+age(?:\s+is|:)?)\s*(\d{2})\b", raw, re.I)
+                        if ret_m:
+                            ra = int(ret_m.group(1))
+                            if base_age < ra <= 100:
+                                res["detected_retirement_age"] = ra
+
+                        clean_raw = re.sub(r"(?:^|[\n\r;.]|\b)\s*(?:\(?\d{1,2}\)|\d{1,2}[.)])\s+", " ", raw)
+                        fwd_pattern = r"(?:cost\s+of\s+living|living\s+(?:expense(?:s)?|cost(?:s)?)|household\s+expense(?:s)?|monthly\s+(?:living|expense(?:s)?|cost(?:s)?|budget|outflow)?|current\s+(?:monthly\s+)?expense(?:s)?)\s*(?:is|at|of|:)?\s*([₹\d\.,]+(?:\s*(?:lakhs?|lacs?|lac|l\b|cr|crores?|k\b|thousand))?)"
+                        for mm in re.finditer(fwd_pattern, clean_raw, re.I):
+                            v = _parse_amt(mm.group(1))
+                            if v >= 1000.0:
+                                res["monthly_living_expense"] = v
+                                break
+                        if res["monthly_living_expense"] is None:
+                            rev_pattern = r"([₹\d\.,]+\s*(?:lakhs?|lacs?|lac|l\b|cr|crores?|k\b|thousand)?)\s*(?:(?:a|per|\/)\s*month|(?:a|per|\/)\s*mo\b|each\s+month|monthly|p\.?m\.?\b)"
+                            for rm in re.finditer(rev_pattern, clean_raw, re.I):
+                                v = _parse_amt(rm.group(1))
+                                if v >= 1000.0:
+                                    res["monthly_living_expense"] = v
+                                    break
+
+                        if re.search(r"(?:medical|health|hospital)\s+(?:expense|contingency|buffer|cost)", raw, re.I):
+                            med_m = re.search(r"(?:medical|health)\s+(?:expense|contingency|buffer|cost)\s*(?:of|is|:)?\s*([₹\d\.,]+(?:\s*(?:lakhs?|lacs?|lac|l\b|cr|k\b|thousand))?)", raw, re.I)
+                            if med_m:
+                                mv = _parse_amt(med_m.group(1))
+                                res["monthly_medical_expense"] = mv if 0 < mv <= 100000 else (round(mv/12.0, 2) if mv > 100000 else 25000.0)
+                            else:
+                                res["monthly_medical_expense"] = 25000.0
+                            res["suggestions"].append("Added standard ₹25,000/month healthcare & medical buffer (escalates with medical inflation).")
+
+                        AMT_RGX = r"([₹\d\.,]+\s*(?:lakhs?|lacs?|lac|l\b|cr|crores?|k\b)?)"
+                        sentences = re.split(r"(?<!\d)\.(?!\d)|\n|;", raw)
+                        has_edu, has_marr = False, False
+                        for s in sentences:
+                            sc = s.strip()
+                            if not sc: continue
+                            rec_edu = re.search(rf"(?:fixed\s+expense|fee|cost|expense)?\s*of\s+{AMT_RGX}\s+(?:a|per)\s+year\s+starting\s+(\d{{4}})(?:\s+for\s+(.*?))?(?:$|\.|\))", sc, re.I)
+                            if rec_edu:
+                                amt = _parse_amt(rec_edu.group(1))
+                                syr = int(rec_edu.group(2))
+                                purp = re.sub(r"[().]", "", (rec_edu.group(3) or "Education")).strip() or "Education"
+                                for i in range(4):
+                                    yr = syr + i
+                                    res["milestones"].append({
+                                        "description": f"{purp.title()} (Yr {i+1}/4 - {yr})",
+                                        "amount": amt,
+                                        "age": max(base_age, base_age + (yr - current_year)),
+                                        "calendar_year": yr,
+                                        "source": "Retirement Vision (Free Text)"
+                                    })
+                                has_edu = True
+                                continue
+                            yrm = re.search(rf"([a-z\s'_-]+)?(?:expense|outlay|cost|budget)?\s*(?:of|:)?\s*{AMT_RGX}\s+(?:in|by|around|at)\s+(\d{{4}})(?:\s+(?:for|towards)\s+(.*))?", sc, re.I)
+                            if yrm:
+                                pfx = (yrm.group(1) or "").strip()
+                                amt = _parse_amt(yrm.group(2))
+                                yr = int(yrm.group(3))
+                                pfx2 = (yrm.group(4) or "").strip()
+                                if amt > 0 and 2024 <= yr <= 2080:
+                                    d = pfx2 or pfx or "Milestone Goal"
+                                    d = re.sub(r"^(?:additinoal|additional|fixed|one-time|lump\s*sum)\s*", "", d, flags=re.I).strip()
+                                    d = re.sub(r"[().]", "", d).strip()
+                                    if re.search(r"marr", d, re.I):
+                                        d = "Child's Marriage"
+                                        has_marr = True
+                                    else:
+                                        d = d.title() if len(d) >= 3 else "Milestone Outlay"
+                                    res["milestones"].append({
+                                        "description": f"{d} ({yr})",
+                                        "amount": amt,
+                                        "age": max(base_age, base_age + (yr - current_year)),
+                                        "calendar_year": yr,
+                                        "source": "Retirement Vision (Free Text)"
+                                    })
+                                    continue
+                            agm = re.search(rf"([a-z\s'_-]+)?(?:expense|outlay|cost)?\s*(?:of|:)?\s*{AMT_RGX}\s+(?:at\s+age|at)\s+(\d{{2}})(?:\s+(?:for|towards)\s+(.*))?", sc, re.I)
+                            if agm:
+                                pfx = (agm.group(1) or "").strip()
+                                amt = _parse_amt(agm.group(2))
+                                ta = int(agm.group(3))
+                                pfx2 = (agm.group(4) or "").strip()
+                                if amt > 0 and base_age <= ta <= 100:
+                                    d = pfx2 or pfx or "Milestone Goal"
+                                    d = re.sub(r"^(?:additinoal|additional|fixed|one-time|lump\s*sum)\s*", "", d, flags=re.I).strip()
+                                    d = re.sub(r"[().]", "", d).strip()
+                                    if re.search(r"marr", d, re.I):
+                                        d = "Child's Marriage"
+                                        has_marr = True
+                                    else:
+                                        d = d.title() if len(d) >= 3 else "Milestone Outlay"
+                                    yr = current_year + (ta - base_age)
+                                    res["milestones"].append({
+                                        "description": f"{d} (Age {ta})",
+                                        "amount": amt,
+                                        "age": ta,
+                                        "calendar_year": yr,
+                                        "source": "Retirement Vision (Free Text)"
+                                    })
+
+                        if has_edu:
+                            res["suggestions"].append("🎓 **Education Fund De-risking**: Higher education expenses begin soon (2027). Funds needed within 1–4 years should be systematically ring-fenced into High-Quality Target Maturity Debt Funds or Arbitrage Funds to protect against stock market volatility.")
+                        if has_marr:
+                            res["suggestions"].append("💍 **Marriage Goal Glide-Path (2035)**: With ~9 years to 2035, maintain an aggressive-hybrid or multi-asset allocation until 2032, followed by a gradual 3-year STP (Systematic Transfer Plan) into short-duration debt to lock in the ₹50L+ inflated capital.")
+                        if res["monthly_living_expense"] and res["monthly_living_expense"] >= 150000:
+                            res["suggestions"].append(f"🛡️ **High-Budget Emergency Reserve**: At {res['monthly_living_expense']/100000:.2f}L/month living expense, maintain at least 6 months (₹{res['monthly_living_expense']*6/100000:.1f} Lakhs) in liquid/overnight funds as an untouchable buffer.")
+                            res["suggestions"].append("🏥 **Comprehensive Health Insurance**: In addition to standard medical buffers, secure a ₹1 Crore Super Top-Up Health Insurance policy with a ₹10-15 Lakh deductible to guard against critical illness without depleting your retirement corpus.")
+
+                        return res
+
+                    parsed_context = _safe_extract_free_text_parameters(
+                        ret_user_context,
+                        base_age=u_age,
+                        current_year=datetime.datetime.now().year
+                    )
+
+                    text_milestones = parsed_context.get("milestones", [])
+                    opt_b_user_age = int(parsed_context.get("detected_age") or u_age)
+                    opt_b_ret_age = int(parsed_context.get("detected_retirement_age") or ret_age)
+                    opt_b_living_exp = float(parsed_context.get("monthly_living_expense") or (total_spent / max(1, num_months) if not df_fy.empty else 50000.0))
+                    opt_b_medical_exp = float(parsed_context.get("monthly_medical_expense") or 0.0)
+
+                    # Option B confirmed parameters & interactive override inputs
+                    ob_col1, ob_col2, ob_col3 = st.columns(3)
+                    with ob_col1:
+                        confirmed_living_exp = st.number_input(
+                            "Extracted Monthly Living Expense (₹)",
+                            min_value=5000.0,
+                            value=max(5000.0, float(round(opt_b_living_exp, -2))),
+                            step=5000.0,
+                            key="opt_b_confirmed_living_exp",
+                            help="Living expenses parsed directly from your vision statement. You can edit this anytime."
+                        )
+                    with ob_col2:
+                        confirmed_medical_exp = st.number_input(
+                            "Monthly Healthcare Buffer (₹)",
+                            min_value=0.0,
+                            value=float(opt_b_medical_exp),
+                            step=5000.0,
+                            key="opt_b_confirmed_medical_exp",
+                            help="Healthcare contingency buffer parsed from your text."
+                        )
+                    with ob_col3:
+                        confirmed_ret_age = st.number_input(
+                            "Target Retirement Age",
+                            min_value=opt_b_user_age + 1,
+                            max_value=100,
+                            value=max(opt_b_user_age + 1, opt_b_ret_age),
+                            step=1,
+                            key="opt_b_confirmed_ret_age",
+                            help="Retirement age parsed from your text or adjusted manually."
+                        )
+
+                    active_source_label = "💬 Option B: Natural Language Free-Text Vision Statement"
+                    active_milestones = text_milestones
+                    calc_base_living_exp = float(confirmed_living_exp)
+                    calc_recurring_exp = float(confirmed_medical_exp)
+                    calc_user_age = int(opt_b_user_age)
+                    calc_ret_age = int(confirmed_ret_age)
+                    active_user_context = ret_user_context
+                    ignore_free_text = False
+
+                    st.markdown(f"""
+                    <div style="background: rgba(14, 165, 233, 0.12); border: 1px solid rgba(14, 165, 233, 0.35); border-left: 4px solid #38bdf8; border-radius: 6px; padding: 10px 14px; margin: 8px 0 14px 0;">
+                        <div style="font-weight: 700; color: #38bdf8; font-size: 0.95rem;">✨ Active Source: Option B (Free-Text Retirement Vision)</div>
+                        <div style="color: #cbd5e1; font-size: 0.85rem; margin-top: 3px;">
+                            Factoring <b>{len(active_milestones)} milestone(s)</b>, living expense of <b>{format_inr(calc_base_living_exp)}/mo</b>{f", medical buffer of {format_inr(calc_recurring_exp)}/mo" if calc_recurring_exp > 0 else ""}, Current Age <b>{calc_user_age}</b>, Retiring at Age <b>{calc_ret_age}</b>. 
+                            <br><span style="color: #94a3b8; font-size: 0.8rem;">🔒 <i>Option A table and number inputs are completely bypassed.</i></span>
+                        </div>
+                    </div>
+                    """, unsafe_allow_html=True)
+
+                    if text_milestones:
+                        with st.expander(f"📋 Extracted Milestones from Vision ({len(text_milestones)} scheduled)", expanded=True):
+                            mdf = pd.DataFrame(text_milestones)
+                            mdf["Amount (₹)"] = mdf["amount"].apply(format_inr)
+                            m_cols = [c for c in ["description", "Amount (₹)", "age", "calendar_year", "source"] if c in mdf.columns]
+                            st.dataframe(mdf[m_cols], use_container_width=True, hide_index=True)
 
                 if st.button("🔮 Calculate Retirement Corpus", type="primary", use_container_width=True):
                     import importlib
@@ -3329,7 +3397,7 @@ else:
                         try:
                             ret_plan = investment_planner.calculate_retirement_corpus(
                                 current_age=calc_user_age, 
-                                retirement_age=ret_age, 
+                                retirement_age=calc_ret_age, 
                                 current_savings=liquid_portfolio_val, 
                                 monthly_sip=u_sip_budget, 
                                 cagr_decimal=cagr_decimal, 
@@ -3342,15 +3410,15 @@ else:
                         except TypeError:
                             try:
                                 ret_plan = investment_planner.calculate_retirement_corpus(
-                                    calc_user_age, ret_age, max(0.0, liquid_portfolio_val - tot_debt_val), u_sip_budget, cagr_decimal, active_milestones, calc_recurring_exp
+                                    calc_user_age, calc_ret_age, max(0.0, liquid_portfolio_val - tot_debt_val), u_sip_budget, cagr_decimal, active_milestones, calc_recurring_exp
                                 )
                             except Exception:
                                 ret_plan = investment_planner.calculate_retirement_corpus(
-                                    calc_user_age, ret_age, max(0.0, liquid_portfolio_val - tot_debt_val), u_sip_budget, cagr_decimal
+                                    calc_user_age, calc_ret_age, max(0.0, liquid_portfolio_val - tot_debt_val), u_sip_budget, cagr_decimal
                                 )
 
                         # Ensure inflation and breakdown keys exist in ret_plan even if older cached function executed
-                        years_left = ret_plan.get("years_to_retirement", max(1, ret_age - calc_user_age))
+                        years_left = ret_plan.get("years_to_retirement", max(1, calc_ret_age - calc_user_age))
                         tot_fv_val = ret_plan.get("total_future_value", 0.0)
                         swr_mo_val = ret_plan.get("safe_monthly_withdrawal", 0.0)
                         if "corpus_today_value" not in ret_plan:
@@ -3367,15 +3435,15 @@ else:
                         # Generate Detailed Expense Plan
                         exp_plan = investment_planner.generate_detailed_retirement_expense_plan(
                             current_age=calc_user_age,
-                            retirement_age=ret_age,
+                            retirement_age=calc_ret_age,
                             base_monthly_expense=calc_base_living_exp,
                             additional_monthly_expense=calc_recurring_exp,
                             one_time_expenses=active_milestones,
-                            user_context=ret_user_context,
+                            user_context=active_user_context,
                             inflation_rate=0.06,
                             life_expectancy=85,
                             safe_monthly_withdrawal=ret_plan.get("safe_monthly_withdrawal", 0.0),
-                            ignore_free_text_overrides=(not is_free_text_mode)
+                            ignore_free_text_overrides=ignore_free_text
                         )
 
                     with st.spinner("🤖 Generating AI Retirement Advisory..."):
@@ -3383,12 +3451,12 @@ else:
                                              or os.environ.get("GEMINI_API_KEY", "") or st.secrets.get("GEMINI_API_KEY", ""))
                         try:
                             ret_advice = investment_planner.generate_ai_retirement_advisory(
-                                ret_plan, inv_df, user_context=ret_user_context, api_key=gemini_api_key_wp
+                                ret_plan, inv_df, user_context=active_user_context, api_key=gemini_api_key_wp
                             )
                         except TypeError:
                             try:
                                 ret_advice = investment_planner.generate_ai_retirement_advisory(
-                                    ret_plan, inv_df, ret_user_context, gemini_api_key_wp
+                                    ret_plan, inv_df, active_user_context, gemini_api_key_wp
                                 )
                             except TypeError:
                                 ret_advice = investment_planner.generate_ai_retirement_advisory(ret_plan, inv_df)
@@ -3398,6 +3466,7 @@ else:
                         "ret_plan": ret_plan,
                         "exp_plan": exp_plan,
                         "ret_advice": ret_advice,
+                        "source_mode": active_source_label,
                         "_saved_at": datetime.datetime.now().strftime("%d %b %Y, %I:%M %p")
                     }
 
@@ -3407,6 +3476,14 @@ else:
                     ret_plan = active_bundle.get("ret_plan", {})
                     exp_plan = active_bundle.get("exp_plan", {})
                     ret_advice = active_bundle.get("ret_advice", {})
+                    source_mode_badge = active_bundle.get("source_mode", "Calculated Plan")
+
+                    st.markdown(f"""
+                    <div style="background: rgba(15, 23, 42, 0.7); border: 1px solid #334155; border-radius: 8px; padding: 10px 16px; margin: 16px 0 12px 0; display: flex; align-items: center; justify-content: space-between;">
+                        <span style="color: #94a3b8; font-size: 0.9rem;">📌 <b>Active Plan Source:</b> <span style="color: #38bdf8; font-weight: 700;">{source_mode_badge}</span></span>
+                        <span style="color: #64748b; font-size: 0.8rem;">Calculated at {active_bundle.get('_saved_at', '')}</span>
+                    </div>
+                    """, unsafe_allow_html=True)
 
                     st.markdown("---")
                     r1, r2, r3, r4 = st.columns(4)

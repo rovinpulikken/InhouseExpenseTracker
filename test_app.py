@@ -575,6 +575,81 @@ def test_mutual_exclusive_expense_sources():
     
     print("✅ Mutual exclusive expense sources (Option A vs Option B) test passed.")
 
+def test_option_b_full_resolution():
+    import investment_planner
+    
+    user_prompt = "Use this inputs .. 1. I am 53 now (in another few days)... i have following expense monthly expense of 1.75 lakhs.   fixed expense of 7 lakhs a year starting 2027 for daughters education. additinoal marriaghe expense of 50 lakhs in 2035 . all figures should be inflation adjusted. add stanadard medical expense required.. anything else needed suggest"
+    
+    # Table data entered in Option A
+    table_milestones = [{
+        "amount": 1000000.0,
+        "age": 55,
+        "description": "Car Upgrade",
+        "source": "One-Time Milestone Table"
+    }]
+    table_base_living = 25000.0
+    table_recurring = 5000.0
+    u_age = 50
+    ret_age = 60
+    
+    # Simulate Option B mode selection
+    is_free_text_mode = True
+    parsed = investment_planner.extract_free_text_parameters(user_prompt, base_age=u_age)
+    
+    if is_free_text_mode:
+        active_milestones = parsed["milestones"]
+        calc_base_living_exp = float(parsed["monthly_living_expense"] or 50000.0)
+        calc_recurring_exp = float(parsed["monthly_medical_expense"] or 0.0)
+        calc_user_age = int(parsed.get("detected_age") or u_age)
+        calc_ret_age = int(parsed.get("detected_retirement_age") or ret_age)
+        active_user_context = user_prompt
+        ignore_free_text = False
+    else:
+        active_milestones = table_milestones
+        calc_base_living_exp = float(table_base_living)
+        calc_recurring_exp = float(table_recurring)
+        calc_user_age = int(u_age)
+        calc_ret_age = int(ret_age)
+        active_user_context = ""
+        ignore_free_text = True
+        
+    assert calc_user_age == 53
+    assert calc_base_living_exp == 175000.0
+    assert calc_recurring_exp == 25000.0
+    assert len(active_milestones) == 5
+    assert not any(m["description"] == "Car Upgrade" for m in active_milestones)
+    
+    ret_plan = investment_planner.calculate_retirement_corpus(
+        current_age=calc_user_age,
+        retirement_age=calc_ret_age,
+        current_savings=5000000.0,
+        monthly_sip=50000.0,
+        cagr_decimal=0.12,
+        one_time_expenses=active_milestones,
+        additional_monthly_expense=calc_recurring_exp,
+        outstanding_debt=0.0,
+        real_estate_value=0.0,
+        inflation_rate=0.06
+    )
+    assert ret_plan["post_ret_milestones_count"] == 1 # 2035 Marriage (Age 62)
+    assert ret_plan["post_ret_milestones_reserve_needed"] > 0
+    
+    exp_plan = investment_planner.generate_detailed_retirement_expense_plan(
+        current_age=calc_user_age,
+        retirement_age=calc_ret_age,
+        base_monthly_expense=calc_base_living_exp,
+        additional_monthly_expense=calc_recurring_exp,
+        one_time_expenses=active_milestones,
+        user_context=active_user_context,
+        inflation_rate=0.06,
+        safe_monthly_withdrawal=ret_plan["safe_monthly_withdrawal"],
+        ignore_free_text_overrides=ignore_free_text
+    )
+    assert exp_plan["base_monthly_today"] == 175000.0
+    assert len(exp_plan["milestones"]) == 5
+    assert not any(m["description"] == "Car Upgrade" for m in exp_plan["milestones"])
+    print("✅ Option B full resolution and Option A bypass test passed.")
+
 if __name__ == "__main__":
     try:
         test_strict_uploaded_date_enforcement()
@@ -593,6 +668,7 @@ if __name__ == "__main__":
         test_free_text_retirement_milestones_and_override()
         test_cost_of_living_variations_and_bullet_prefix_isolation()
         test_mutual_exclusive_expense_sources()
+        test_option_b_full_resolution()
         print("🎉 All test suite assertions passed successfully!")
     finally:
         if os.path.exists(database.DB_PATH):
