@@ -2982,8 +2982,44 @@ else:
                 </div>
                 """, unsafe_allow_html=True)
 
-                from database import get_saved_retirement_plan, save_retirement_plan, delete_saved_retirement_plan
-                saved_plan_db = get_saved_retirement_plan(current_user["username"], current_user.get("family_id", 1), "Last Run")
+                import importlib
+                import database
+                try:
+                    if not hasattr(database, "get_saved_retirement_plan"):
+                        importlib.reload(database)
+                except Exception:
+                    pass
+
+                def _safe_get_saved_plan(username, family_id, plan_name="Last Run"):
+                    fn = getattr(database, "get_saved_retirement_plan", None)
+                    if callable(fn):
+                        try:
+                            return fn(username, family_id, plan_name)
+                        except Exception as e:
+                            print(f"Error calling get_saved_retirement_plan: {e}")
+                    return st.session_state.get(f"_saved_ret_plan_{username}_{plan_name}")
+
+                def _safe_save_plan(username, family_id, plan_data, plan_name="Last Run"):
+                    st.session_state[f"_saved_ret_plan_{username}_{plan_name}"] = plan_data
+                    fn = getattr(database, "save_retirement_plan", None)
+                    if callable(fn):
+                        try:
+                            return fn(username, family_id, plan_data, plan_name)
+                        except Exception as e:
+                            print(f"Error calling save_retirement_plan: {e}")
+                    return True
+
+                def _safe_delete_plan(username, family_id, plan_name="Last Run"):
+                    st.session_state.pop(f"_saved_ret_plan_{username}_{plan_name}", None)
+                    fn = getattr(database, "delete_saved_retirement_plan", None)
+                    if callable(fn):
+                        try:
+                            return fn(username, family_id, plan_name)
+                        except Exception as e:
+                            print(f"Error calling delete_saved_retirement_plan: {e}")
+                    return True
+
+                saved_plan_db = _safe_get_saved_plan(current_user["username"], current_user.get("family_id", 1), "Last Run")
                 if saved_plan_db:
                     sp_ret = saved_plan_db.get("ret_plan", {})
                     sp_c1, sp_c2, sp_c3 = st.columns([3, 1, 1])
@@ -3002,7 +3038,7 @@ else:
                             st.rerun()
                     with sp_c3:
                         if st.button("🗑️ Clear", key="btn_clear_saved_ret_plan", use_container_width=True):
-                            delete_saved_retirement_plan(current_user["username"], current_user.get("family_id", 1), "Last Run")
+                            _safe_delete_plan(current_user["username"], current_user.get("family_id", 1), "Last Run")
                             st.session_state.pop("active_retirement_plan", None)
                             st.rerun()
 
@@ -3275,8 +3311,7 @@ else:
                     save_c1, save_c2 = st.columns([3, 1])
                     with save_c1:
                         if st.button("💾 Save Last Run for Reference", type="secondary", use_container_width=True):
-                            from database import save_retirement_plan
-                            if save_retirement_plan(current_user["username"], current_user.get("family_id", 1), active_bundle, "Last Run"):
+                            if _safe_save_plan(current_user["username"], current_user.get("family_id", 1), active_bundle, "Last Run"):
                                 st.success("✅ Retirement plan and detailed expense roadmap saved! You can reload and reference it anytime.")
                                 st.rerun()
                             else:

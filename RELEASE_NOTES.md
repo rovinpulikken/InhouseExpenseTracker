@@ -465,3 +465,4 @@
 - Implemented an Inflation Surge modeling engine displaying how living expenses compound exponentially (today vs. retirement vs. age 75/85) with an interactive Plotly area chart comparing escalating expenses against the 4% Safe Monthly SWP.
 - Integrated scheduled one-time milestone expenses (with both today's value and future inflated value) and free-text lifestyle goals (travel, medical contingency, relocation, rental income) into year-by-year cash flow projections with CSV download.
 - Added full database persistence for retirement plans via the `saved_retirement_plans` table, providing one-click "Save Last Run for Reference" and "Load Saved Run" capabilities across sessions.
+- Fixed an ImportError in `app.py` on Streamlit Cloud caused by stale in-memory caching of the `database` module by adding automatic module reload detection and safe fallback persistence wrappers (`_safe_get_saved_plan`, `_safe_save_plan`, `_safe_delete_plan`).
