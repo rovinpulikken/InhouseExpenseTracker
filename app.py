@@ -2978,6 +2978,14 @@ else:
                     except: age_val = u_age
                     if amt > 0:
                         one_time_expenses_list.append({"amount": amt, "age": age_val})
+
+                ret_user_context = st.text_area(
+                    "💬 Retirement Vision & Lifestyle Goals (Optional)",
+                    placeholder="e.g. Planning to relocate to a tier-2 city at 60, expecting ₹30k/month rental income, budgeting for international travel every 2 years, prefer low volatility and high medical contingency.",
+                    help="Gemini AI will personalize your retirement strategy, asset allocation glide path, and cash flow plan based on your vision.",
+                    key="ret_user_context_input"
+                )
+
                 if st.button("🔮 Calculate Retirement Corpus", type="primary", use_container_width=True):
                     from investment_planner import fetch_index_historical_cagr, calculate_retirement_corpus, generate_ai_retirement_advisory
                     with st.spinner("Calculating..."):
@@ -2994,7 +3002,9 @@ else:
                         r2.metric("💵 Total Invested", format_inr(ret_plan["total_invested"]))
                         r3.metric("🏝️ Safe Monthly Withdrawal (4%)", format_inr(ret_plan["safe_monthly_withdrawal"]))
                     with st.spinner("🤖 Generating AI Retirement Advisory..."):
-                        ret_advice = generate_ai_retirement_advisory(ret_plan, inv_df)
+                        gemini_api_key_wp = (current_user.get("gemini_api_key") or get_admin_gemini_api_key()
+                                             or os.environ.get("GEMINI_API_KEY", "") or st.secrets.get("GEMINI_API_KEY", ""))
+                        ret_advice = generate_ai_retirement_advisory(ret_plan, inv_df, user_context=ret_user_context, api_key=gemini_api_key_wp)
                         st.markdown("#### 🤖 AI Retirement Advisory")
                         st.info(ret_advice.get("summary", ""))
                         for item in ret_advice.get("key_takeaways", []):

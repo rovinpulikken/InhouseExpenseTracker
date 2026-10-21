@@ -545,6 +545,9 @@ def calculate_retirement_corpus(current_age: int, retirement_age: int, current_s
     swr_monthly = round((total_fv * 0.04) / 12.0, 2)
 
     return {
+        "current_age": current_age,
+        "retirement_age": retirement_age,
+        "sip_monthly": monthly_sip,
         "years_to_retirement": years,
         "total_future_value": total_fv,
         "total_invested": total_invested,
@@ -553,15 +556,28 @@ def calculate_retirement_corpus(current_age: int, retirement_age: int, current_s
         "cagr_used_pct": round(cagr_decimal * 100.0, 2)
     }
 
-def generate_ai_retirement_advisory(retirement_plan: Dict[str, Any], holdings_df: pd.DataFrame) -> Dict[str, Any]:
+def generate_ai_retirement_advisory(
+    retirement_plan: Dict[str, Any], 
+    holdings_df: pd.DataFrame, 
+    user_context: str = "",
+    api_key: str = ""
+) -> Dict[str, Any]:
     """
-    Generates AI suggestions for retirement using the calculated corpus and the user's active holdings.
+    Generates AI suggestions for retirement using the calculated corpus, active holdings, and personalized user vision.
     """
     total_current = float(holdings_df["current_value"].sum()) if holdings_df is not None and not holdings_df.empty and "current_value" in holdings_df.columns else 0.0
     
+    portfolio_summary = ""
+    if holdings_df is not None and not holdings_df.empty and "investment_type" in holdings_df.columns:
+        type_splits = holdings_df.groupby("investment_type")["current_value"].sum().to_dict()
+        portfolio_summary = "Current Asset Allocation: " + ", ".join([f"{k}: ₹{v:,.0f}" for k, v in type_splits.items()])
+
+    context_prompt = f"\n- User's Personal Vision & Lifestyle Context: {user_context.strip()}" if user_context and user_context.strip() else ""
+
     try:
         from google import genai
-        api_key = os.environ.get("GEMINI_API_KEY")
+        if not api_key:
+            api_key = os.environ.get("GEMINI_API_KEY")
         if not api_key:
             try:
                 import streamlit as st
@@ -572,17 +588,25 @@ def generate_ai_retirement_advisory(retirement_plan: Dict[str, Any], holdings_df
         if api_key:
             client = genai.Client(api_key=api_key)
             prompt = f"""
-            Act as an expert Indian Retirement Planner. Analyze this profile:
+            Act as an expert Indian Retirement Planner & Wealth Strategist. Analyze this client profile:
+            - Current Age: {retirement_plan.get('current_age', 'N/A')}
+            - Desired Retirement Age: {retirement_plan.get('retirement_age', 'N/A')}
             - Years to Retirement: {retirement_plan['years_to_retirement']}
-            - Current Portfolio Value: ₹ {total_current:,}
+            - Current Portfolio Value: ₹ {total_current:,.0f} ({portfolio_summary})
+            - Monthly SIP / Investment Budget: ₹ {retirement_plan.get('sip_monthly', 0):,.0f}
             - Expected CAGR: {retirement_plan['cagr_used_pct']}%
-            - Projected Corpus at Retirement: ₹ {retirement_plan['total_future_value']:,}
-            - Safe Monthly Withdrawal (4% rule): ₹ {retirement_plan['safe_monthly_withdrawal']:,}
+            - Projected Corpus at Retirement: ₹ {retirement_plan['total_future_value']:,.0f}
+            - Safe Monthly Withdrawal (4% SWR Rule): ₹ {retirement_plan['safe_monthly_withdrawal']:,.0f}
+            {context_prompt}
 
-            Provide a highly actionable retirement strategy. 
+            Provide a highly actionable, customized retirement strategy directly tailored to their specific lifestyle vision, timeline, and goals.
             Format response as JSON with keys:
-            - 'summary': string summary paragraph assessing if the corpus is healthy.
-            - 'key_takeaways': list of 4 bullet points focusing on inflation impact, asset shifting near retirement (equity to debt glide path), tax-free withdrawal strategies, and SWP (Systematic Withdrawal Plan) structure.
+            - 'summary': string summary paragraph evaluating whether their projected corpus supports their stated lifestyle vision, highlighting any surplus, shortfall, or special considerations.
+            - 'key_takeaways': list of 4-5 bullet points covering:
+                1. Personalized asset allocation glide path (equity-to-debt transition strategy in the final 5-7 years).
+                2. Direct recommendations addressing their specific lifestyle context (e.g. relocation, secondary income, travel budget, health contingency).
+                3. Tax-efficient withdrawal structure (SWP, debt funds, Senior Citizens Savings Scheme/SCSS, annuity or EPF/PPF lump sums).
+                4. Actionable next steps for their current monthly SIP allocation.
             """
             response = client.models.generate_content(
                 model="gemini-3.5-flash",
@@ -598,7 +622,7 @@ def generate_ai_retirement_advisory(retirement_plan: Dict[str, Any], holdings_df
         pass
 
     return {
-        "summary": f"Your projected retirement corpus is ₹ {int(retirement_plan['total_future_value']):,}, yielding a safe monthly withdrawal of ₹ {int(retirement_plan['safe_monthly_withdrawal']):,}.",
+        "summary": f"Your projected retirement corpus is ₹ {int(retirement_plan['total_future_value']):,}, yielding an estimated safe monthly withdrawal of ₹ {int(retirement_plan['safe_monthly_withdrawal']):,}.",
         "key_takeaways": [
             "Consider inflation: ₹1 today will lose purchasing power over the years to your retirement.",
             "Start shifting your portfolio from Equity to Debt 3-5 years before your retirement date to protect your capital from market volatility.",

@@ -455,3 +455,4 @@
 - Added direct inline configuration and a dedicated 'Save Credentials' button inside the 'Sync from Email' expander, allowing users to enter, view, and save their Gmail address and 16-character App Password directly without navigating away.
 - Added database persistence for Bank / Credit Card Statement PDF passwords (`pdf_password`) in user profile, auto-populating and auto-saving across both file uploads and email sync.
 - Added an interactive 'Which Email ID & Password should I use?' quick guide directly inside the 'Sync from Email' expander with step-by-step instructions, link to Google App Passwords, and enhanced tooltips.
+- Added a dedicated 'Retirement Vision & Lifestyle Goals' free-text context input to the Retirement Planner and updated the Gemini AI Advisory engine to generate personalized retirement roadmaps, asset glide paths, and SWP withdrawal strategies incorporating user-defined aspirations, relocation plans, and secondary income.
