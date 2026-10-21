@@ -3058,14 +3058,22 @@ else:
                     approx_living_exp = float(round(total_spent / max(1, num_months) if not df_fy.empty else 50000.0, -3))
                     base_ret_living_exp = st.number_input("Current Monthly Living Expense (₹)", min_value=5000.0, value=max(10000.0, approx_living_exp), step=5000.0, help="Your baseline living expenses today. Used to calculate how living expenses shoot up with inflation by retirement age.")
                     add_recurring_exp = st.number_input("Additional Monthly Recurring Expenses (₹)", min_value=0.0, value=0.0, step=5000.0, help="Any extra ongoing expenses planned (e.g. specialized medical care, dependents).")
-                one_time_expenses_list = []
+                # Extract milestones entered manually into the data editor table
+                table_milestones = []
                 for _, row in one_time_exp_df.iterrows():
                     try: amt = float(row.get("Amount (₹)", 0) or 0)
                     except: amt = 0.0
                     try: age_val = int(row.get("Age", u_age) or u_age)
                     except: age_val = u_age
+                    desc_str = str(row.get("Expense Description", "") or "").strip()
                     if amt > 0:
-                        one_time_expenses_list.append({"amount": amt, "age": age_val, "description": str(row.get("Expense Description", "Milestone Goal"))})
+                        table_milestones.append({
+                            "amount": amt,
+                            "age": age_val,
+                            "description": desc_str or "Milestone Goal",
+                            "source": "One-Time Milestone Table"
+                        })
+                table_has_data = len(table_milestones) > 0
 
                 ret_user_context = st.text_area(
                     "💬 Retirement Vision & Lifestyle Goals (Optional)",
@@ -3073,6 +3081,81 @@ else:
                     help="Gemini AI will personalize your retirement strategy, asset allocation glide path, and cash flow plan based on your vision.",
                     key="ret_user_context_input"
                 )
+
+                # Parse free-text retirement vision for milestones, living expenses, medical buffer, and age
+                import investment_planner
+                parsed_context = investment_planner.extract_free_text_parameters(
+                    ret_user_context,
+                    base_age=u_age,
+                    current_year=datetime.datetime.now().year
+                )
+                text_milestones = parsed_context.get("milestones", [])
+                text_has_data = len(text_milestones) > 0
+
+                # ── Conflict Resolution: Prompt user if data exists in both table and free-text ──
+                if table_has_data and text_has_data:
+                    st.markdown(f"""
+                    <div style="background: rgba(245, 158, 11, 0.12); border: 1px solid rgba(245, 158, 11, 0.35); border-left: 4px solid #f59e0b; border-radius: 8px; padding: 12px 16px; margin: 12px 0 8px 0;">
+                        <div style="font-weight: 700; color: #fbbf24; font-size: 0.95rem;">⚖️ Milestone Data Conflict: Table vs. Free-Text Vision</div>
+                        <div style="color: #cbd5e1; font-size: 0.85rem; margin-top: 4px;">
+                            Milestone expenses were detected in <b>both</b> the <b>One-Time Milestone Table</b> ({len(table_milestones)} item(s)) and parsed from your <b>Free-Text Vision</b> ({len(text_milestones)} item(s)). 
+                            Which one should take precedence?
+                        </div>
+                    </div>
+                    """, unsafe_allow_html=True)
+                    override_choice = st.radio(
+                        "⚖️ Select which milestone source to use for retirement calculation:",
+                        options=[
+                            "📝 Free-Text Vision Overrides Table",
+                            "📋 Table Overrides Free Text",
+                            "🔀 Merge Both (Combine Table + Free-Text Milestones)"
+                        ],
+                        index=0,
+                        horizontal=True,
+                        key="ret_milestone_conflict_choice",
+                        help="Choose whether milestones parsed from your free-text statement or the table editor should be used in the projection."
+                    )
+                    if "Free-Text" in override_choice:
+                        active_milestones = text_milestones
+                        st.caption(f"✨ *Using {len(text_milestones)} milestone(s) parsed from Free Text (table entries bypassed).*")
+                    elif "Table" in override_choice:
+                        active_milestones = table_milestones
+                        st.caption(f"✨ *Using {len(table_milestones)} milestone(s) entered in the Table (free-text milestones bypassed).*")
+                    else:
+                        active_milestones = table_milestones + text_milestones
+                        st.caption(f"✨ *Combined {len(active_milestones)} total milestone(s) from both sources.*")
+                elif text_has_data:
+                    active_milestones = text_milestones
+                    st.markdown(f"""
+                    <div style="background: rgba(14, 165, 233, 0.12); border: 1px solid rgba(14, 165, 233, 0.3); border-left: 4px solid #38bdf8; border-radius: 6px; padding: 10px 14px; margin: 10px 0 8px 0;">
+                        <span style="font-weight: 600; color: #38bdf8;">🎯 Free-Text Milestones Detected ({len(text_milestones)}):</span>
+                        <span style="color: #cbd5e1; font-size: 0.85rem;">
+                            {", ".join([f"<b>{m['description']}</b> (₹{format_inr(m['amount'])})" for m in text_milestones[:3]])}{"..." if len(text_milestones) > 3 else ""}.
+                            These will be automatically factored into your retirement corpus and expense roadmap.
+                        </span>
+                    </div>
+                    """, unsafe_allow_html=True)
+                elif table_has_data:
+                    active_milestones = table_milestones
+                else:
+                    active_milestones = []
+
+                # Dynamic overrides for age, baseline living expenses, and medical buffer from free text
+                calc_user_age = u_age
+                if parsed_context.get("detected_age"):
+                    calc_user_age = int(parsed_context["detected_age"])
+                    if calc_user_age != u_age:
+                        st.caption(f"🎂 *Current age updated to **{calc_user_age}** based on your free-text statement.*")
+
+                calc_base_living_exp = base_ret_living_exp
+                if parsed_context.get("monthly_living_expense"):
+                    calc_base_living_exp = float(parsed_context["monthly_living_expense"])
+                    st.caption(f"💳 *Monthly baseline living expense set to **{format_inr(calc_base_living_exp)}/month** as specified in your statement.*")
+
+                calc_recurring_exp = add_recurring_exp
+                if parsed_context.get("monthly_medical_expense"):
+                    calc_recurring_exp = add_recurring_exp + float(parsed_context["monthly_medical_expense"])
+                    st.caption(f"🏥 *Included standard healthcare & medical buffer of **{format_inr(parsed_context['monthly_medical_expense'])}/month**.*")
 
                 if st.button("🔮 Calculate Retirement Corpus", type="primary", use_container_width=True):
                     import importlib
@@ -3089,13 +3172,13 @@ else:
                         
                         try:
                             ret_plan = investment_planner.calculate_retirement_corpus(
-                                current_age=u_age, 
+                                current_age=calc_user_age, 
                                 retirement_age=ret_age, 
                                 current_savings=liquid_portfolio_val, 
                                 monthly_sip=u_sip_budget, 
                                 cagr_decimal=cagr_decimal, 
-                                one_time_expenses=one_time_expenses_list, 
-                                additional_monthly_expense=add_recurring_exp,
+                                one_time_expenses=active_milestones, 
+                                additional_monthly_expense=calc_recurring_exp,
                                 outstanding_debt=tot_debt_val,
                                 real_estate_value=real_estate_val,
                                 inflation_rate=0.06
@@ -3103,15 +3186,15 @@ else:
                         except TypeError:
                             try:
                                 ret_plan = investment_planner.calculate_retirement_corpus(
-                                    u_age, ret_age, max(0.0, liquid_portfolio_val - tot_debt_val), u_sip_budget, cagr_decimal, one_time_expenses_list, add_recurring_exp
+                                    calc_user_age, ret_age, max(0.0, liquid_portfolio_val - tot_debt_val), u_sip_budget, cagr_decimal, active_milestones, calc_recurring_exp
                                 )
                             except Exception:
                                 ret_plan = investment_planner.calculate_retirement_corpus(
-                                    u_age, ret_age, max(0.0, liquid_portfolio_val - tot_debt_val), u_sip_budget, cagr_decimal
+                                    calc_user_age, ret_age, max(0.0, liquid_portfolio_val - tot_debt_val), u_sip_budget, cagr_decimal
                                 )
 
                         # Ensure inflation and breakdown keys exist in ret_plan even if older cached function executed
-                        years_left = ret_plan.get("years_to_retirement", max(1, ret_age - u_age))
+                        years_left = ret_plan.get("years_to_retirement", max(1, ret_age - calc_user_age))
                         tot_fv_val = ret_plan.get("total_future_value", 0.0)
                         swr_mo_val = ret_plan.get("safe_monthly_withdrawal", 0.0)
                         if "corpus_today_value" not in ret_plan:
@@ -3127,11 +3210,11 @@ else:
 
                         # Generate Detailed Expense Plan
                         exp_plan = investment_planner.generate_detailed_retirement_expense_plan(
-                            current_age=u_age,
+                            current_age=calc_user_age,
                             retirement_age=ret_age,
-                            base_monthly_expense=base_ret_living_exp,
-                            additional_monthly_expense=add_recurring_exp,
-                            one_time_expenses=one_time_expenses_list,
+                            base_monthly_expense=calc_base_living_exp,
+                            additional_monthly_expense=calc_recurring_exp,
+                            one_time_expenses=active_milestones,
                             user_context=ret_user_context,
                             inflation_rate=0.06,
                             life_expectancy=85,
@@ -3206,6 +3289,19 @@ else:
                         </div>
                         """, unsafe_allow_html=True)
 
+                        post_res = float(ret_plan.get("post_ret_milestones_reserve_needed", 0.0))
+                        if post_res > 0:
+                            st.markdown(f"""
+                            <div style="background:#0f172a; border-left:4px solid #f59e0b; border-radius:8px; padding:12px 16px; margin:0 0 16px 0;">
+                                <div style="font-weight:700; color:#fbbf24; font-size:1rem; margin-bottom:4px;">💍 Post-Retirement Milestone Reserve Earmark:</div>
+                                <div style="color:#cbd5e1; font-size:0.85rem; line-height:1.5;">
+                                    You have <b>{ret_plan.get('post_ret_milestones_count', 1)} milestone expense(s)</b> scheduled after your target retirement age (such as child's marriage in 2035). 
+                                    To fund these milestones without cutting into your monthly living safe withdrawal rate (SWP), an earmarked reserve of 
+                                    <b style="color:#fbbf24;">{format_inr(post_res)}</b> at retirement age is recommended.
+                                </div>
+                            </div>
+                            """, unsafe_allow_html=True)
+
                         s1, s2, s3, s4 = st.columns(4)
                         s1.metric("💳 Cost of Living Today", f"{format_inr(exp_plan.get('base_monthly_today', 0))}/mo")
                         s2.metric(f"📈 At Age {exp_plan.get('retirement_age', 60)}", f"{format_inr(exp_plan.get('monthly_living_at_ret', 0))}/mo", f"+{exp_plan.get('inflation_surge_pct', 0):.0f}% Surge")
@@ -3269,7 +3365,7 @@ else:
                             ms_show.columns = ["Expense Description", "Target Age", "Years Away", "Cost in Today's ₹", "Inflated Cost (Future ₹)", "Source"]
                             st.dataframe(ms_show, use_container_width=True, hide_index=True)
                         else:
-                            st.info("No one-time milestone expenses scheduled in the table above.")
+                            st.info("No one-time milestone expenses scheduled.")
 
                         st.markdown("#### 💬 Lifestyle Aspirations & Vision (Extracted from Free Text)")
                         lifestyle_items = exp_plan.get("extracted_lifestyle_items", [])
@@ -3284,6 +3380,16 @@ else:
                                 """, unsafe_allow_html=True)
                         else:
                             st.caption("No custom lifestyle goals noted. You can add them anytime in the free text area above.")
+
+                        strategic_suggs = exp_plan.get("strategic_suggestions", [])
+                        if strategic_suggs:
+                            st.markdown("#### 💡 Strategic Milestone & Financial Roadmap")
+                            for s_idx, sugg in enumerate(strategic_suggs):
+                                st.markdown(f"""
+                                <div style="background:#0f172a; border-left:3px solid #10b981; border-radius:6px; padding:10px 14px; margin-bottom:8px;">
+                                    <div style="color:#f1f5f9; font-size:0.88rem; line-height:1.5;">{sugg}</div>
+                                </div>
+                                """, unsafe_allow_html=True)
 
                     elif plan_view_choice == "🗓️ Year-by-Year Cash Flow Trajectory":
                         st.markdown("#### 🗓️ Complete Year-by-Year Cash Flow Trajectory")

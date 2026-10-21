@@ -1,5 +1,26 @@
 # Release Notes
 
+## v1.12.0 (2026-10-21)
+### Added — Free-Text Retirement Milestones & Table Conflict Override
+- **Natural Language Parameter Extraction (`extract_free_text_parameters`)**: Automatically parses free-text retirement vision statements for:
+  - User's age (e.g., "I am 53 now", "turning 53")
+  - Monthly living expenses (e.g., "monthly expense of 1.75 lakhs", "1.75L monthly")
+  - Standard healthcare and medical contingency buffer (e.g., "add standard medical expense required" -> ₹25,000/mo buffer)
+  - Multi-year recurring milestone expenses (e.g., "fixed expense of 7 lakhs a year starting 2027 for daughters education" -> 4 annual installments of ₹7L across 2027-2030)
+  - Single-year milestone outlays with target years or ages (e.g., "additional marriage expense of 50 lakhs in 2035" -> ₹50L at age 62 in 2035)
+- **Milestone Conflict Resolution Prompt**: If data is present in both the One-Time Milestone Table editor and parsed from the Free-Text Vision, the user is presented with an interactive selector asking which should override:
+  - 📝 *Free-Text Vision Overrides Table*
+  - 📋 *Table Overrides Free Text*
+  - 🔀 *Merge Both (Combine Table + Free-Text Milestones)*
+- **Source Tracking in Milestone Breakdown**: Retains `"Retirement Vision (Free Text)"` vs `"One-Time Milestone Table"` so users clearly see where each milestone originated in the breakdown table and roadmap.
+- **Post-Retirement Milestone Outlays Earmark**: When milestone expenses occur after desired retirement age (e.g. child's marriage in 2035 when retiring at 60), the model calculates an earmarked reserve required at retirement age so that the 4% Safe Monthly Withdrawal rate for living expenses is protected.
+- **Strategic Milestone & Financial Roadmap Cards**: Added dedicated proactive guidance cards addressing education fund de-risking into short-duration debt/arbitrage by 2027, child's marriage hybrid glide path to 2035, emergency reserves (₹10.5L+), and ₹1 Crore Super Top-up health insurance.
+- **Unit Tests**: Added comprehensive test coverage in `test_app.py` validating regex extraction, milestone year/age calculations, inflation adjustments, and post-retirement reserve calculations.
+
+### Fixed
+- **Safe Import for Pydantic**: Added graceful fallback for `pydantic.BaseModel` in `investment_planner.py` to prevent import failures in slim environments.
+- **Database Function Signature**: Fixed missing `resolved_name` parameter in `insert_investment` within `database.py`.
+
 ## v1.11.0 (2026-09-14)
 ### Added & Fixed
 - **Multi-Document Income Auto-Extraction**: Added a new tab under "Add New Income Source" allowing users to upload multiple tax documents (Form 16, Form 26AS, AIS). The system automatically parses these files, extracts salary and other incomes, and presents them in a review grid where the user can accept, edit, or reject the extracted entries.

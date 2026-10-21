@@ -414,8 +414,9 @@ def test_income_source_crud():
     df_after_del1 = get_income_sources_df(username="admin", family_id=1, view_mode="Family")
     assert not any(df_after_del1["id"] == id1)
 
-    # Test deleting row with mismatched family_id (fallback to id deletion)
-    assert delete_income_source(id3, family_id=1) == True
+    # Test deleting row with mismatched family_id (properly prevented)
+    assert delete_income_source(id3, family_id=1) == False
+    assert delete_income_source(id3, family_id=2) == True
     df_after_del3 = get_income_sources_df(username="rahul", family_id=2, view_mode="Family")
     assert not any(df_after_del3["id"] == id3)
 
@@ -424,6 +425,63 @@ def test_income_source_crud():
     assert delete_income_source(99999, family_id=1) == False
 
     print("✅ Income Source CRUD and Deletion tests passed.")
+
+def test_free_text_retirement_milestones_and_override():
+    import investment_planner
+    user_input = "Use this inputs .. 1. I am 53 now (in another few days)... i have following expense monthly expense of 1.75 lakhs. fixed expense of 7 lakhs a year starting 2027 for daughters education. additinoal marriaghe expense of 50 lakhs in 2035 . all figures should be inflation adjusted. add stanadard medical expense required.. anything else needed suggest("
+    
+    parsed = investment_planner.extract_free_text_parameters(user_input, base_age=50, current_year=2026)
+    
+    assert parsed["detected_age"] == 53
+    assert parsed["monthly_living_expense"] == 175000.0
+    assert parsed["monthly_medical_expense"] == 25000.0
+    assert len(parsed["milestones"]) == 5
+    
+    # Verify education milestones (4 years starting 2027)
+    edu_milestones = [m for m in parsed["milestones"] if "education" in m["description"].lower()]
+    assert len(edu_milestones) == 4
+    for m in edu_milestones:
+        assert m["amount"] == 700000.0
+        assert m["source"] == "Retirement Vision (Free Text)"
+    assert [m["calendar_year"] for m in edu_milestones] == [2027, 2028, 2029, 2030]
+    assert [m["age"] for m in edu_milestones] == [54, 55, 56, 57]
+    
+    # Verify marriage milestone in 2035 at age 62
+    marr_milestones = [m for m in parsed["milestones"] if "marriage" in m["description"].lower() or "child's marriage" in m["description"].lower()]
+    assert len(marr_milestones) == 1
+    assert marr_milestones[0]["amount"] == 5000000.0
+    assert marr_milestones[0]["calendar_year"] == 2035
+    assert marr_milestones[0]["age"] == 62
+    assert marr_milestones[0]["source"] == "Retirement Vision (Free Text)"
+    
+    # Test Detailed Expense Plan generation with these milestones
+    exp_plan = investment_planner.generate_detailed_retirement_expense_plan(
+        current_age=53,
+        retirement_age=60,
+        base_monthly_expense=175000.0,
+        additional_monthly_expense=25000.0,
+        one_time_expenses=parsed["milestones"],
+        user_context=user_input,
+        inflation_rate=0.06
+    )
+    assert len(exp_plan["milestones"]) == 5
+    assert any(m["description"].startswith("Daughters Education") for m in exp_plan["milestones"])
+    assert any("Marriage" in m["description"] for m in exp_plan["milestones"])
+    
+    # Verify post-retirement reserve in calculate_retirement_corpus (Age 62 milestone when retiring at 60)
+    ret_plan = investment_planner.calculate_retirement_corpus(
+        current_age=53,
+        retirement_age=60,
+        current_savings=5000000.0,
+        monthly_sip=100000.0,
+        cagr_decimal=0.12,
+        one_time_expenses=parsed["milestones"],
+        additional_monthly_expense=25000.0,
+        inflation_rate=0.06
+    )
+    assert ret_plan["post_ret_milestones_count"] == 1
+    assert ret_plan["post_ret_milestones_reserve_needed"] > 0
+    print("✅ Free-text retirement milestone extraction & conflict override tests passed.")
 
 if __name__ == "__main__":
     try:
@@ -440,6 +498,7 @@ if __name__ == "__main__":
         test_multi_family_data_isolation()
         test_duplicate_detection()
         test_income_source_crud()
+        test_free_text_retirement_milestones_and_override()
         print("🎉 All test suite assertions passed successfully!")
     finally:
         if os.path.exists(database.DB_PATH):

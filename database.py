@@ -1573,6 +1573,7 @@ def insert_investment(
     sector_segment: str = "Unknown",
     last_live_price: float = 0.0,
     description: str = "",
+    resolved_name: str = "",
     stop_loss_pct: float = 0.0,
     target_profit_pct: float = 0.0
 ) -> int:
