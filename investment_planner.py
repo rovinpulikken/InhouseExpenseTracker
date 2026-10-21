@@ -586,6 +586,200 @@ def calculate_retirement_corpus(
         "inflation_rate_pct": round(inflation_rate * 100.0, 1)
     }
 
+def generate_detailed_retirement_expense_plan(
+    current_age: int,
+    retirement_age: int,
+    base_monthly_expense: float,
+    additional_monthly_expense: float = 0.0,
+    one_time_expenses: List[Dict[str, Any]] = None,
+    user_context: str = "",
+    inflation_rate: float = 0.06,
+    life_expectancy: int = 85,
+    safe_monthly_withdrawal: float = 0.0,
+    *args,
+    **kwargs
+) -> Dict[str, Any]:
+    """
+    Generates a granular milestone & lifetime retirement expense projection model.
+    Models the exponential growth ('surge') of living expenses under inflation,
+    integrates scheduled one-time milestone outlays and free-text lifestyle goals,
+    and maps annual cash-flow requirements against the 4% Safe Withdrawal Rate (SWP).
+    """
+    from datetime import datetime
+
+    current_age = max(18, int(current_age))
+    retirement_age = max(current_age + 1, int(retirement_age))
+    life_expectancy = max(retirement_age + 5, int(life_expectancy))
+    inflation_rate = float(kwargs.get("inflation_rate", inflation_rate))
+    base_monthly_expense = max(1000.0, float(kwargs.get("base_monthly_expense", base_monthly_expense)))
+    additional_monthly_expense = max(0.0, float(kwargs.get("additional_monthly_expense", additional_monthly_expense)))
+    safe_monthly_withdrawal = max(0.0, float(kwargs.get("safe_monthly_withdrawal", safe_monthly_withdrawal)))
+
+    if one_time_expenses is None:
+        one_time_expenses = []
+
+    # Process one-time milestone expenses
+    processed_milestones = []
+    milestones_by_age = {}
+    for item in one_time_expenses:
+        desc = item.get("Expense Description") or item.get("description") or "Milestone Goal"
+        try:
+            amt = float(item.get("Amount (₹)") or item.get("amount") or 0.0)
+        except Exception:
+            amt = 0.0
+        try:
+            age_incurred = int(item.get("Age") or item.get("age") or retirement_age)
+        except Exception:
+            age_incurred = retirement_age
+
+        if amt > 0:
+            yrs = max(0, age_incurred - current_age)
+            inflated_cost = round(amt * ((1.0 + inflation_rate) ** yrs), 2)
+            processed_milestones.append({
+                "description": desc,
+                "target_age": age_incurred,
+                "years_away": yrs,
+                "amount_today": amt,
+                "inflated_amount": inflated_cost,
+                "source": "One-Time Milestone Table"
+            })
+            milestones_by_age[age_incurred] = milestones_by_age.get(age_incurred, 0.0) + inflated_cost
+
+    # Extract/analyze free-text vision & lifestyle goals
+    extracted_lifestyle = []
+    ctx_clean = (user_context or "").strip()
+    ctx_lower = ctx_clean.lower()
+
+    if any(k in ctx_lower for k in ["travel", "vacation", "trip", "holiday", "tour"]):
+        extracted_lifestyle.append({
+            "category": "✈️ Leisure & Travel",
+            "description": "Post-retirement travel / vacations noted in goals",
+            "inflation_impact": "Discretionary travel costs compound at ~7-8% inflation. Best funded from post-retirement liquid SWP buffer or specialized debt fund bucket.",
+            "phase": "Active Retirement (Ages 60-70)"
+        })
+
+    if any(k in ctx_lower for k in ["medical", "health", "hospital", "contingency", "care"]):
+        extracted_lifestyle.append({
+            "category": "🏥 Healthcare & Medical Contingency",
+            "description": "Medical & healthcare contingency cushion",
+            "inflation_impact": "Medical inflation in India typically runs at 10-12% p.a. Requires a dedicated Super Top-up health policy plus a separate liquid healthcare fund of ₹15-25L in today's money.",
+            "phase": "Late Retirement Priority (Ages 70+)"
+        })
+
+    if any(k in ctx_lower for k in ["relocat", "tier-2", "tier 2", "town", "native", "village"]):
+        extracted_lifestyle.append({
+            "category": "🏡 Relocation / City Transition",
+            "description": "Planned move to tier-2 / tier-3 city or hometown",
+            "inflation_impact": "Living expenses in tier-2 cities can reduce baseline living costs by 20-30% compared to metro cities, improving retirement corpus longevity.",
+            "phase": "Retirement Transition (Age 60)"
+        })
+
+    if any(k in ctx_lower for k in ["rent", "rental", "lease", "tenant"]):
+        extracted_lifestyle.append({
+            "category": "🏢 Secondary Rental Cashflow",
+            "description": "Anticipated rental income stream",
+            "inflation_impact": "Provides a partial natural inflation hedge with periodic 5-10% rental escalations every 11-22 months to reduce reliance on equity SWP.",
+            "phase": "Lifelong Retirement Cashflow"
+        })
+
+    if not extracted_lifestyle and ctx_clean:
+        extracted_lifestyle.append({
+            "category": "🎯 Personalized Lifestyle Aspirations",
+            "description": ctx_clean[:180] + ("..." if len(ctx_clean) > 180 else ""),
+            "inflation_impact": "Explicitly factored into retirement cash flow planning and inflation reserves.",
+            "phase": "Retirement Horizon"
+        })
+
+    # Inflation multipliers & headline metrics
+    years_to_ret = max(1, retirement_age - current_age)
+    inf_mult_at_ret = (1.0 + inflation_rate) ** years_to_ret
+    monthly_living_at_ret = round(base_monthly_expense * inf_mult_at_ret, 2)
+    additional_mo_at_ret = round(additional_monthly_expense * inf_mult_at_ret, 2)
+    total_monthly_at_ret = round(monthly_living_at_ret + additional_mo_at_ret, 2)
+    annual_living_at_ret = round(total_monthly_at_ret * 12.0, 2)
+
+    yrs_to_75 = max(0, 75 - current_age)
+    monthly_living_at_75 = round((base_monthly_expense + additional_monthly_expense) * ((1.0 + inflation_rate) ** yrs_to_75), 2)
+
+    yrs_to_85 = max(0, 85 - current_age)
+    monthly_living_at_85 = round((base_monthly_expense + additional_monthly_expense) * ((1.0 + inflation_rate) ** yrs_to_85), 2)
+
+    # Year-by-year cashflow simulation
+    start_year = datetime.now().year
+    trajectory_records = []
+    cumulative_ret_spend = 0.0
+
+    for a in range(current_age, life_expectancy + 1):
+        yrs = a - current_age
+        inf_mult = (1.0 + inflation_rate) ** yrs
+
+        m_base = round(base_monthly_expense * inf_mult, 2)
+        m_rec = round(additional_monthly_expense * inf_mult, 2)
+        m_total = round(m_base + m_rec, 2)
+        ann_living = round(m_total * 12.0, 2)
+
+        milestone_amt = round(milestones_by_age.get(a, 0.0), 2)
+        total_ann_outflow = round(ann_living + milestone_amt, 2)
+
+        is_ret = a >= retirement_age
+        if is_ret:
+            cumulative_ret_spend += total_ann_outflow
+            phase = "Early Active Retirement" if a < 70 else ("Mid-Retirement" if a < 80 else "Elderly / Healthcare Phase")
+            swp_annual = round(safe_monthly_withdrawal * 12.0, 2)
+            surplus = round(swp_annual - total_ann_outflow, 2)
+        else:
+            phase = "Pre-Retirement (Accumulation)"
+            swp_annual = 0.0
+            surplus = 0.0
+
+        trajectory_records.append({
+            "Age": a,
+            "Calendar_Year": start_year + yrs,
+            "Phase": phase,
+            "Monthly_Living_Cost": m_total,
+            "Annual_Living_Cost": ann_living,
+            "Milestone_Outflow": milestone_amt,
+            "Total_Annual_Outflow": total_ann_outflow,
+            "Safe_Annual_SWP": swp_annual,
+            "Annual_Balance": surplus,
+            "Inflation_Factor": round(inf_mult, 2)
+        })
+
+    # Curate key milestone snapshot ages
+    key_ages = sorted(list(set([
+        current_age,
+        min(current_age + 5, retirement_age),
+        retirement_age,
+        min(retirement_age + 5, 70),
+        70,
+        75,
+        80,
+        life_expectancy
+    ] + list(milestones_by_age.keys()))))
+    milestone_summary = [r for r in trajectory_records if r["Age"] in key_ages]
+
+    return {
+        "current_age": current_age,
+        "retirement_age": retirement_age,
+        "life_expectancy": life_expectancy,
+        "inflation_rate_pct": round(inflation_rate * 100.0, 1),
+        "base_monthly_today": base_monthly_expense,
+        "additional_monthly_today": additional_monthly_expense,
+        "total_monthly_today": round(base_monthly_expense + additional_monthly_expense, 2),
+        "monthly_living_at_ret": monthly_living_at_ret,
+        "total_monthly_at_ret": total_monthly_at_ret,
+        "annual_living_at_ret": annual_living_at_ret,
+        "monthly_living_at_75": monthly_living_at_75,
+        "monthly_living_at_85": monthly_living_at_85,
+        "inflation_surge_multiplier": round(inf_mult_at_ret, 2),
+        "inflation_surge_pct": round((inf_mult_at_ret - 1.0) * 100.0, 1),
+        "cumulative_retirement_spend": round(cumulative_ret_spend, 2),
+        "milestones": processed_milestones,
+        "extracted_lifestyle_items": extracted_lifestyle,
+        "trajectory": trajectory_records,
+        "milestone_summary": milestone_summary
+    }
+
 def generate_ai_retirement_advisory(
     retirement_plan: Dict[str, Any], 
     holdings_df: pd.DataFrame, 

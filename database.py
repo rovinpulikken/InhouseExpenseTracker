@@ -536,6 +536,20 @@ def init_db():
         )
     """)
 
+    # 12. Saved Retirement Plans Table (per user and plan name, defaults to 'Last Run')
+    cursor.execute("""
+        CREATE TABLE IF NOT EXISTS saved_retirement_plans (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            username TEXT NOT NULL,
+            family_id INTEGER DEFAULT 1,
+            plan_name TEXT DEFAULT 'Last Run',
+            plan_data_json TEXT NOT NULL,
+            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+            updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+            UNIQUE(username, family_id, plan_name)
+        )
+    """)
+
     # Seed default admin if users table is empty
     cursor.execute("SELECT COUNT(*) FROM users")
     user_cnt = cursor.fetchone()[0]
@@ -2335,3 +2349,88 @@ def get_admin_gemini_api_key() -> str:
     if row and row[0]:
         return row[0]
     return ""
+
+def save_retirement_plan(username: str, family_id: int, plan_data: dict, plan_name: str = "Last Run") -> bool:
+    """
+    Saves or updates a retirement plan (inputs, outputs, expense roadmap, advisory) for a user.
+    """
+    import json
+    conn = get_connection()
+    cursor = conn.cursor()
+    fid = family_id or 1
+    # Auto-ensure table exists
+    try:
+        cursor.execute("""
+            CREATE TABLE IF NOT EXISTS saved_retirement_plans (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                username TEXT NOT NULL,
+                family_id INTEGER DEFAULT 1,
+                plan_name TEXT DEFAULT 'Last Run',
+                plan_data_json TEXT NOT NULL,
+                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                UNIQUE(username, family_id, plan_name)
+            )
+        """)
+        plan_json = json.dumps(plan_data, default=str)
+        cursor.execute("""
+            INSERT INTO saved_retirement_plans (username, family_id, plan_name, plan_data_json, updated_at)
+            VALUES (?, ?, ?, ?, CURRENT_TIMESTAMP)
+            ON CONFLICT(username, family_id, plan_name)
+            DO UPDATE SET plan_data_json = ?, updated_at = CURRENT_TIMESTAMP
+        """, (username, fid, plan_name, plan_json, plan_json))
+        conn.commit()
+        return True
+    except Exception as e:
+        print(f"save_retirement_plan error: {e}")
+        return False
+    finally:
+        conn.close()
+
+def get_saved_retirement_plan(username: str, family_id: int, plan_name: str = "Last Run") -> Optional[Dict[str, Any]]:
+    """
+    Retrieves a saved retirement plan by name for a user.
+    """
+    import json
+    conn = get_connection()
+    cursor = conn.cursor()
+    fid = family_id or 1
+    try:
+        cursor.execute("""
+            SELECT plan_name, plan_data_json, updated_at 
+            FROM saved_retirement_plans 
+            WHERE username = ? AND family_id = ? AND plan_name = ?
+        """, (username, fid, plan_name))
+        row = cursor.fetchone()
+        if row:
+            data = json.loads(row[1]) if row[1] else {}
+            data["_saved_plan_name"] = row[0]
+            data["_saved_at"] = str(row[2])
+            return data
+        return None
+    except Exception as e:
+        print(f"get_saved_retirement_plan error: {e}")
+        return None
+    finally:
+        conn.close()
+
+def delete_saved_retirement_plan(username: str, family_id: int, plan_name: str = "Last Run") -> bool:
+    """
+    Deletes a saved retirement plan for a user.
+    """
+    conn = get_connection()
+    cursor = conn.cursor()
+    fid = family_id or 1
+    try:
+        cursor.execute("""
+            DELETE FROM saved_retirement_plans 
+            WHERE username = ? AND family_id = ? AND plan_name = ?
+        """, (username, fid, plan_name))
+        conn.commit()
+        return True
+    except Exception as e:
+        print(f"delete_saved_retirement_plan error: {e}")
+        return False
+    finally:
+        conn.close()
+

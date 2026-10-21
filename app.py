@@ -2982,6 +2982,30 @@ else:
                 </div>
                 """, unsafe_allow_html=True)
 
+                from database import get_saved_retirement_plan, save_retirement_plan, delete_saved_retirement_plan
+                saved_plan_db = get_saved_retirement_plan(current_user["username"], current_user.get("family_id", 1), "Last Run")
+                if saved_plan_db:
+                    sp_ret = saved_plan_db.get("ret_plan", {})
+                    sp_c1, sp_c2, sp_c3 = st.columns([3, 1, 1])
+                    with sp_c1:
+                        st.markdown(f"""
+                        <div style="background:#1e293b; border-left:4px solid #38bdf8; border-radius:6px; padding:8px 12px; font-size:0.83rem; color:#f1f5f9;">
+                            💾 <b>Last Saved Run ({saved_plan_db.get('_saved_at', 'Saved')}):</b> 
+                            Age <b>{sp_ret.get('current_age', 'N/A')} &rarr; {sp_ret.get('retirement_age', 'N/A')}</b> · 
+                            Liquid Corpus: <b>{format_inr(sp_ret.get('total_future_value', 0))}</b> · 
+                            SWP: <b>{format_inr(sp_ret.get('safe_monthly_withdrawal', 0))}/mo</b>
+                        </div>
+                        """, unsafe_allow_html=True)
+                    with sp_c2:
+                        if st.button("📂 Load Saved Run", key="btn_load_saved_ret_plan", use_container_width=True):
+                            st.session_state["active_retirement_plan"] = saved_plan_db
+                            st.rerun()
+                    with sp_c3:
+                        if st.button("🗑️ Clear", key="btn_clear_saved_ret_plan", use_container_width=True):
+                            delete_saved_retirement_plan(current_user["username"], current_user.get("family_id", 1), "Last Run")
+                            st.session_state.pop("active_retirement_plan", None)
+                            st.rerun()
+
                 ret_col1, ret_col2 = st.columns(2)
                 with ret_col1:
                     ret_age = st.number_input("🎯 Desired Retirement Age", min_value=u_age + 1, max_value=100, value=max(60, u_age + 10), step=1)
@@ -2995,7 +3019,9 @@ else:
                 with add_col1:
                     one_time_exp_df = st.data_editor(pd.DataFrame([{"Expense Description": "", "Amount (₹)": 0.0, "Age": min(ret_age, u_age + 5)}]), num_rows="dynamic", key="one_time_exp_editor", use_container_width=True, hide_index=True)
                 with add_col2:
-                    add_recurring_exp = st.number_input("Additional Monthly Recurring Expenses (₹)", min_value=0.0, value=0.0, step=5000.0)
+                    approx_living_exp = float(round(total_spent / max(1, num_months) if not df_fy.empty else 50000.0, -3))
+                    base_ret_living_exp = st.number_input("Current Monthly Living Expense (₹)", min_value=5000.0, value=max(10000.0, approx_living_exp), step=5000.0, help="Your baseline living expenses today. Used to calculate how living expenses shoot up with inflation by retirement age.")
+                    add_recurring_exp = st.number_input("Additional Monthly Recurring Expenses (₹)", min_value=0.0, value=0.0, step=5000.0, help="Any extra ongoing expenses planned (e.g. specialized medical care, dependents).")
                 one_time_expenses_list = []
                 for _, row in one_time_exp_df.iterrows():
                     try: amt = float(row.get("Amount (₹)", 0) or 0)
@@ -3003,7 +3029,7 @@ else:
                     try: age_val = int(row.get("Age", u_age) or u_age)
                     except: age_val = u_age
                     if amt > 0:
-                        one_time_expenses_list.append({"amount": amt, "age": age_val})
+                        one_time_expenses_list.append({"amount": amt, "age": age_val, "description": str(row.get("Expense Description", "Milestone Goal"))})
 
                 ret_user_context = st.text_area(
                     "💬 Retirement Vision & Lifestyle Goals (Optional)",
@@ -3063,11 +3089,19 @@ else:
                         if "net_starting_savings" not in ret_plan:
                             ret_plan["net_starting_savings"] = max(0.0, liquid_portfolio_val - tot_debt_val)
 
-                        r1, r2, r3, r4 = st.columns(4)
-                        r1.metric("💰 Net Liquid Corpus", format_inr(ret_plan["total_future_value"]), f"+{format_inr(ret_plan['wealth_gain'])} gain")
-                        r2.metric("💵 Total Invested", format_inr(ret_plan["total_invested"]))
-                        r3.metric("🏝️ Safe Monthly SWP (4%)", format_inr(ret_plan["safe_monthly_withdrawal"]))
-                        r4.metric("🛒 In Today's Value (6% Inf.)", format_inr(ret_plan["corpus_today_value"]), f"~{format_inr(ret_plan['swr_today_value'])}/mo today")
+                        # Generate Detailed Expense Plan
+                        exp_plan = investment_planner.generate_detailed_retirement_expense_plan(
+                            current_age=u_age,
+                            retirement_age=ret_age,
+                            base_monthly_expense=base_ret_living_exp,
+                            additional_monthly_expense=add_recurring_exp,
+                            one_time_expenses=one_time_expenses_list,
+                            user_context=ret_user_context,
+                            inflation_rate=0.06,
+                            life_expectancy=85,
+                            safe_monthly_withdrawal=ret_plan.get("safe_monthly_withdrawal", 0.0)
+                        )
+
                     with st.spinner("🤖 Generating AI Retirement Advisory..."):
                         gemini_api_key_wp = (current_user.get("gemini_api_key") or get_admin_gemini_api_key()
                                              or os.environ.get("GEMINI_API_KEY", "") or st.secrets.get("GEMINI_API_KEY", ""))
@@ -3082,10 +3116,175 @@ else:
                                 )
                             except TypeError:
                                 ret_advice = investment_planner.generate_ai_retirement_advisory(ret_plan, inv_df)
+
+                    import datetime
+                    st.session_state["active_retirement_plan"] = {
+                        "ret_plan": ret_plan,
+                        "exp_plan": exp_plan,
+                        "ret_advice": ret_advice,
+                        "_saved_at": datetime.datetime.now().strftime("%d %b %Y, %I:%M %p")
+                    }
+
+                # ── Display Active Retirement Plan & Detailed Expense Views ──
+                active_bundle = st.session_state.get("active_retirement_plan")
+                if active_bundle:
+                    ret_plan = active_bundle.get("ret_plan", {})
+                    exp_plan = active_bundle.get("exp_plan", {})
+                    ret_advice = active_bundle.get("ret_advice", {})
+
+                    st.markdown("---")
+                    r1, r2, r3, r4 = st.columns(4)
+                    r1.metric("💰 Net Liquid Corpus", format_inr(ret_plan.get("total_future_value", 0.0)), f"+{format_inr(ret_plan.get('wealth_gain', 0.0))} gain")
+                    r2.metric("💵 Total Invested", format_inr(ret_plan.get("total_invested", 0.0)))
+                    r3.metric("🏝️ Safe Monthly SWP (4%)", format_inr(ret_plan.get("safe_monthly_withdrawal", 0.0)))
+                    r4.metric("🛒 In Today's Value (6% Inf.)", format_inr(ret_plan.get("corpus_today_value", 0.0)), f"~{format_inr(ret_plan.get('swr_today_value', 0.0))}/mo today")
+
+                    # View Selector Dropdown
+                    plan_view_choice = st.selectbox(
+                        "📑 Select Retirement Plan View",
+                        options=[
+                            "📊 Executive Summary & AI Advisory",
+                            "📈 Detailed Expense Plan & Inflation Surge",
+                            "🎯 Milestone & Vision Expenses Breakdown",
+                            "🗓️ Year-by-Year Cash Flow Trajectory"
+                        ],
+                        key="ret_plan_view_mode"
+                    )
+
+                    if plan_view_choice == "📊 Executive Summary & AI Advisory":
                         st.markdown("#### 🤖 AI Retirement Advisory")
                         st.info(ret_advice.get("summary", ""))
                         for item in ret_advice.get("key_takeaways", []):
                             st.markdown(f"- {item}")
+
+                    elif plan_view_choice == "📈 Detailed Expense Plan & Inflation Surge":
+                        st.markdown(f"""
+                        <div style="background:#0f172a; border-left:4px solid #ef4444; border-radius:8px; padding:12px 16px; margin:10px 0 16px 0;">
+                            <div style="font-weight:700; color:#f87171; font-size:1rem; margin-bottom:4px;">🔥 How Expenses Shoot Up (Inflation Surge Reality Check):</div>
+                            <div style="color:#cbd5e1; font-size:0.85rem; line-height:1.5;">
+                                At a modest <b>{exp_plan.get('inflation_rate_pct', 6.0)}% annual inflation</b>, the cost of living compounds relentlessly. 
+                                Your current household budget of <b>{format_inr(exp_plan.get('base_monthly_today', 0))}/month</b> will surge to 
+                                <b style="color:#f87171;">{format_inr(exp_plan.get('monthly_living_at_ret', 0))}/month</b> by Age {exp_plan.get('retirement_age', 60)} 
+                                (a <b>{exp_plan.get('inflation_surge_multiplier', 1.0)}x multiplier</b> or <b>+{exp_plan.get('inflation_surge_pct', 0):.0f}% increase</b>)!
+                            </div>
+                        </div>
+                        """, unsafe_allow_html=True)
+
+                        s1, s2, s3, s4 = st.columns(4)
+                        s1.metric("💳 Cost of Living Today", f"{format_inr(exp_plan.get('base_monthly_today', 0))}/mo")
+                        s2.metric(f"📈 At Age {exp_plan.get('retirement_age', 60)}", f"{format_inr(exp_plan.get('monthly_living_at_ret', 0))}/mo", f"+{exp_plan.get('inflation_surge_pct', 0):.0f}% Surge")
+                        s3.metric("🏥 Peak Care Cost (Age 75+)", f"{format_inr(exp_plan.get('monthly_living_at_75', 0))}/mo")
+                        s4.metric("💰 Lifetime Ret. Outflow", format_inr(exp_plan.get("cumulative_retirement_spend", 0)))
+
+                        # Plotly Chart
+                        traj_records = exp_plan.get("trajectory", [])
+                        if traj_records:
+                            import plotly.graph_objects as go
+                            tdf = pd.DataFrame(traj_records)
+                            fig_exp = go.Figure()
+                            fig_exp.add_trace(go.Scatter(
+                                x=tdf["Age"],
+                                y=tdf["Monthly_Living_Cost"],
+                                mode="lines",
+                                name="Inflated Monthly Living Cost",
+                                line=dict(color="#f43f5e", width=3),
+                                fill="tozeroy",
+                                fillcolor="rgba(244, 63, 94, 0.12)"
+                            ))
+                            swp_val = float(ret_plan.get("safe_monthly_withdrawal", 0.0))
+                            fig_exp.add_trace(go.Scatter(
+                                x=tdf["Age"],
+                                y=[swp_val] * len(tdf),
+                                mode="lines",
+                                name="Safe Monthly SWP (4% Rule)",
+                                line=dict(color="#34d399", width=2.5, dash="dash")
+                            ))
+                            fig_exp.update_layout(
+                                title="📈 Monthly Living Expense Inflation vs Safe Monthly SWP",
+                                xaxis_title="Age",
+                                yaxis_title="Monthly Amount (₹)",
+                                height=360,
+                                margin=dict(l=20, r=20, t=40, b=20),
+                                template="plotly_dark",
+                                hovermode="x unified"
+                            )
+                            st.plotly_chart(fig_exp, use_container_width=True)
+
+                        # Milestone snapshot
+                        ms_df = pd.DataFrame(exp_plan.get("milestone_summary", []))
+                        if not ms_df.empty:
+                            st.markdown("##### 📍 Milestone Living Cost Progression")
+                            ms_display = ms_df[["Age", "Calendar_Year", "Phase", "Monthly_Living_Cost", "Annual_Living_Cost", "Inflation_Factor"]].copy()
+                            ms_display["Monthly_Living_Cost"] = ms_display["Monthly_Living_Cost"].apply(format_inr)
+                            ms_display["Annual_Living_Cost"] = ms_display["Annual_Living_Cost"].apply(format_inr)
+                            ms_display["Inflation_Factor"] = ms_display["Inflation_Factor"].apply(lambda x: f"{x:.2f}x")
+                            ms_display.columns = ["Age", "Year", "Retirement Phase", "Monthly Living Cost", "Annual Living Cost", "Surge Multiplier"]
+                            st.dataframe(ms_display, use_container_width=True, hide_index=True)
+
+                    elif plan_view_choice == "🎯 Milestone & Vision Expenses Breakdown":
+                        st.markdown("#### 🎯 Scheduled Milestone & One-Time Outlays (Inflated)")
+                        ms_list = exp_plan.get("milestones", [])
+                        if ms_list:
+                            ms_table = pd.DataFrame(ms_list)
+                            ms_table["Cost Today"] = ms_table["amount_today"].apply(format_inr)
+                            ms_table["Inflated Cost at Target Age"] = ms_table["inflated_amount"].apply(format_inr)
+                            display_cols = ["description", "target_age", "years_away", "Cost Today", "Inflated Cost at Target Age", "source"]
+                            ms_show = ms_table[display_cols].copy()
+                            ms_show.columns = ["Expense Description", "Target Age", "Years Away", "Cost in Today's ₹", "Inflated Cost (Future ₹)", "Source"]
+                            st.dataframe(ms_show, use_container_width=True, hide_index=True)
+                        else:
+                            st.info("No one-time milestone expenses scheduled in the table above.")
+
+                        st.markdown("#### 💬 Lifestyle Aspirations & Vision (Extracted from Free Text)")
+                        lifestyle_items = exp_plan.get("extracted_lifestyle_items", [])
+                        if lifestyle_items:
+                            for item in lifestyle_items:
+                                st.markdown(f"""
+                                <div style="background:#1e293b; border-left:3px solid #38bdf8; border-radius:6px; padding:10px 14px; margin-bottom:8px;">
+                                    <div style="font-weight:700; color:#38bdf8;">{item.get('category', 'Goal')}</div>
+                                    <div style="color:#f1f5f9; font-size:0.88rem; margin:2px 0;">{item.get('description', '')}</div>
+                                    <div style="color:#94a3b8; font-size:0.8rem;"><b>Phase:</b> {item.get('phase', '')} &nbsp;|&nbsp; <b>Inflation Impact:</b> {item.get('inflation_impact', '')}</div>
+                                </div>
+                                """, unsafe_allow_html=True)
+                        else:
+                            st.caption("No custom lifestyle goals noted. You can add them anytime in the free text area above.")
+
+                    elif plan_view_choice == "🗓️ Year-by-Year Cash Flow Trajectory":
+                        st.markdown("#### 🗓️ Complete Year-by-Year Cash Flow Trajectory")
+                        tdf = pd.DataFrame(exp_plan.get("trajectory", []))
+                        if not tdf.empty:
+                            tdf_fmt = tdf.copy()
+                            tdf_fmt["Monthly_Living_Cost"] = tdf_fmt["Monthly_Living_Cost"].apply(format_inr)
+                            tdf_fmt["Annual_Living_Cost"] = tdf_fmt["Annual_Living_Cost"].apply(format_inr)
+                            tdf_fmt["Milestone_Outflow"] = tdf_fmt["Milestone_Outflow"].apply(format_inr)
+                            tdf_fmt["Total_Annual_Outflow"] = tdf_fmt["Total_Annual_Outflow"].apply(format_inr)
+                            tdf_fmt["Safe_Annual_SWP"] = tdf_fmt["Safe_Annual_SWP"].apply(format_inr)
+                            tdf_fmt["Annual_Balance"] = tdf_fmt["Annual_Balance"].apply(format_inr)
+                            tdf_fmt.columns = ["Age", "Year", "Phase", "Monthly Living", "Annual Living", "Milestone Outflows", "Total Outflow", "Safe SWP", "Annual Balance", "Inflation Multiplier"]
+                            st.dataframe(tdf_fmt, use_container_width=True, hide_index=True)
+                            st.download_button(
+                                "📥 Download Expense Trajectory as CSV",
+                                data=tdf.to_csv(index=False),
+                                file_name=f"retirement_expense_plan_{current_user['username']}.csv",
+                                mime="text/csv",
+                                use_container_width=True
+                            )
+
+                    # Save / Reset Action Bar
+                    st.markdown("---")
+                    save_c1, save_c2 = st.columns([3, 1])
+                    with save_c1:
+                        if st.button("💾 Save Last Run for Reference", type="secondary", use_container_width=True):
+                            from database import save_retirement_plan
+                            if save_retirement_plan(current_user["username"], current_user.get("family_id", 1), active_bundle, "Last Run"):
+                                st.success("✅ Retirement plan and detailed expense roadmap saved! You can reload and reference it anytime.")
+                                st.rerun()
+                            else:
+                                st.error("Failed to save plan to database.")
+                    with save_c2:
+                        if st.button("🔄 Clear Active View", use_container_width=True):
+                            st.session_state.pop("active_retirement_plan", None)
+                            st.rerun()
 
         # ════════════════════════════════════════════════════════════════════════
         # TAB 4 ─ MARKET INSIGHTS
