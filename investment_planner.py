@@ -497,9 +497,21 @@ def fetch_index_historical_cagr(ticker: str, years: int) -> float:
         print(f"Error fetching yfinance data for {ticker}: {e}")
         return 0.12 # Fallback to standard 12%
 
-def calculate_retirement_corpus(current_age: int, retirement_age: int, current_savings: float, monthly_sip: float, cagr_decimal: float, one_time_expenses: List[Dict[str, Any]] = None, additional_monthly_expense: float = 0.0) -> Dict[str, Any]:
+def calculate_retirement_corpus(
+    current_age: int, 
+    retirement_age: int, 
+    current_savings: float, 
+    monthly_sip: float, 
+    cagr_decimal: float, 
+    one_time_expenses: List[Dict[str, Any]] = None, 
+    additional_monthly_expense: float = 0.0,
+    outstanding_debt: float = 0.0,
+    real_estate_value: float = 0.0,
+    inflation_rate: float = 0.06
+) -> Dict[str, Any]:
     """
-    Calculates the projected retirement corpus based on current age and savings, accounting for expenses.
+    Calculates the projected liquid retirement corpus based on current age, savings (net of debt), and SIP, 
+    excluding illiquid real estate from safe withdrawals.
     """
     if one_time_expenses is None:
         one_time_expenses = []
@@ -508,8 +520,11 @@ def calculate_retirement_corpus(current_age: int, retirement_age: int, current_s
     n_months = years * 12
     r_monthly = cagr_decimal / 12.0
     
+    # Net starting liquid savings after accounting for debt clearance
+    net_starting_savings = max(0.0, current_savings - outstanding_debt)
+    
     # Future value of lump sum savings
-    fv_lump = current_savings * ((1 + r_monthly) ** n_months)
+    fv_lump = net_starting_savings * ((1 + r_monthly) ** n_months)
     
     # Future value of monthly SIP
     if r_monthly > 0:
@@ -538,11 +553,15 @@ def calculate_retirement_corpus(current_age: int, retirement_age: int, current_s
     # Ensure total_fv does not drop below 0
     total_fv = max(0.0, total_fv)
 
-    total_invested = round(current_savings + (monthly_sip * n_months) - (additional_monthly_expense * n_months) - total_one_time_invested_reduction, 2)
+    total_invested = round(net_starting_savings + (monthly_sip * n_months) - (additional_monthly_expense * n_months) - total_one_time_invested_reduction, 2)
     wealth_gain = round(total_fv - total_invested, 2)
 
-    # 4% Safe Withdrawal Rate (SWR) monthly
+    # 4% Safe Withdrawal Rate (SWR) monthly on liquid corpus
     swr_monthly = round((total_fv * 0.04) / 12.0, 2)
+
+    # Inflation adjusted purchasing power in today's money
+    corpus_today_value = round(total_fv / ((1 + inflation_rate) ** years), 2)
+    swr_today_value = round(swr_monthly / ((1 + inflation_rate) ** years), 2)
 
     return {
         "current_age": current_age,
@@ -550,10 +569,16 @@ def calculate_retirement_corpus(current_age: int, retirement_age: int, current_s
         "sip_monthly": monthly_sip,
         "years_to_retirement": years,
         "total_future_value": total_fv,
+        "corpus_today_value": corpus_today_value,
         "total_invested": total_invested,
         "wealth_gain": wealth_gain,
         "safe_monthly_withdrawal": swr_monthly,
-        "cagr_used_pct": round(cagr_decimal * 100.0, 2)
+        "swr_today_value": swr_today_value,
+        "cagr_used_pct": round(cagr_decimal * 100.0, 2),
+        "outstanding_debt_deducted": outstanding_debt,
+        "real_estate_excluded": real_estate_value,
+        "net_starting_savings": net_starting_savings,
+        "inflation_rate_pct": round(inflation_rate * 100.0, 1)
     }
 
 def generate_ai_retirement_advisory(
@@ -613,6 +638,11 @@ def generate_ai_retirement_advisory(
     except Exception:
         cagr_val = 12.0
 
+    re_excluded_val = float(retirement_plan.get('real_estate_excluded') or 0.0)
+    debt_deducted_val = float(retirement_plan.get('outstanding_debt_deducted') or 0.0)
+    corpus_today_val = float(retirement_plan.get('corpus_today_value') or fv_val)
+    swr_today_val = float(retirement_plan.get('swr_today_value') or swr_val)
+
     try:
         from google import genai
         if not api_key:
@@ -631,21 +661,23 @@ def generate_ai_retirement_advisory(
             - Current Age: {retirement_plan.get('current_age', 'N/A')}
             - Desired Retirement Age: {retirement_plan.get('retirement_age', 'N/A')}
             - Years to Retirement: {retirement_plan.get('years_to_retirement', 'N/A')}
-            - Current Portfolio Value: ₹ {total_current:,.0f} ({portfolio_summary})
+            - Starting Liquid Portfolio: ₹ {retirement_plan.get('net_starting_savings', total_current):,.0f} ({portfolio_summary})
+            - Real Estate Wealth (Excluded from Safe Withdrawal): ₹ {re_excluded_val:,.0f}
+            - Outstanding Debt (Deducted for Debt-Free Retirement): ₹ {debt_deducted_val:,.0f}
             - Monthly SIP / Investment Budget: ₹ {sip_val:,.0f}
             - Expected CAGR: {cagr_val}%
-            - Projected Corpus at Retirement: ₹ {fv_val:,.0f}
-            - Safe Monthly Withdrawal (4% SWR Rule): ₹ {swr_val:,.0f}
+            - Projected Net Liquid Corpus at Retirement: ₹ {fv_val:,.0f} (Purchasing power in today's money at 6% inflation: ₹ {corpus_today_val:,.0f})
+            - Safe Monthly Withdrawal (4% SWR Rule): ₹ {swr_val:,.0f}/month (Purchasing power in today's money: ₹ {swr_today_val:,.0f}/month)
             {context_prompt}
 
             Provide a highly actionable, customized retirement strategy directly tailored to their specific lifestyle vision, timeline, and goals.
             Format response as JSON with keys:
-            - 'summary': string summary paragraph evaluating whether their projected corpus supports their stated lifestyle vision, highlighting any surplus, shortfall, or special considerations.
+            - 'summary': string summary paragraph evaluating whether their projected net liquid corpus supports their stated lifestyle vision, explicitly acknowledging that Real Estate is held separately and debt is cleared.
             - 'key_takeaways': list of 4-5 bullet points covering:
-                1. Personalized asset allocation glide path (equity-to-debt transition strategy in the final 5-7 years).
-                2. Direct recommendations addressing their specific lifestyle context (e.g. relocation, secondary income, travel budget, health contingency).
-                3. Tax-efficient withdrawal structure (SWP, debt funds, Senior Citizens Savings Scheme/SCSS, annuity or EPF/PPF lump sums).
-                4. Actionable next steps for their current monthly SIP allocation.
+                1. Personalized asset allocation glide path (transition from equity to debt in the final 5-7 years).
+                2. Recommendations regarding their Real Estate (e.g. rental income potential vs self-occupied home) and maintaining zero debt in retirement.
+                3. Inflation hedge & Systematic Withdrawal Plan (SWP) structure for tax-efficient monthly cash flow in India.
+                4. Actionable next step for their monthly SIP allocation or emergency healthcare buffer.
             """
             response = client.models.generate_content(
                 model="gemini-3.5-flash",

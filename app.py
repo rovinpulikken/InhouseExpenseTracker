@@ -2956,6 +2956,32 @@ else:
             # ── Retirement Planner ───────────────────────────────────────────────
             st.markdown("---")
             with st.expander("🏖️ Retirement Planner"):
+                # Separate Liquid Assets from Real Estate and Debt
+                re_keywords = ["real estate", "property", "land", "plot", "flat", "apartment", "house", "villa"]
+                if not inv_df.empty and "investment_type" in inv_df.columns:
+                    is_re = inv_df["investment_type"].astype(str).str.lower().apply(lambda x: any(k in x for k in re_keywords))
+                    real_estate_val = float(inv_df[is_re]["current_value"].sum())
+                    liquid_portfolio_val = float(inv_df[~is_re]["current_value"].sum())
+                else:
+                    real_estate_val = 0.0
+                    liquid_portfolio_val = float(tot_portfolio)
+
+                tot_debt_val = float(debts_df_wp["outstanding_principal"].sum()) if not debts_df_wp.empty and "outstanding_principal" in debts_df_wp.columns else 0.0
+                net_liquid_starting = max(0.0, liquid_portfolio_val - tot_debt_val)
+
+                # Transparency Breakdown Banner
+                st.markdown(f"""
+                <div style="background:#0f172a; border:1px solid #334155; border-radius:10px; padding:12px 16px; margin-bottom:14px; font-size:0.85rem;">
+                    <div style="font-weight:700; color:#38bdf8; margin-bottom:4px;">📊 Net Investable Liquid Corpus Breakdown:</div>
+                    <div style="display:flex; gap:16px; flex-wrap:wrap; color:#cbd5e1;">
+                        <span>💧 <b>Liquid Portfolio:</b> {format_inr(liquid_portfolio_val)}</span>
+                        <span>🏠 <b>Real Estate (Excluded from SWP):</b> <span style="color:#94a3b8;">{format_inr(real_estate_val)}</span></span>
+                        <span>🏦 <b>Outstanding Debt (Deducted):</b> <span style="color:#f87171;">-{format_inr(tot_debt_val)}</span></span>
+                        <span>🎯 <b>Net Starting Liquid Corpus:</b> <span style="color:#34d399; font-weight:700;">{format_inr(net_liquid_starting)}</span></span>
+                    </div>
+                </div>
+                """, unsafe_allow_html=True)
+
                 ret_col1, ret_col2 = st.columns(2)
                 with ret_col1:
                     ret_age = st.number_input("🎯 Desired Retirement Age", min_value=u_age + 1, max_value=100, value=max(60, u_age + 10), step=1)
@@ -2996,11 +3022,24 @@ else:
                             st.info(f"Fetching {hist_years}-yr CAGR for {benchmark_index[0]}...")
                             cagr_decimal = fetch_index_historical_cagr(benchmark_index[1], hist_years)
                             st.success(f"{hist_years}-yr CAGR for {benchmark_index[0]}: **{cagr_decimal*100:.2f}%**")
-                        ret_plan = calculate_retirement_corpus(u_age, ret_age, u_savings, u_sip_budget, cagr_decimal, one_time_expenses_list, add_recurring_exp)
-                        r1, r2, r3 = st.columns(3)
-                        r1.metric("💰 Projected Corpus", format_inr(ret_plan["total_future_value"]), f"+{format_inr(ret_plan['wealth_gain'])} gain")
+                        
+                        ret_plan = calculate_retirement_corpus(
+                            current_age=u_age, 
+                            retirement_age=ret_age, 
+                            current_savings=liquid_portfolio_val, 
+                            monthly_sip=u_sip_budget, 
+                            cagr_decimal=cagr_decimal, 
+                            one_time_expenses=one_time_expenses_list, 
+                            additional_monthly_expense=add_recurring_exp,
+                            outstanding_debt=tot_debt_val,
+                            real_estate_value=real_estate_val,
+                            inflation_rate=0.06
+                        )
+                        r1, r2, r3, r4 = st.columns(4)
+                        r1.metric("💰 Net Liquid Corpus", format_inr(ret_plan["total_future_value"]), f"+{format_inr(ret_plan['wealth_gain'])} gain")
                         r2.metric("💵 Total Invested", format_inr(ret_plan["total_invested"]))
-                        r3.metric("🏝️ Safe Monthly Withdrawal (4%)", format_inr(ret_plan["safe_monthly_withdrawal"]))
+                        r3.metric("🏝️ Safe Monthly SWP (4%)", format_inr(ret_plan["safe_monthly_withdrawal"]))
+                        r4.metric("🛒 In Today's Value (6% Inf.)", format_inr(ret_plan["corpus_today_value"]), f"~{format_inr(ret_plan['swr_today_value'])}/mo today")
                     with st.spinner("🤖 Generating AI Retirement Advisory..."):
                         import importlib
                         import investment_planner
