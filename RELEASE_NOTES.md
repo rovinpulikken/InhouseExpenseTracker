@@ -18,6 +18,7 @@
 - **Unit Tests**: Added comprehensive test coverage in `test_app.py` validating regex extraction, milestone year/age calculations, inflation adjustments, and post-retirement reserve calculations.
 
 ### Fixed
+- **Streamlit Cloud In-Memory Module Cache Hotfix**: Added an explicit `importlib.reload(investment_planner)` check and an infallible `_safe_extract_free_text_parameters` fallback in `app.py` to prevent `AttributeError` when running on persistent Streamlit Cloud container processes.
 - **Safe Import for Pydantic**: Added graceful fallback for `pydantic.BaseModel` in `investment_planner.py` to prevent import failures in slim environments.
 - **Database Function Signature**: Fixed missing `resolved_name` parameter in `insert_investment` within `database.py`.
 

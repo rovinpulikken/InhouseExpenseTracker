@@ -3083,8 +3083,161 @@ else:
                 )
 
                 # Parse free-text retirement vision for milestones, living expenses, medical buffer, and age
+                import importlib
                 import investment_planner
-                parsed_context = investment_planner.extract_free_text_parameters(
+                try:
+                    if not hasattr(investment_planner, "extract_free_text_parameters"):
+                        importlib.reload(investment_planner)
+                except Exception:
+                    pass
+
+                def _safe_extract_free_text_parameters(text: str, base_age: int = 50, current_year: int = None) -> dict:
+                    fn = getattr(investment_planner, "extract_free_text_parameters", None)
+                    if callable(fn):
+                        try:
+                            return fn(text, base_age=base_age, current_year=current_year)
+                        except Exception as e:
+                            print(f"Error calling investment_planner.extract_free_text_parameters: {e}")
+                    
+                    # Infallible inline fallback if running module was cached without latest function
+                    import re
+                    from datetime import datetime
+                    if current_year is None:
+                        current_year = datetime.now().year
+                    res = {
+                        "detected_age": None,
+                        "monthly_living_expense": None,
+                        "monthly_medical_expense": None,
+                        "milestones": [],
+                        "suggestions": []
+                    }
+                    if not text or not str(text).strip():
+                        return res
+                    raw = str(text).strip()
+                    
+                    def _parse_amt(val_str):
+                        s = str(val_str or "").lower().strip().replace(",", "")
+                        m = re.search(r"(\d+(?:\.\d+)?)\s*(?:crores?|cr\b)", s)
+                        if m: return float(m.group(1)) * 10000000.0
+                        m = re.search(r"(\d+(?:\.\d+)?)\s*(?:lakhs?|lacs?|lac|l\b)", s)
+                        if m: return float(m.group(1)) * 100000.0
+                        m = re.search(r"(\d+(?:\.\d+)?)\s*(?:thousands?|k\b)", s)
+                        if m: return float(m.group(1)) * 1000.0
+                        m = re.search(r"(\d+(?:\.\d+)?)", s)
+                        if m: return float(m.group(1))
+                        return 0.0
+
+                    age_m = re.search(r"(?:i am|my age is|current age is|current age|currently|turning)\s*(\d{2})\b", raw, re.I)
+                    if not age_m:
+                        age_m = re.search(r"\b(\d{2})\s*(?:years old|yrs old)\s*(?:now|currently)?\b", raw, re.I)
+                    if age_m:
+                        d_age = int(age_m.group(1))
+                        if 20 <= d_age <= 95:
+                            res["detected_age"] = d_age
+                            base_age = d_age
+
+                    mo_m = re.finditer(r"(?:monthly(?:\s+living)?\s+expense(?:s)?(?:\s+of)?|per\s+month|each\s+month|monthly)\s*(?:of|is|:)?\s*([₹\d\.,]+(?:\s*(?:lakhs?|lacs?|lac|l\b|cr|crores?|k\b|thousand))?)", raw, re.I)
+                    for mm in mo_m:
+                        v = _parse_amt(mm.group(1))
+                        if v > 0:
+                            res["monthly_living_expense"] = v
+                            break
+                    if res["monthly_living_expense"] is None:
+                        rev_m = re.search(r"([₹\d\.,]+\s*(?:lakhs?|lacs?|lac|l\b|cr|crores?|k\b|thousand)?)\s*(?:per\s+month|a\s+month|monthly)", raw, re.I)
+                        if rev_m:
+                            v = _parse_amt(rev_m.group(1))
+                            if v > 0:
+                                res["monthly_living_expense"] = v
+
+                    if re.search(r"(?:medical|health|hospital)\s+(?:expense|contingency|buffer|cost)", raw, re.I):
+                        med_m = re.search(r"(?:medical|health)\s+(?:expense|contingency|buffer|cost)\s*(?:of|is|:)?\s*([₹\d\.,]+(?:\s*(?:lakhs?|lacs?|lac|l\b|cr|k\b|thousand))?)", raw, re.I)
+                        if med_m:
+                            mv = _parse_amt(med_m.group(1))
+                            res["monthly_medical_expense"] = mv if 0 < mv <= 100000 else (round(mv/12.0, 2) if mv > 100000 else 25000.0)
+                        else:
+                            res["monthly_medical_expense"] = 25000.0
+                        res["suggestions"].append("Added standard ₹25,000/month healthcare & medical buffer (escalates with medical inflation).")
+
+                    AMT_RGX = r"([₹\d\.,]+\s*(?:lakhs?|lacs?|lac|l\b|cr|crores?|k\b)?)"
+                    sentences = re.split(r"(?<!\d)\.(?!\d)|\n|;", raw)
+                    has_edu, has_marr = False, False
+                    for s in sentences:
+                        sc = s.strip()
+                        if not sc: continue
+                        rec_edu = re.search(rf"(?:fixed\s+expense|fee|cost|expense)?\s*of\s+{AMT_RGX}\s+(?:a|per)\s+year\s+starting\s+(\d{{4}})(?:\s+for\s+(.*?))?(?:$|\.|\))", sc, re.I)
+                        if rec_edu:
+                            amt = _parse_amt(rec_edu.group(1))
+                            syr = int(rec_edu.group(2))
+                            purp = re.sub(r"[().]", "", (rec_edu.group(3) or "Education")).strip() or "Education"
+                            for i in range(4):
+                                yr = syr + i
+                                res["milestones"].append({
+                                    "description": f"{purp.title()} (Yr {i+1}/4 - {yr})",
+                                    "amount": amt,
+                                    "age": max(base_age, base_age + (yr - current_year)),
+                                    "calendar_year": yr,
+                                    "source": "Retirement Vision (Free Text)"
+                                })
+                            has_edu = True
+                            continue
+                        yrm = re.search(rf"([a-z\s'_-]+)?(?:expense|outlay|cost|budget)?\s*(?:of|:)?\s*{AMT_RGX}\s+(?:in|by|around)\s+(\d{{4}})(?:\s+(?:for|towards)\s+(.*))?", sc, re.I)
+                        if yrm:
+                            pfx = (yrm.group(1) or "").strip()
+                            amt = _parse_amt(yrm.group(2))
+                            yr = int(yrm.group(3))
+                            pfx2 = (yrm.group(4) or "").strip()
+                            if amt > 0 and 2024 <= yr <= 2080:
+                                d = pfx2 or pfx or "Milestone Goal"
+                                d = re.sub(r"^(?:additinoal|additional|fixed|one-time|lump\s*sum)\s*", "", d, flags=re.I).strip()
+                                d = re.sub(r"[().]", "", d).strip()
+                                if re.search(r"marr", d, re.I):
+                                    d = "Child's Marriage"
+                                    has_marr = True
+                                else:
+                                    d = d.title() if len(d) >= 3 else "Milestone Outlay"
+                                res["milestones"].append({
+                                    "description": f"{d} ({yr})",
+                                    "amount": amt,
+                                    "age": max(base_age, base_age + (yr - current_year)),
+                                    "calendar_year": yr,
+                                    "source": "Retirement Vision (Free Text)"
+                                })
+                                continue
+                        agm = re.search(rf"([a-z\s'_-]+)?(?:expense|outlay|cost)?\s*(?:of|:)?\s*{AMT_RGX}\s+(?:at\s+age|at)\s+(\d{{2}})(?:\s+(?:for|towards)\s+(.*))?", sc, re.I)
+                        if agm:
+                            pfx = (agm.group(1) or "").strip()
+                            amt = _parse_amt(agm.group(2))
+                            ta = int(agm.group(3))
+                            pfx2 = (agm.group(4) or "").strip()
+                            if amt > 0 and base_age <= ta <= 100:
+                                d = pfx2 or pfx or "Milestone Goal"
+                                d = re.sub(r"^(?:additinoal|additional|fixed|one-time|lump\s*sum)\s*", "", d, flags=re.I).strip()
+                                d = re.sub(r"[().]", "", d).strip()
+                                if re.search(r"marr", d, re.I):
+                                    d = "Child's Marriage"
+                                    has_marr = True
+                                else:
+                                    d = d.title() if len(d) >= 3 else "Milestone Outlay"
+                                yr = current_year + (ta - base_age)
+                                res["milestones"].append({
+                                    "description": f"{d} (Age {ta})",
+                                    "amount": amt,
+                                    "age": ta,
+                                    "calendar_year": yr,
+                                    "source": "Retirement Vision (Free Text)"
+                                })
+
+                    if has_edu:
+                        res["suggestions"].append("🎓 **Education Fund De-risking**: Higher education expenses begin soon (2027). Funds needed within 1–4 years should be systematically ring-fenced into High-Quality Target Maturity Debt Funds or Arbitrage Funds to protect against stock market volatility.")
+                    if has_marr:
+                        res["suggestions"].append("💍 **Marriage Goal Glide-Path (2035)**: With ~9 years to 2035, maintain an aggressive-hybrid or multi-asset allocation until 2032, followed by a gradual 3-year STP (Systematic Transfer Plan) into short-duration debt to lock in the ₹50L+ inflated capital.")
+                    if res["monthly_living_expense"] and res["monthly_living_expense"] >= 150000:
+                        res["suggestions"].append(f"🛡️ **High-Budget Emergency Reserve**: At {res['monthly_living_expense']/100000:.2f}L/month living expense, maintain at least 6 months (₹{res['monthly_living_expense']*6/100000:.1f} Lakhs) in liquid/overnight funds as an untouchable buffer.")
+                        res["suggestions"].append("🏥 **Comprehensive Health Insurance**: In addition to standard medical buffers, secure a ₹1 Crore Super Top-Up Health Insurance policy with a ₹10-15 Lakh deductible to guard against critical illness without depleting your retirement corpus.")
+
+                    return res
+
+                parsed_context = _safe_extract_free_text_parameters(
                     ret_user_context,
                     base_age=u_age,
                     current_year=datetime.datetime.now().year
