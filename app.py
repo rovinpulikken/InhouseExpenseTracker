@@ -3053,8 +3053,10 @@ else:
                     hist_years = st.selectbox("Historical Data Period", options=[5, 10, 15, 20], index=1, format_func=lambda x: f"Last {x} Years")
                 add_col1, add_col2 = st.columns(2)
                 with add_col1:
+                    st.caption("📋 **Option A: Milestone Expenses Table (Data Entry Column)**")
                     one_time_exp_df = st.data_editor(pd.DataFrame([{"Expense Description": "", "Amount (₹)": 0.0, "Age": min(ret_age, u_age + 5)}]), num_rows="dynamic", key="one_time_exp_editor", use_container_width=True, hide_index=True)
                 with add_col2:
+                    st.caption("💳 **Baseline Living & Additional Recurring Expenses**")
                     approx_living_exp = float(round(total_spent / max(1, num_months) if not df_fy.empty else 50000.0, -3))
                     base_ret_living_exp = st.number_input("Current Monthly Living Expense (₹)", min_value=5000.0, value=max(10000.0, approx_living_exp), step=5000.0, help="Your baseline living expenses today. Used to calculate how living expenses shoot up with inflation by retirement age.", key="ret_base_living_expense")
                     add_recurring_exp = st.number_input("Additional Monthly Recurring Expenses (₹)", min_value=0.0, value=0.0, step=5000.0, help="Any extra ongoing expenses planned (e.g. specialized medical care, dependents).")
@@ -3075,11 +3077,24 @@ else:
                         })
                 table_has_data = len(table_milestones) > 0
 
+                # Explicit visual OR divider between Data Entry Columns and Free-Text Vision
+                st.markdown("""
+                <div style="display: flex; align-items: center; justify-content: center; margin: 18px 0 14px 0;">
+                    <div style="flex-grow: 1; height: 1px; background: #334155;"></div>
+                    <span style="background: linear-gradient(135deg, #0284c7, #2563eb); color: white; padding: 4px 22px; border-radius: 20px; font-weight: 800; font-size: 0.92rem; letter-spacing: 0.1em; margin: 0 16px; box-shadow: 0 2px 10px rgba(2, 132, 199, 0.45); border: 1px solid rgba(255,255,255,0.2);">
+                        ⚡ OR ⚡
+                    </span>
+                    <div style="flex-grow: 1; height: 1px; background: #334155;"></div>
+                </div>
+                """, unsafe_allow_html=True)
+
+                st.caption("💬 **Option B: Free-Text Retirement Vision & Lifestyle Statement (Natural Language)**")
                 ret_user_context = st.text_area(
-                    "💬 Retirement Vision & Lifestyle Goals (Optional)",
-                    placeholder="e.g. Planning to relocate to a tier-2 city at 60, expecting ₹30k/month rental income, budgeting for international travel every 2 years, prefer low volatility and high medical contingency.",
-                    help="Gemini AI will personalize your retirement strategy, asset allocation glide path, and cash flow plan based on your vision.",
-                    key="ret_user_context_input"
+                    "Retirement Vision & Lifestyle Goals (Free-Text)",
+                    placeholder="e.g. 1. I am 53 now. Monthly living expense of 1.5 lakhs. Fixed expense of 7 lakhs a year starting 2027 for daughter's education. Marriage expense of 50 lakhs in 2035. Standard medical expense required.",
+                    help="Enter your vision in plain English. The AI engine will parse your age, living expense, medical buffers, and milestones automatically.",
+                    key="ret_user_context_input",
+                    label_visibility="collapsed"
                 )
 
                 # Parse free-text retirement vision for milestones, living expenses, medical buffer, and age
@@ -3250,72 +3265,53 @@ else:
                 text_milestones = parsed_context.get("milestones", [])
                 text_has_data = len(text_milestones) > 0
 
-                # ── Conflict Resolution: Prompt user if data exists in both table and free-text ──
-                if table_has_data and text_has_data:
+                # ── Explicit Input Mode Selector: Use ONLY ONE (Structured Columns OR Free Text) ──
+                default_choice_idx = 1 if (bool(ret_user_context.strip()) and not table_has_data) else 0
+
+                ret_input_mode = st.radio(
+                    "🎯 Select Milestone & Expense Input Source (Uses ONLY ONE — Table OR Free Text):",
+                    options=[
+                        "📋 Option A: Structured Data Entry Columns (Milestone Table & Expense Inputs)",
+                        "💬 Option B: Natural Language Free-Text Vision Statement"
+                    ],
+                    index=default_choice_idx,
+                    horizontal=True,
+                    key="ret_input_source_selection",
+                    help="Choose which input method to use. Only one will be used in calculations — the other is completely ignored."
+                )
+
+                is_free_text_mode = "Option B" in ret_input_mode
+
+                if is_free_text_mode:
+                    active_milestones = text_milestones
+                    calc_base_living_exp = float(parsed_context["monthly_living_expense"]) if (parsed_context.get("monthly_living_expense") and float(parsed_context["monthly_living_expense"]) >= 5000.0) else base_ret_living_exp
+                    calc_recurring_exp = float(parsed_context.get("monthly_medical_expense") or 0.0)
+                    calc_user_age = int(parsed_context.get("detected_age") or u_age)
+
                     st.markdown(f"""
-                    <div style="background: rgba(245, 158, 11, 0.12); border: 1px solid rgba(245, 158, 11, 0.35); border-left: 4px solid #f59e0b; border-radius: 8px; padding: 12px 16px; margin: 12px 0 8px 0;">
-                        <div style="font-weight: 700; color: #fbbf24; font-size: 0.95rem;">⚖️ Milestone Data Conflict: Table vs. Free-Text Vision</div>
-                        <div style="color: #cbd5e1; font-size: 0.85rem; margin-top: 4px;">
-                            Milestone expenses were detected in <b>both</b> the <b>One-Time Milestone Table</b> ({len(table_milestones)} item(s)) and parsed from your <b>Free-Text Vision</b> ({len(text_milestones)} item(s)). 
-                            Which one should take precedence?
+                    <div style="background: rgba(14, 165, 233, 0.12); border: 1px solid rgba(14, 165, 233, 0.35); border-left: 4px solid #38bdf8; border-radius: 6px; padding: 10px 14px; margin: 8px 0 12px 0;">
+                        <div style="font-weight: 700; color: #38bdf8; font-size: 0.95rem;">✨ Active Source: Natural Language Free-Text Vision (Option B)</div>
+                        <div style="color: #cbd5e1; font-size: 0.85rem; margin-top: 3px;">
+                            Factoring <b>{len(active_milestones)} milestone(s)</b>, living expense of <b>{format_inr(calc_base_living_exp)}/mo</b>{f", and medical buffer of {format_inr(calc_recurring_exp)}/mo" if calc_recurring_exp > 0 else ""}{f", current age <b>{calc_user_age}</b>" if calc_user_age != u_age else ""}. 
+                            <br><span style="color: #94a3b8; font-size: 0.8rem;">🔒 <i>Structured data entry table and recurring number inputs in Option A are completely bypassed.</i></span>
                         </div>
                     </div>
                     """, unsafe_allow_html=True)
-                    override_choice = st.radio(
-                        "⚖️ Select which milestone source to use for retirement calculation:",
-                        options=[
-                            "📝 Free-Text Vision Overrides Table",
-                            "📋 Table Overrides Free Text",
-                            "🔀 Merge Both (Combine Table + Free-Text Milestones)"
-                        ],
-                        index=0,
-                        horizontal=True,
-                        key="ret_milestone_conflict_choice",
-                        help="Choose whether milestones parsed from your free-text statement or the table editor should be used in the projection."
-                    )
-                    if "Free-Text" in override_choice:
-                        active_milestones = text_milestones
-                        st.caption(f"✨ *Using {len(text_milestones)} milestone(s) parsed from Free Text (table entries bypassed).*")
-                    elif "Table" in override_choice:
-                        active_milestones = table_milestones
-                        st.caption(f"✨ *Using {len(table_milestones)} milestone(s) entered in the Table (free-text milestones bypassed).*")
-                    else:
-                        active_milestones = table_milestones + text_milestones
-                        st.caption(f"✨ *Combined {len(active_milestones)} total milestone(s) from both sources.*")
-                elif text_has_data:
-                    active_milestones = text_milestones
+                else:
+                    active_milestones = table_milestones
+                    calc_base_living_exp = base_ret_living_exp
+                    calc_recurring_exp = add_recurring_exp
+                    calc_user_age = u_age
+
                     st.markdown(f"""
-                    <div style="background: rgba(14, 165, 233, 0.12); border: 1px solid rgba(14, 165, 233, 0.3); border-left: 4px solid #38bdf8; border-radius: 6px; padding: 10px 14px; margin: 10px 0 8px 0;">
-                        <span style="font-weight: 600; color: #38bdf8;">🎯 Free-Text Milestones Detected ({len(text_milestones)}):</span>
-                        <span style="color: #cbd5e1; font-size: 0.85rem;">
-                            {", ".join([f"<b>{m['description']}</b> (₹{format_inr(m['amount'])})" for m in text_milestones[:3]])}{"..." if len(text_milestones) > 3 else ""}.
-                            These will be automatically factored into your retirement corpus and expense roadmap.
-                        </span>
+                    <div style="background: rgba(16, 185, 129, 0.12); border: 1px solid rgba(16, 185, 129, 0.35); border-left: 4px solid #10b981; border-radius: 6px; padding: 10px 14px; margin: 8px 0 12px 0;">
+                        <div style="font-weight: 700; color: #34d399; font-size: 0.95rem;">✨ Active Source: Structured Data Entry Columns (Option A)</div>
+                        <div style="color: #cbd5e1; font-size: 0.85rem; margin-top: 3px;">
+                            Factoring <b>{len(active_milestones)} milestone(s)</b> from table, living expense of <b>{format_inr(calc_base_living_exp)}/mo</b>{f", and recurring expense of {format_inr(calc_recurring_exp)}/mo" if calc_recurring_exp > 0 else ""}. 
+                            <br><span style="color: #94a3b8; font-size: 0.8rem;">🔒 <i>Free-text milestones and expense overrides in Option B are completely bypassed.</i></span>
+                        </div>
                     </div>
                     """, unsafe_allow_html=True)
-                elif table_has_data:
-                    active_milestones = table_milestones
-                else:
-                    active_milestones = []
-
-                # Dynamic overrides for age, baseline living expenses, and medical buffer from free text
-                calc_user_age = u_age
-                if parsed_context.get("detected_age"):
-                    calc_user_age = int(parsed_context["detected_age"])
-                    if calc_user_age != u_age:
-                        st.caption(f"🎂 *Current age updated to **{calc_user_age}** based on your free-text statement.*")
-
-                calc_base_living_exp = base_ret_living_exp
-                if parsed_context.get("monthly_living_expense") and float(parsed_context["monthly_living_expense"]) >= 5000.0:
-                    calc_base_living_exp = float(parsed_context["monthly_living_expense"])
-                    st.caption(f"💳 *Monthly baseline living expense set to **{format_inr(calc_base_living_exp)}/month** as specified in your statement.*")
-                elif calc_base_living_exp < 5000.0:
-                    calc_base_living_exp = 50000.0
-
-                calc_recurring_exp = add_recurring_exp
-                if parsed_context.get("monthly_medical_expense"):
-                    calc_recurring_exp = add_recurring_exp + float(parsed_context["monthly_medical_expense"])
-                    st.caption(f"🏥 *Included standard healthcare & medical buffer of **{format_inr(parsed_context['monthly_medical_expense'])}/month**.*")
 
                 if st.button("🔮 Calculate Retirement Corpus", type="primary", use_container_width=True):
                     import importlib
@@ -3378,7 +3374,8 @@ else:
                             user_context=ret_user_context,
                             inflation_rate=0.06,
                             life_expectancy=85,
-                            safe_monthly_withdrawal=ret_plan.get("safe_monthly_withdrawal", 0.0)
+                            safe_monthly_withdrawal=ret_plan.get("safe_monthly_withdrawal", 0.0),
+                            ignore_free_text_overrides=(not is_free_text_mode)
                         )
 
                     with st.spinner("🤖 Generating AI Retirement Advisory..."):

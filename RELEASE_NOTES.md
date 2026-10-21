@@ -1,5 +1,17 @@
 # Release Notes
 
+## v1.12.2 (2026-10-21)
+### Added — Explicit "OR" UI & Mutual Exclusivity for Retirement Inputs
+- **Prominent Visual "⚡ OR ⚡" Separator**: Placed a high-visibility badge and divider between the structured data entry columns (Milestone Table & Expense Inputs) and the Natural Language Free-Text Vision Statement, making the distinction explicit in the Retirement Planner UI.
+- **Strict Mutual Exclusivity Selection**: Implemented an explicit source selection control (`st.radio`) offering:
+  - `📋 Option A: Structured Data Entry Columns (Milestone Table & Expense Inputs)`
+  - `💬 Option B: Natural Language Free-Text Vision Statement`
+- **Enforced Single-Source Engine Execution**: Updated calculation flows in `app.py` and `investment_planner.py` (`generate_detailed_retirement_expense_plan`) to ensure only the selected input source is utilized:
+  - When **Option A** is active: Uses table milestones and manual living/recurring expense inputs; free-text milestones, cost-of-living overrides, and medical buffers are completely bypassed (`ignore_free_text_overrides=True`).
+  - When **Option B** is active: Uses natural language parsed milestones, detected living expenses, medical buffers, and age; table entries and structured recurring inputs are completely bypassed.
+  - Multi-source merging is avoided so calculations always use only one source at a time.
+- **Unit Testing**: Added `test_mutual_exclusive_expense_sources` to `test_app.py` ensuring Option A strictly suppresses free-text overrides and Option B strictly uses parsed text goals.
+
 ## v1.12.1 (2026-10-21)
 ### Fixed — Cost of Living Extraction & Numbered Bullet Point Isolation
 - **Numbered Bullet List Prefix Isolation**: Fixed an issue where bullet numbers (such as `1. ` in `1. cost of living 150,000` or `1. monthly living: 150,000`) were captured as `1.0` by the reverse regex, which subsequently clamped the baseline living expenses to `₹1,000/mo`. Added bullet prefix stripping (`clean_text = re.sub(r"(?:^|[\n\r;.]|\b)\s*(?:\(?\d{1,2}\)|\d{1,2}[.)])\s+", " ", raw_text)`) and ensured bare numbers below 1,000 without denominations are never misidentified as monthly living expenses.

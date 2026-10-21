@@ -527,6 +527,54 @@ def test_cost_of_living_variations_and_bullet_prefix_isolation():
         
     print("✅ Cost of living 150,000 variations and numbered bullet isolation tests passed.")
 
+def test_mutual_exclusive_expense_sources():
+    import investment_planner
+    
+    free_text = "I am 53 now. Monthly living expense 1.75 lakhs. Fixed expense of 7 lakhs a year starting 2027 for daughters education. Marriage expense of 50 lakhs in 2035."
+    table_milestones = [{
+        "amount": 2000000.0,
+        "age": 58,
+        "description": "Home Renovation",
+        "source": "One-Time Milestone Table"
+    }]
+    
+    # Test Option A: Structured Data Entry Columns (ignore_free_text_overrides=True)
+    exp_plan_a = investment_planner.generate_detailed_retirement_expense_plan(
+        current_age=53,
+        retirement_age=60,
+        base_monthly_expense=60000.0,
+        additional_monthly_expense=10000.0,
+        one_time_expenses=table_milestones,
+        user_context=free_text,
+        inflation_rate=0.06,
+        ignore_free_text_overrides=True
+    )
+    # Under Option A, free text should NOT override base living expenses or milestones
+    assert exp_plan_a["base_monthly_today"] == 60000.0, f"Expected 60,000 but got {exp_plan_a['base_monthly_today']}"
+    assert len(exp_plan_a["milestones"]) == 1
+    assert exp_plan_a["milestones"][0]["description"] == "Home Renovation"
+    assert exp_plan_a["milestones"][0]["amount_today"] == 2000000.0
+    
+    # Test Option B: Free-Text Vision (uses extracted parameters, table bypassed)
+    parsed = investment_planner.extract_free_text_parameters(free_text, base_age=53)
+    exp_plan_b = investment_planner.generate_detailed_retirement_expense_plan(
+        current_age=parsed["detected_age"] or 53,
+        retirement_age=60,
+        base_monthly_expense=parsed["monthly_living_expense"] or 50000.0,
+        additional_monthly_expense=parsed["monthly_medical_expense"] or 0.0,
+        one_time_expenses=parsed["milestones"],
+        user_context=free_text,
+        inflation_rate=0.06,
+        ignore_free_text_overrides=False
+    )
+    # Under Option B, parsed text living expenses and milestones are used
+    assert exp_plan_b["base_monthly_today"] == 175000.0, f"Expected 175,000 but got {exp_plan_b['base_monthly_today']}"
+    assert len(exp_plan_b["milestones"]) == 5
+    assert not any(m["description"] == "Home Renovation" for m in exp_plan_b["milestones"])
+    assert any("Marriage" in m["description"] for m in exp_plan_b["milestones"])
+    
+    print("✅ Mutual exclusive expense sources (Option A vs Option B) test passed.")
+
 if __name__ == "__main__":
     try:
         test_strict_uploaded_date_enforcement()
@@ -544,6 +592,7 @@ if __name__ == "__main__":
         test_income_source_crud()
         test_free_text_retirement_milestones_and_override()
         test_cost_of_living_variations_and_bullet_prefix_isolation()
+        test_mutual_exclusive_expense_sources()
         print("🎉 All test suite assertions passed successfully!")
     finally:
         if os.path.exists(database.DB_PATH):

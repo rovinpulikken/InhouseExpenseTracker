@@ -914,13 +914,15 @@ def generate_detailed_retirement_expense_plan(
     parsed_meta = extract_free_text_parameters(ctx_clean, base_age=current_age)
     strategic_suggestions = parsed_meta.get("suggestions", [])
 
+    ignore_free_text_overrides = bool(kwargs.get("ignore_free_text_overrides", False))
+
     # If living expense was detected in free-text vision and was not explicitly overridden
-    if parsed_meta.get("monthly_living_expense") and parsed_meta["monthly_living_expense"] >= 5000.0:
+    if not ignore_free_text_overrides and parsed_meta.get("monthly_living_expense") and parsed_meta["monthly_living_expense"] >= 5000.0:
         if base_monthly_expense <= 50000.0 or base_monthly_expense == 0.0:
             base_monthly_expense = float(parsed_meta["monthly_living_expense"])
 
     # If no milestones were passed from table, extract any milestones from free-text vision
-    if not processed_milestones and parsed_meta.get("milestones"):
+    if not ignore_free_text_overrides and not processed_milestones and parsed_meta.get("milestones"):
         for m_item in parsed_meta["milestones"]:
             m_amt = float(m_item.get("amount", 0.0))
             m_age = int(m_item.get("age", retirement_age))
