@@ -3013,37 +3013,62 @@ else:
                 )
 
                 if st.button("🔮 Calculate Retirement Corpus", type="primary", use_container_width=True):
-                    from investment_planner import fetch_index_historical_cagr, calculate_retirement_corpus, generate_ai_retirement_advisory
+                    import importlib
+                    import investment_planner
+                    importlib.reload(investment_planner)
                     with st.spinner("Calculating..."):
                         if exp_return_str.strip():
                             try: cagr_decimal = float(exp_return_str.strip()) / 100.0
                             except: cagr_decimal = 0.12
                         else:
                             st.info(f"Fetching {hist_years}-yr CAGR for {benchmark_index[0]}...")
-                            cagr_decimal = fetch_index_historical_cagr(benchmark_index[1], hist_years)
+                            cagr_decimal = investment_planner.fetch_index_historical_cagr(benchmark_index[1], hist_years)
                             st.success(f"{hist_years}-yr CAGR for {benchmark_index[0]}: **{cagr_decimal*100:.2f}%**")
                         
-                        ret_plan = calculate_retirement_corpus(
-                            current_age=u_age, 
-                            retirement_age=ret_age, 
-                            current_savings=liquid_portfolio_val, 
-                            monthly_sip=u_sip_budget, 
-                            cagr_decimal=cagr_decimal, 
-                            one_time_expenses=one_time_expenses_list, 
-                            additional_monthly_expense=add_recurring_exp,
-                            outstanding_debt=tot_debt_val,
-                            real_estate_value=real_estate_val,
-                            inflation_rate=0.06
-                        )
+                        try:
+                            ret_plan = investment_planner.calculate_retirement_corpus(
+                                current_age=u_age, 
+                                retirement_age=ret_age, 
+                                current_savings=liquid_portfolio_val, 
+                                monthly_sip=u_sip_budget, 
+                                cagr_decimal=cagr_decimal, 
+                                one_time_expenses=one_time_expenses_list, 
+                                additional_monthly_expense=add_recurring_exp,
+                                outstanding_debt=tot_debt_val,
+                                real_estate_value=real_estate_val,
+                                inflation_rate=0.06
+                            )
+                        except TypeError:
+                            try:
+                                ret_plan = investment_planner.calculate_retirement_corpus(
+                                    u_age, ret_age, max(0.0, liquid_portfolio_val - tot_debt_val), u_sip_budget, cagr_decimal, one_time_expenses_list, add_recurring_exp
+                                )
+                            except Exception:
+                                ret_plan = investment_planner.calculate_retirement_corpus(
+                                    u_age, ret_age, max(0.0, liquid_portfolio_val - tot_debt_val), u_sip_budget, cagr_decimal
+                                )
+
+                        # Ensure inflation and breakdown keys exist in ret_plan even if older cached function executed
+                        years_left = ret_plan.get("years_to_retirement", max(1, ret_age - u_age))
+                        tot_fv_val = ret_plan.get("total_future_value", 0.0)
+                        swr_mo_val = ret_plan.get("safe_monthly_withdrawal", 0.0)
+                        if "corpus_today_value" not in ret_plan:
+                            ret_plan["corpus_today_value"] = round(tot_fv_val / ((1 + 0.06) ** years_left), 2)
+                        if "swr_today_value" not in ret_plan:
+                            ret_plan["swr_today_value"] = round(swr_mo_val / ((1 + 0.06) ** years_left), 2)
+                        if "outstanding_debt_deducted" not in ret_plan:
+                            ret_plan["outstanding_debt_deducted"] = tot_debt_val
+                        if "real_estate_excluded" not in ret_plan:
+                            ret_plan["real_estate_excluded"] = real_estate_val
+                        if "net_starting_savings" not in ret_plan:
+                            ret_plan["net_starting_savings"] = max(0.0, liquid_portfolio_val - tot_debt_val)
+
                         r1, r2, r3, r4 = st.columns(4)
                         r1.metric("💰 Net Liquid Corpus", format_inr(ret_plan["total_future_value"]), f"+{format_inr(ret_plan['wealth_gain'])} gain")
                         r2.metric("💵 Total Invested", format_inr(ret_plan["total_invested"]))
                         r3.metric("🏝️ Safe Monthly SWP (4%)", format_inr(ret_plan["safe_monthly_withdrawal"]))
                         r4.metric("🛒 In Today's Value (6% Inf.)", format_inr(ret_plan["corpus_today_value"]), f"~{format_inr(ret_plan['swr_today_value'])}/mo today")
                     with st.spinner("🤖 Generating AI Retirement Advisory..."):
-                        import importlib
-                        import investment_planner
-                        importlib.reload(investment_planner)
                         gemini_api_key_wp = (current_user.get("gemini_api_key") or get_admin_gemini_api_key()
                                              or os.environ.get("GEMINI_API_KEY", "") or st.secrets.get("GEMINI_API_KEY", ""))
                         try:

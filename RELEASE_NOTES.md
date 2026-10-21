@@ -460,3 +460,4 @@
 - Excluded illiquid real estate/property holdings from the retirement corpus and 4% Safe Withdrawal Rate (SWP) calculation to prevent distorted cash-flow projections, while deducting outstanding debt from starting savings for a debt-free post-retirement posture.
 - Added a visual Net Investable Liquid Corpus breakdown banner and an Inflation-Adjusted Purchasing Power metric card (discounting future corpus and monthly SWP to today's purchasing power at 6% inflation).
 - Upgraded the Gemini AI Retirement Advisory prompt to separate liquid portfolio strategy from real estate and explicitly advise on debt clearance and inflation hedges.
+- Fixed a TypeError in `calculate_retirement_corpus` on Streamlit Cloud caused by stale in-memory module caching by adding `importlib.reload(investment_planner)` before calculation, making the function signature accept `*args, **kwargs`, and adding a resilient multi-tier fallback invocation with safe metric defaults.

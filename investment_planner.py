@@ -507,12 +507,17 @@ def calculate_retirement_corpus(
     additional_monthly_expense: float = 0.0,
     outstanding_debt: float = 0.0,
     real_estate_value: float = 0.0,
-    inflation_rate: float = 0.06
+    inflation_rate: float = 0.06,
+    *args,
+    **kwargs
 ) -> Dict[str, Any]:
     """
     Calculates the projected liquid retirement corpus based on current age, savings (net of debt), and SIP, 
     excluding illiquid real estate from safe withdrawals.
     """
+    outstanding_debt = float(kwargs.get("outstanding_debt", outstanding_debt))
+    real_estate_value = float(kwargs.get("real_estate_value", real_estate_value))
+    inflation_rate = float(kwargs.get("inflation_rate", inflation_rate))
     if one_time_expenses is None:
         one_time_expenses = []
 
