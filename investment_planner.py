@@ -560,19 +560,58 @@ def generate_ai_retirement_advisory(
     retirement_plan: Dict[str, Any], 
     holdings_df: pd.DataFrame, 
     user_context: str = "",
-    api_key: str = ""
+    api_key: str = "",
+    *args,
+    **kwargs
 ) -> Dict[str, Any]:
     """
     Generates AI suggestions for retirement using the calculated corpus, active holdings, and personalized user vision.
     """
-    total_current = float(holdings_df["current_value"].sum()) if holdings_df is not None and not holdings_df.empty and "current_value" in holdings_df.columns else 0.0
+    if "user_context" in kwargs and not user_context:
+        user_context = kwargs["user_context"]
+    if "api_key" in kwargs and not api_key:
+        api_key = kwargs["api_key"]
+    if args:
+        if len(args) >= 1 and not user_context:
+            user_context = args[0]
+        if len(args) >= 2 and not api_key:
+            api_key = args[1]
+
+    try:
+        total_current = float(holdings_df["current_value"].sum()) if holdings_df is not None and not holdings_df.empty and "current_value" in holdings_df.columns else 0.0
+    except Exception:
+        total_current = 0.0
     
     portfolio_summary = ""
     if holdings_df is not None and not holdings_df.empty and "investment_type" in holdings_df.columns:
-        type_splits = holdings_df.groupby("investment_type")["current_value"].sum().to_dict()
-        portfolio_summary = "Current Asset Allocation: " + ", ".join([f"{k}: ₹{v:,.0f}" for k, v in type_splits.items()])
+        try:
+            type_splits = holdings_df.groupby("investment_type")["current_value"].sum().to_dict()
+            portfolio_summary = "Current Asset Allocation: " + ", ".join([f"{k}: ₹{v:,.0f}" for k, v in type_splits.items()])
+        except Exception:
+            portfolio_summary = ""
 
-    context_prompt = f"\n- User's Personal Vision & Lifestyle Context: {user_context.strip()}" if user_context and user_context.strip() else ""
+    user_context_str = str(user_context or "").strip()
+    context_prompt = f"\n- User's Personal Vision & Lifestyle Context: {user_context_str}" if user_context_str else ""
+
+    try:
+        sip_val = float(retirement_plan.get('sip_monthly') or 0.0)
+    except Exception:
+        sip_val = 0.0
+
+    try:
+        fv_val = float(retirement_plan.get('total_future_value') or 0.0)
+    except Exception:
+        fv_val = 0.0
+
+    try:
+        swr_val = float(retirement_plan.get('safe_monthly_withdrawal') or 0.0)
+    except Exception:
+        swr_val = 0.0
+
+    try:
+        cagr_val = retirement_plan.get('cagr_used_pct', 12.0)
+    except Exception:
+        cagr_val = 12.0
 
     try:
         from google import genai
@@ -591,12 +630,12 @@ def generate_ai_retirement_advisory(
             Act as an expert Indian Retirement Planner & Wealth Strategist. Analyze this client profile:
             - Current Age: {retirement_plan.get('current_age', 'N/A')}
             - Desired Retirement Age: {retirement_plan.get('retirement_age', 'N/A')}
-            - Years to Retirement: {retirement_plan['years_to_retirement']}
+            - Years to Retirement: {retirement_plan.get('years_to_retirement', 'N/A')}
             - Current Portfolio Value: ₹ {total_current:,.0f} ({portfolio_summary})
-            - Monthly SIP / Investment Budget: ₹ {retirement_plan.get('sip_monthly', 0):,.0f}
-            - Expected CAGR: {retirement_plan['cagr_used_pct']}%
-            - Projected Corpus at Retirement: ₹ {retirement_plan['total_future_value']:,.0f}
-            - Safe Monthly Withdrawal (4% SWR Rule): ₹ {retirement_plan['safe_monthly_withdrawal']:,.0f}
+            - Monthly SIP / Investment Budget: ₹ {sip_val:,.0f}
+            - Expected CAGR: {cagr_val}%
+            - Projected Corpus at Retirement: ₹ {fv_val:,.0f}
+            - Safe Monthly Withdrawal (4% SWR Rule): ₹ {swr_val:,.0f}
             {context_prompt}
 
             Provide a highly actionable, customized retirement strategy directly tailored to their specific lifestyle vision, timeline, and goals.

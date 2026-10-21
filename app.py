@@ -3002,9 +3002,22 @@ else:
                         r2.metric("💵 Total Invested", format_inr(ret_plan["total_invested"]))
                         r3.metric("🏝️ Safe Monthly Withdrawal (4%)", format_inr(ret_plan["safe_monthly_withdrawal"]))
                     with st.spinner("🤖 Generating AI Retirement Advisory..."):
+                        import importlib
+                        import investment_planner
+                        importlib.reload(investment_planner)
                         gemini_api_key_wp = (current_user.get("gemini_api_key") or get_admin_gemini_api_key()
                                              or os.environ.get("GEMINI_API_KEY", "") or st.secrets.get("GEMINI_API_KEY", ""))
-                        ret_advice = generate_ai_retirement_advisory(ret_plan, inv_df, user_context=ret_user_context, api_key=gemini_api_key_wp)
+                        try:
+                            ret_advice = investment_planner.generate_ai_retirement_advisory(
+                                ret_plan, inv_df, user_context=ret_user_context, api_key=gemini_api_key_wp
+                            )
+                        except TypeError:
+                            try:
+                                ret_advice = investment_planner.generate_ai_retirement_advisory(
+                                    ret_plan, inv_df, ret_user_context, gemini_api_key_wp
+                                )
+                            except TypeError:
+                                ret_advice = investment_planner.generate_ai_retirement_advisory(ret_plan, inv_df)
                         st.markdown("#### 🤖 AI Retirement Advisory")
                         st.info(ret_advice.get("summary", ""))
                         for item in ret_advice.get("key_takeaways", []):
