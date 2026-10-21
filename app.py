@@ -3056,7 +3056,7 @@ else:
                     one_time_exp_df = st.data_editor(pd.DataFrame([{"Expense Description": "", "Amount (₹)": 0.0, "Age": min(ret_age, u_age + 5)}]), num_rows="dynamic", key="one_time_exp_editor", use_container_width=True, hide_index=True)
                 with add_col2:
                     approx_living_exp = float(round(total_spent / max(1, num_months) if not df_fy.empty else 50000.0, -3))
-                    base_ret_living_exp = st.number_input("Current Monthly Living Expense (₹)", min_value=5000.0, value=max(10000.0, approx_living_exp), step=5000.0, help="Your baseline living expenses today. Used to calculate how living expenses shoot up with inflation by retirement age.")
+                    base_ret_living_exp = st.number_input("Current Monthly Living Expense (₹)", min_value=5000.0, value=max(10000.0, approx_living_exp), step=5000.0, help="Your baseline living expenses today. Used to calculate how living expenses shoot up with inflation by retirement age.", key="ret_base_living_expense")
                     add_recurring_exp = st.number_input("Additional Monthly Recurring Expenses (₹)", min_value=0.0, value=0.0, step=5000.0, help="Any extra ongoing expenses planned (e.g. specialized medical care, dependents).")
                 # Extract milestones entered manually into the data editor table
                 table_milestones = []
@@ -3136,18 +3136,23 @@ else:
                             res["detected_age"] = d_age
                             base_age = d_age
 
-                    mo_m = re.finditer(r"(?:monthly(?:\s+living)?\s+expense(?:s)?(?:\s+of)?|per\s+month|each\s+month|monthly)\s*(?:of|is|:)?\s*([₹\d\.,]+(?:\s*(?:lakhs?|lacs?|lac|l\b|cr|crores?|k\b|thousand))?)", raw, re.I)
-                    for mm in mo_m:
+                    # Clean numbered list markers at start of text, newlines, or sentences (e.g. '1. ', '2) ', '(1) ') so they are not captured as amounts
+                    clean_raw = re.sub(r"(?:^|[\n\r;.]|\b)\s*(?:\(?\d{1,2}\)|\d{1,2}[.)])\s+", " ", raw)
+
+                    # Forward pattern: cost of living / living expense / monthly expense / household expense
+                    fwd_pattern = r"(?:cost\s+of\s+living|living\s+(?:expense(?:s)?|cost(?:s)?)|household\s+expense(?:s)?|monthly\s+(?:living|expense(?:s)?|cost(?:s)?|budget|outflow)?|current\s+(?:monthly\s+)?expense(?:s)?)\s*(?:is|at|of|:)?\s*([₹\d\.,]+(?:\s*(?:lakhs?|lacs?|lac|l\b|cr|crores?|k\b|thousand))?)"
+                    for mm in re.finditer(fwd_pattern, clean_raw, re.I):
                         v = _parse_amt(mm.group(1))
-                        if v > 0:
+                        if v >= 1000.0:
                             res["monthly_living_expense"] = v
                             break
                     if res["monthly_living_expense"] is None:
-                        rev_m = re.search(r"([₹\d\.,]+\s*(?:lakhs?|lacs?|lac|l\b|cr|crores?|k\b|thousand)?)\s*(?:per\s+month|a\s+month|monthly)", raw, re.I)
-                        if rev_m:
-                            v = _parse_amt(rev_m.group(1))
-                            if v > 0:
+                        rev_pattern = r"([₹\d\.,]+\s*(?:lakhs?|lacs?|lac|l\b|cr|crores?|k\b|thousand)?)\s*(?:(?:a|per|\/)\s*month|(?:a|per|\/)\s*mo\b|each\s+month|monthly|p\.?m\.?\b)"
+                        for rm in re.finditer(rev_pattern, clean_raw, re.I):
+                            v = _parse_amt(rm.group(1))
+                            if v >= 1000.0:
                                 res["monthly_living_expense"] = v
+                                break
 
                     if re.search(r"(?:medical|health|hospital)\s+(?:expense|contingency|buffer|cost)", raw, re.I):
                         med_m = re.search(r"(?:medical|health)\s+(?:expense|contingency|buffer|cost)\s*(?:of|is|:)?\s*([₹\d\.,]+(?:\s*(?:lakhs?|lacs?|lac|l\b|cr|k\b|thousand))?)", raw, re.I)
@@ -3301,9 +3306,11 @@ else:
                         st.caption(f"🎂 *Current age updated to **{calc_user_age}** based on your free-text statement.*")
 
                 calc_base_living_exp = base_ret_living_exp
-                if parsed_context.get("monthly_living_expense"):
+                if parsed_context.get("monthly_living_expense") and float(parsed_context["monthly_living_expense"]) >= 5000.0:
                     calc_base_living_exp = float(parsed_context["monthly_living_expense"])
                     st.caption(f"💳 *Monthly baseline living expense set to **{format_inr(calc_base_living_exp)}/month** as specified in your statement.*")
+                elif calc_base_living_exp < 5000.0:
+                    calc_base_living_exp = 50000.0
 
                 calc_recurring_exp = add_recurring_exp
                 if parsed_context.get("monthly_medical_expense"):

@@ -483,6 +483,50 @@ def test_free_text_retirement_milestones_and_override():
     assert ret_plan["post_ret_milestones_reserve_needed"] > 0
     print("✅ Free-text retirement milestone extraction & conflict override tests passed.")
 
+def test_cost_of_living_variations_and_bullet_prefix_isolation():
+    import investment_planner
+    
+    variations = [
+        "1. monthly living: 150,000",
+        "1. monthly cost of living 150,000",
+        "1. cost of living is 150,000",
+        "1. cost of living at 150,000",
+        "1. cost of living 150,000",
+        "1. cost of living: 150,000",
+        "1. living expense 150,000",
+        "1. living expenses 150,000",
+        "1. 150,000 a month",
+        "1. 150000/month",
+        "1. 150,000/mo",
+        "1. 150,000 / month",
+        "1. 1.5 lakhs a month",
+        "1. 1.5L / mo",
+        "1. 150k a month",
+        "1. 150k/month",
+        "1. cost of living is 1.5 lakhs",
+        "1. cost of living 1.5 lakhs",
+        "1. cost of living 1.5L",
+        "1. cost of living of 150000",
+        "1. living expense 1.5 lakhs",
+        "1. living expenses 1.5L"
+    ]
+    
+    for v_str in variations:
+        res = investment_planner.extract_free_text_parameters(v_str, base_age=53)
+        assert res["monthly_living_expense"] == 150000.0, f"Failed on: '{v_str}' -> got {res.get('monthly_living_expense')}"
+        
+        # Ensure detailed expense plan reflects 150,000 and never clamps to 1000.0
+        exp_plan = investment_planner.generate_detailed_retirement_expense_plan(
+            current_age=53,
+            retirement_age=60,
+            base_monthly_expense=res["monthly_living_expense"],
+            user_context=v_str
+        )
+        assert exp_plan["base_monthly_today"] == 150000.0, f"Expected 150,000 but got {exp_plan['base_monthly_today']}"
+        assert exp_plan["base_monthly_today"] != 1000.0
+        
+    print("✅ Cost of living 150,000 variations and numbered bullet isolation tests passed.")
+
 if __name__ == "__main__":
     try:
         test_strict_uploaded_date_enforcement()
@@ -499,6 +543,7 @@ if __name__ == "__main__":
         test_duplicate_detection()
         test_income_source_crud()
         test_free_text_retirement_milestones_and_override()
+        test_cost_of_living_variations_and_bullet_prefix_isolation()
         print("🎉 All test suite assertions passed successfully!")
     finally:
         if os.path.exists(database.DB_PATH):

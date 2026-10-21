@@ -556,24 +556,28 @@ def extract_free_text_parameters(text: str, base_age: int = 50, current_year: in
             res["detected_age"] = detected_age
             base_age = detected_age
 
-    # 2. Detect monthly living expenses (e.g., "monthly expense of 1.75 lakhs", "1.75 lakhs per month")
-    monthly_matches = re.finditer(
-        r"(?:monthly(?:\s+living)?\s+expense(?:s)?(?:\s+of)?|per\s+month|each\s+month|monthly)\s*(?:of|is|:)?\s*([₹\d\.,]+(?:\s*(?:lakhs?|lacs?|lac|l\b|cr|crores?|k\b|thousand))?)",
-        raw_text, re.I
-    )
-    for mm in monthly_matches:
+    # 2. Detect monthly living expenses (e.g., "monthly expense of 1.75 lakhs", "cost of living is 150,000", "150,000/mo")
+    # Clean numbered list markers at start of text, newlines, or sentences (e.g. '1. ', '2) ', '(1) ') so they are not captured as amounts
+    clean_text = re.sub(r"(?:^|[\n\r;.]|\b)\s*(?:\(?\d{1,2}\)|\d{1,2}[.)])\s+", " ", raw_text)
+
+    # Forward pattern: cost of living / living expense / monthly expense / household expense
+    fwd_pattern = r"(?:cost\s+of\s+living|living\s+(?:expense(?:s)?|cost(?:s)?)|household\s+expense(?:s)?|monthly\s+(?:living|expense(?:s)?|cost(?:s)?|budget|outflow)?|current\s+(?:monthly\s+)?expense(?:s)?)\s*(?:is|at|of|:)?\s*([₹\d\.,]+(?:\s*(?:lakhs?|lacs?|lac|l\b|cr|crores?|k\b|thousand))?)"
+    for mm in re.finditer(fwd_pattern, clean_text, re.I):
         amt_str = mm.group(1)
         val = parse_indian_amount(amt_str)
-        if val > 0:
+        if val >= 1000.0:
             res["monthly_living_expense"] = val
             break
             
+    # Reverse / Suffix pattern: <amount> a month / per month / monthly / /mo / /month / pm
     if res["monthly_living_expense"] is None:
-        rev_m = re.search(r"([₹\d\.,]+\s*(?:lakhs?|lacs?|lac|l\b|cr|crores?|k\b|thousand)?)\s*(?:per\s+month|a\s+month|monthly)", raw_text, re.I)
-        if rev_m:
-            val = parse_indian_amount(rev_m.group(1))
-            if val > 0:
+        rev_pattern = r"([₹\d\.,]+\s*(?:lakhs?|lacs?|lac|l\b|cr|crores?|k\b|thousand)?)\s*(?:(?:a|per|\/)\s*month|(?:a|per|\/)\s*mo\b|each\s+month|monthly|p\.?m\.?\b)"
+        for rm in re.finditer(rev_pattern, clean_text, re.I):
+            amt_str = rm.group(1)
+            val = parse_indian_amount(amt_str)
+            if val >= 1000.0:
                 res["monthly_living_expense"] = val
+                break
 
     # 3. Detect standard medical expense request (e.g., "add stanadard medical expense required", "medical contingency")
     if re.search(r"(?:medical|health|hospital)\s+(?:expense|contingency|buffer|cost)", raw_text, re.I):
@@ -868,7 +872,9 @@ def generate_detailed_retirement_expense_plan(
     retirement_age = max(current_age + 1, int(retirement_age))
     life_expectancy = max(retirement_age + 5, int(life_expectancy))
     inflation_rate = float(kwargs.get("inflation_rate", inflation_rate))
-    base_monthly_expense = max(1000.0, float(kwargs.get("base_monthly_expense", base_monthly_expense)))
+    base_monthly_expense = float(kwargs.get("base_monthly_expense", base_monthly_expense))
+    if base_monthly_expense < 5000.0:
+        base_monthly_expense = 50000.0
     additional_monthly_expense = max(0.0, float(kwargs.get("additional_monthly_expense", additional_monthly_expense)))
     safe_monthly_withdrawal = max(0.0, float(kwargs.get("safe_monthly_withdrawal", safe_monthly_withdrawal)))
 
@@ -907,6 +913,11 @@ def generate_detailed_retirement_expense_plan(
     ctx_clean = (user_context or "").strip()
     parsed_meta = extract_free_text_parameters(ctx_clean, base_age=current_age)
     strategic_suggestions = parsed_meta.get("suggestions", [])
+
+    # If living expense was detected in free-text vision and was not explicitly overridden
+    if parsed_meta.get("monthly_living_expense") and parsed_meta["monthly_living_expense"] >= 5000.0:
+        if base_monthly_expense <= 50000.0 or base_monthly_expense == 0.0:
+            base_monthly_expense = float(parsed_meta["monthly_living_expense"])
 
     # If no milestones were passed from table, extract any milestones from free-text vision
     if not processed_milestones and parsed_meta.get("milestones"):

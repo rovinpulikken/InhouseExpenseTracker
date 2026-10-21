@@ -1,5 +1,12 @@
 # Release Notes
 
+## v1.12.1 (2026-10-21)
+### Fixed — Cost of Living Extraction & Numbered Bullet Point Isolation
+- **Numbered Bullet List Prefix Isolation**: Fixed an issue where bullet numbers (such as `1. ` in `1. cost of living 150,000` or `1. monthly living: 150,000`) were captured as `1.0` by the reverse regex, which subsequently clamped the baseline living expenses to `₹1,000/mo`. Added bullet prefix stripping (`clean_text = re.sub(r"(?:^|[\n\r;.]|\b)\s*(?:\(?\d{1,2}\)|\d{1,2}[.)])\s+", " ", raw_text)`) and ensured bare numbers below 1,000 without denominations are never misidentified as monthly living expenses.
+- **Comprehensive Cost of Living Regex Expansion**: Added broad forward and reverse pattern support covering `cost of living (is/at/of/:)`, `living expense(s)`, `living cost(s)`, `household expense(s)`, `monthly living`, `monthly budget`, `150,000 a month`, `150,000/month`, `150,000/mo`, `1.5L / mo`, and `150k a month`.
+- **Expense Baseline Safeguards & State Key**: Added `key="ret_base_living_expense"` to the Streamlit `number_input` widget to preserve user input across reruns, and implemented baseline safeguards ensuring `calc_base_living_exp` never falls back or clamps to `₹1,000/mo`.
+- **Unit Testing**: Added `test_cost_of_living_variations_and_bullet_prefix_isolation` to `test_app.py` validating 22 variations of cost of living statements, confirming accurate extraction of ₹1,50,000 and full inflation surge compounding.
+
 ## v1.12.0 (2026-10-21)
 ### Added — Free-Text Retirement Milestones & Table Conflict Override
 - **Natural Language Parameter Extraction (`extract_free_text_parameters`)**: Automatically parses free-text retirement vision statements for:
