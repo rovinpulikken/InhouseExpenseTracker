@@ -650,6 +650,22 @@ def test_option_b_full_resolution():
     assert not any(m["description"] == "Car Upgrade" for m in exp_plan["milestones"])
     print("✅ Option B full resolution and Option A bypass test passed.")
 
+def test_retire_at_55_statement_parsing():
+    import investment_planner
+    t = ("I want to retire at 55. Consider total monthly expense of 150,000.  fixed expense of  7lakhs from 2027 for 6 years "
+         "and one time cost of 50 lakhs at 2035 and other standard expenses in line with getting older. "
+         "family - wife and 2 kids - son age 22 and duaghter age 17")
+    r = investment_planner.extract_free_text_parameters(t, base_age=52, current_year=2026)
+    assert r["detected_retirement_age"] == 55
+    assert r["monthly_living_expense"] == 150000.0
+    assert r["monthly_medical_expense"] == 25000.0
+    recurring = [m for m in r["milestones"] if "Yr" in m["description"]]
+    assert len(recurring) == 6 and all(m["amount"] == 700000.0 for m in recurring)
+    one_time = [m for m in r["milestones"] if m["calendar_year"] == 2035]
+    assert len(one_time) == 1 and one_time[0]["amount"] == 5000000.0
+    assert {f["role"] for f in r["family"]} == {"Son", "Daughter"}
+    print("✅ Retire-at-55 free-text statement parsing test passed.")
+
 if __name__ == "__main__":
     try:
         test_strict_uploaded_date_enforcement()
@@ -669,6 +685,7 @@ if __name__ == "__main__":
         test_cost_of_living_variations_and_bullet_prefix_isolation()
         test_mutual_exclusive_expense_sources()
         test_option_b_full_resolution()
+        test_retire_at_55_statement_parsing()
         print("🎉 All test suite assertions passed successfully!")
     finally:
         if os.path.exists(database.DB_PATH):

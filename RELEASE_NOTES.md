@@ -1,5 +1,16 @@
 # Release Notes
 
+## v1.13.1 (2026-10-24)
+### Fixed — Option B Retirement Age / Expenses Stuck on Old Values
+- **Root cause**: the Option B "Extracted Living Expense / Healthcare Buffer / Target Retirement Age" fields are keyed widgets; Streamlit ignores `value=` once a key has session state, so they stayed frozen on the first values shown (e.g. age 62) even after the vision text was edited. They are now re-seeded from the parsed text whenever the text (or profile age) changes, while manual tweaks are kept until the text changes again.
+- The top "Desired Retirement Age" input is now labelled Option A and disabled when Option B is selected, so it can no longer be mistaken for the age in use.
+### Added — Richer free-text understanding
+- "X from YEAR for N years" recurring milestones (e.g. "7 lakhs from 2027 for 6 years" → 6 annual outlays).
+- Compound clauses ("… and one time cost of 50 lakhs at 2035") are split; one-time costs get a clean "One-Time Expense" label.
+- "standard expenses / getting older / ageing" now adds the ₹25,000/mo healthcare buffer.
+- Family members ("son age 22, daughter age 17", typo tolerant) are detected and surfaced as planning suggestions.
+- Test: `test_retire_at_55_statement_parsing`.
+
 ## v1.13.0 (2026-10-24)
 ### Changed — Investments UI Declutter & Retirement Planner Promotion
 - **Investments split into 4 sub-tabs** (KPI header + Sync/Add actions stay always visible): 📊 Overview, 💼 Holdings, 🧭 Advisor, 🎯 SIP Planner.

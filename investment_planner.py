@@ -599,9 +599,22 @@ def extract_free_text_parameters(text: str, base_age: int = 50, current_year: in
         else:
             res["monthly_medical_expense"] = 25000.0
         res["suggestions"].append("Added standard ₹25,000/month healthcare & medical buffer (escalates with medical inflation).")
+    elif re.search(r"standard\s+expenses?|getting\s+older|\bage?ing\b|old\s+age|as\s+(?:i|we)\s+age", raw_text, re.I):
+        res["monthly_medical_expense"] = 25000.0
+        res["suggestions"].append("Added standard ₹25,000/month healthcare buffer for age-related expenses (escalates with medical inflation).")
+
+    # 3b. Family members (e.g. "son age 22 and daughter age 17")
+    res["family"] = []
+    for fm in re.finditer(r"\b(son|d[a-z]{2,5}ter)\b\s*(?:,|-|:)?\s*(?:age[d]?|aged|is)?\s*(\d{1,2})\b", raw_text, re.I):
+        role, fage = ("Son" if fm.group(1).lower() == "son" else "Daughter"), int(fm.group(2))
+        res["family"].append({"role": role, "age": fage})
+        res["suggestions"].append(f"👨‍👩‍👧 **{role} (age {fage})**: plan education / marriage outlays explicitly (add amounts and years in your statement) so they are inflation-adjusted in the roadmap.")
 
     # 4. Milestone Extraction
-    sentences = re.split(r"(?<!\d)\.(?!\d)|\n|;", raw_text)
+    sentences = []
+    for _s in re.split(r"(?<!\d)\.(?!\d)|\n|;", raw_text):
+        # Split compound clauses such as "... for 6 years and one time cost of 50 lakhs at 2035"
+        sentences.extend(re.split(r"\s+and\s+(?=(?:an?\s+)?(?:one[\s-]?time|additional|another|fixed|lump))", _s, flags=re.I))
     AMT_REGEX = r"([₹\d\.,]+\s*(?:lakhs?|lacs?|lac|l\b|cr|crores?|k\b)?)"
 
     has_edu_milestone = False
@@ -641,6 +654,30 @@ def extract_free_text_parameters(text: str, base_age: int = 50, current_year: in
             has_edu_milestone = True
             continue
             
+        # Pattern A2: Recurring for N years (e.g., "fixed expense of 7 lakhs from 2027 for 6 years")
+        recur_n = re.search(
+            rf"{AMT_REGEX}\s*(?:a\s+year|per\s+year|per\s+annum|annually|every\s+year|each\s+year|yearly)?\s*(?:from|starting|beginning)\s+(\d{{4}})\s+for\s+(\d{{1,2}})\s+years?(?:\s+(?:for|towards)\s+(.*))?",
+            s_clean, re.I
+        )
+        if recur_n:
+            amt = parse_indian_amount(recur_n.group(1))
+            start_yr = int(recur_n.group(2))
+            n_years = int(recur_n.group(3))
+            purpose = re.sub(r"[().]", "", (recur_n.group(4) or "")).strip().title() or "Fixed Annual Expense"
+            if amt > 0 and 2024 <= start_yr <= 2080 and 1 <= n_years <= 40:
+                for i in range(n_years):
+                    yr = start_yr + i
+                    res["milestones"].append({
+                        "description": f"{purpose} (Yr {i+1}/{n_years} - {yr})",
+                        "amount": amt,
+                        "age": max(base_age, base_age + (yr - current_year)),
+                        "calendar_year": yr,
+                        "source": "Retirement Vision (Free Text)"
+                    })
+                if re.search(r"educ|school|college|tuition", purpose, re.I):
+                    has_edu_milestone = True
+                continue
+
         # Pattern B: Single milestone with specific Calendar Year
         # Handles: "additional marriage expense of 50 lakhs in 2035", "50L in 2030 for home renovation", "50L for wedding in 2035"
         yr_match = re.search(
@@ -679,8 +716,12 @@ def extract_free_text_parameters(text: str, base_age: int = 50, current_year: in
             
             if amt > 0 and 2024 <= yr <= 2080:
                 desc = postfix_desc or prefix_desc or "Milestone Goal"
-                desc = re.sub(r"^(?:additinoal|additional|fixed|one-time|lump\s*sum)\s*", "", desc, flags=re.I).strip()
+                desc = re.sub(r"^(?:additinoal|additional|fixed|one[\s-]?time|lump\s*sum)\s*", "", desc, flags=re.I).strip()
                 desc = re.sub(r"[().]", "", desc).strip()
+                if re.fullmatch(r"(?:(?:one[\s-]?time|additional|fixed|lump\s*sum)\s*)*(?:cost|expense|outlay|budget)s?(?:\s+of)?", desc, re.I) or not desc:
+                    desc = "One-Time Expense"
+                else:
+                    desc = re.sub(r"\s+(?:of|cost|expense)s?$", "", desc, flags=re.I).strip()
                 if re.search(r"marr", desc, re.I):
                     desc = "Child's Marriage"
                     has_marriage_milestone = True

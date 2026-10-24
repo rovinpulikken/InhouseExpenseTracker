@@ -3084,7 +3084,11 @@ else:
 
                 ret_col1, ret_col2 = st.columns(2)
                 with ret_col1:
-                    ret_age = st.number_input("🎯 Desired Retirement Age", min_value=u_age + 1, max_value=100, value=max(60, u_age + 10), step=1)
+                    _optb_selected = "Option B" in str(st.session_state.get("ret_input_source_selection_v2", ""))
+                    ret_age = st.number_input(
+                        "🎯 Desired Retirement Age (Option A)" if not _optb_selected else "🎯 Desired Retirement Age (not used — Option B reads it from your statement)",
+                        min_value=u_age + 1, max_value=100, value=max(60, u_age + 10), step=1, disabled=_optb_selected
+                    )
                     exp_return_str = st.text_input("📈 Expected CAGR (%) — leave blank for historical", placeholder="e.g. 12.5")
                 with ret_col2:
                     benchmark_index = st.selectbox("📊 Benchmark (if CAGR blank)",
@@ -3364,13 +3368,27 @@ else:
                     opt_b_living_exp = float(parsed_context.get("monthly_living_expense") or (total_spent / max(1, num_months) if not df_fy.empty else 50000.0))
                     opt_b_medical_exp = float(parsed_context.get("monthly_medical_expense") or 0.0)
 
+                    # Streamlit ignores `value=` for widgets that already have session state, so the
+                    # extracted fields would stay stuck on their first-ever values. Re-seed them whenever
+                    # the vision text (or the profile age) changes.
+                    import hashlib
+                    _optb_sig = hashlib.md5(f"{ret_user_context}|{u_age}".encode("utf-8")).hexdigest()
+                    if st.session_state.get("opt_b_text_sig") != _optb_sig:
+                        st.session_state["opt_b_text_sig"] = _optb_sig
+                        st.session_state["opt_b_confirmed_living_exp"] = max(5000.0, float(round(opt_b_living_exp, -2)))
+                        st.session_state["opt_b_confirmed_medical_exp"] = float(opt_b_medical_exp)
+                        st.session_state["opt_b_confirmed_ret_age"] = int(min(100, max(opt_b_user_age + 1, opt_b_ret_age)))
+                    # Keep the stored retirement age valid if the detected current age moved
+                    if int(st.session_state.get("opt_b_confirmed_ret_age", 0)) <= opt_b_user_age:
+                        st.session_state["opt_b_confirmed_ret_age"] = int(min(100, opt_b_user_age + 1))
+
+
                     # Option B confirmed parameters & interactive override inputs
                     ob_col1, ob_col2, ob_col3 = st.columns(3)
                     with ob_col1:
                         confirmed_living_exp = st.number_input(
                             "Extracted Monthly Living Expense (₹)",
                             min_value=5000.0,
-                            value=max(5000.0, float(round(opt_b_living_exp, -2))),
                             step=5000.0,
                             key="opt_b_confirmed_living_exp",
                             help="Living expenses parsed directly from your vision statement. You can edit this anytime."
@@ -3379,7 +3397,6 @@ else:
                         confirmed_medical_exp = st.number_input(
                             "Monthly Healthcare Buffer (₹)",
                             min_value=0.0,
-                            value=float(opt_b_medical_exp),
                             step=5000.0,
                             key="opt_b_confirmed_medical_exp",
                             help="Healthcare contingency buffer parsed from your text."
@@ -3389,7 +3406,6 @@ else:
                             "Target Retirement Age",
                             min_value=opt_b_user_age + 1,
                             max_value=100,
-                            value=max(opt_b_user_age + 1, opt_b_ret_age),
                             step=1,
                             key="opt_b_confirmed_ret_age",
                             help="Retirement age parsed from your text or adjusted manually."
