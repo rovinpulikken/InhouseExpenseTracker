@@ -1,5 +1,17 @@
 # Release Notes
 
+## v1.13.0 (2026-10-24)
+### Changed — Investments UI Declutter & Retirement Planner Promotion
+- **Investments split into 4 sub-tabs** (KPI header + Sync/Add actions stay always visible): 📊 Overview, 💼 Holdings, 🧭 Advisor, 🎯 SIP Planner.
+  - **Overview**: one large breakdown chart with a selector (Asset Type / Market Cap / Sector / Platform) beside a Top Holdings chart, followed by a "Needs Attention" area (concentration alerts, Playbook, Movers & Shakers, optimizer) and projected passive income.
+  - **Holdings**: grouped summary, full editable grid, and a single "Maintenance" expander for delete-by-ID, Delete All (now guarded by a confirmation checkbox) and duplicate finder.
+  - **Advisor**: AI Portfolio Review plus Rebalance / Deploy New Money.
+  - **SIP Planner**: SIP allocation, projections and AI wealth advisory.
+- **Add / Import Holdings is now a modal dialog** (`st.dialog`) with "Import from Statement" and "Manual Entry" tabs, opened from a header button (falls back to an expander on older Streamlit).
+- **Retirement Planner promoted to its own top-level Wealth tab** (🏖️ Retirement). Age and monthly investment are read from the SIP Planner inputs.
+- **Fixed**: removed an expander nested inside an expander in the holdings editor (disallowed by Streamlit).
+- **Requirements**: `streamlit>=1.37.0` (required for `st.dialog`).
+
 ## v1.12.3 (2026-10-21)
 ### Fixed — Option B Free-Text Selection Persistence & Strict Data Isolation
 - **Option B Mode Reset Bug Fix**: Resolved a critical Streamlit widget state defect where `st.radio(..., index=default_choice_idx, key=...)` dynamically re-evaluated `default_choice_idx` to `0` whenever table data was present. When users selected Option B and clicked "🔮 Calculate Retirement Corpus", Streamlit's script rerun forced the widget back to index `0`, causing the app to silently execute with Option A data. Removed dynamic `index` forcing and stabilized the selector state using a persistent key.

@@ -2075,10 +2075,11 @@ else:
         """, unsafe_allow_html=True)
 
         # ── 5 flat tabs ──────────────────────────────────────────────────────────
-        wp_tab_nw, wp_tab_budget, wp_tab_invest, wp_tab_insights, wp_tab_debt, wp_tab_tax = st.tabs([
+        wp_tab_nw, wp_tab_budget, wp_tab_invest, wp_tab_retire, wp_tab_insights, wp_tab_debt, wp_tab_tax = st.tabs([
             "💰 Net Worth Overview",
             "🎯 Budget & Goals",
             "📈 Investments",
+            "🏖️ Retirement",
             "🧠 Market Insights",
             "🏦 Debts & EMIs",
             "🧾 Tax Planner",
@@ -2428,7 +2429,87 @@ else:
         # TAB 3 ─ INVESTMENTS  (Holdings + SIP Planner + Rebalance + Deploy New Money)
         # ════════════════════════════════════════════════════════════════════════
         with wp_tab_invest:
-            # ── Portfolio KPI strip ──────────────────────────────────────────────
+            # ── Add / Import Holdings as a modal dialog (falls back to expander on old Streamlit) ──
+            _wp_dialog = getattr(st, "dialog", None) or getattr(st, "experimental_dialog", None)
+            if _wp_dialog is None:
+                def _wp_dialog(title, **_kw):
+                    def _deco(fn):
+                        def _wrapper():
+                            with st.expander(title, expanded=True):
+                                fn()
+                        return _wrapper
+                    return _deco
+
+            @_wp_dialog("➕ Add / Import Holdings", width="large")
+            def _add_holdings_dialog():
+                _imp_tab, _man_tab = st.tabs(["📤 Import from Statement", "✍️ Manual Entry"])
+                with _imp_tab:
+                    st.markdown("##### 📤 Import from Broker Statement (AI-Powered)")
+                    default_api_key = current_user.get("gemini_api_key") or os.environ.get("GEMINI_API_KEY", "") or st.secrets.get("GEMINI_API_KEY", "")
+                    template_df_inv = pd.DataFrame({
+                        "Stock Code / Name": ["HDFC Bank", "Nifty 50 Index Fund"],
+                        "Platform / Broker": ["Zerodha", "ICICI Direct"],
+                        "Asset Class": ["Equity", "Mutual Funds"],
+                        "Invested Amount": [50000.0, 31575.0],
+                        "Year Invested": [2022, 2023],
+                        "Current Value": [51850.0, 33750.0],
+                        "Units": [30.5, 150.25],
+                        "Average Buy Price": [1639.34, 210.50],
+                        "Market Cap": ["Large Cap", "Unknown"],
+                        "Sector / Theme": ["Banking", "Index"],
+                    })
+                    st.download_button("⬇️ Download Standard CSV Template", template_df_inv.to_csv(index=False).encode(), "investment_template.csv", "text/csv")
+                    uploaded_file_inv = st.file_uploader("Upload CSV, Excel, PDF or Image", type=["csv", "xlsx", "xls", "pdf", "png", "jpg", "jpeg"], key="stmt_upload")
+                    if uploaded_file_inv and st.button("Parse & Import", type="primary"):
+                        with st.spinner("Parsing..."):
+                            try:
+                                parsed_data = statement_parser.identify_and_parse_statement(uploaded_file_inv.getvalue(), uploaded_file_inv.name, api_key=default_api_key)
+                                if parsed_data:
+                                    import amfi_lookup
+                                    for inv_dict in parsed_data:
+                                        code_candidate = inv_dict.get("name_or_symbol") or inv_dict.get("platform")
+                                        if code_candidate and str(code_candidate).strip().isdigit():
+                                            resolved = amfi_lookup.resolve_amfi_code(code_candidate)
+                                            if resolved:
+                                                inv_dict["resolved_name"] = resolved["name"]
+                                                inv_dict["sector_segment"] = resolved["category"]
+                                    from database import batch_insert_investments
+                                    count = batch_insert_investments(parsed_data, username=current_user["username"], family_id=user_family_id)
+                                    st.success(f"🎉 Imported {count} holdings!")
+                                    st.rerun()
+                                else:
+                                    st.warning("Could not extract holdings from this file.")
+                            except Exception as e:
+                                st.error(f"Parse error: {e}")
+                with _man_tab:
+                    PRESET_TYPES = ["Equity (Stocks)", "Mutual funds", "Structured funds", "EPF", "PPF",
+                                    "KVP (Kisan Vikas Patra)", "NSC (National Savings Certificate)",
+                                    "Fixed Deposits / Recurring Deposits", "Startup investments",
+                                    "Gold / Sovereign Gold Bonds (SGB)", "Real Estate", "Other (Add Custom Type)"]
+                    PRESET_PLATFORMS = ["Zerodha", "Groww", "SBI / SBI Mutual Fund", "Post Office", "Coin (Zerodha)",
+                                        "Angel One", "Upstox", "ICICI Direct", "HDFC Securities", "IndMoney",
+                                        "Direct / Primary Institution", "Other (Add Custom Platform)"]
+                    mc1, mc2, mc3, mc4, mc5 = st.columns([1.5, 1.5, 1.2, 1.0, 1.2])
+                    with mc1:
+                        sel_plat = st.selectbox("Platform", PRESET_PLATFORMS, key="inv_plat_sel")
+                        final_plat = st.text_input("Custom Platform", key="inv_plat_custom") if sel_plat == "Other (Add Custom Platform)" else sel_plat
+                    with mc2:
+                        sel_type = st.selectbox("Type", PRESET_TYPES, key="inv_type_sel")
+                        final_type = st.text_input("Custom Type", key="inv_type_custom") if sel_type == "Other (Add Custom Type)" else sel_type
+                    with mc3:
+                        inv_desc_val = st.text_input("Stock Code / Name", value="HDFCBANK", key="inv_desc_input")
+                    with mc4:
+                        inv_amt_val = st.number_input("Invested (₹)", min_value=100.0, value=50000.0, step=5000.0, key="inv_amt_input")
+                    with mc5:
+                        inv_yr_val = st.number_input("Year", min_value=1990, max_value=datetime.datetime.now().year + 5, value=datetime.datetime.now().year, step=1, key="inv_yr_input")
+                        curr_val_input = st.number_input("Current Value (₹)", min_value=0.0, value=inv_amt_val * 1.10, step=5000.0, key="inv_curr_input")
+                    if st.button("➕ Add Holding", type="primary", use_container_width=True):
+                        insert_investment(username=current_user["username"], platform=final_plat, investment_type=final_type,
+                                         investment_amount=inv_amt_val, year_invested=inv_yr_val,
+                                         current_value=curr_val_input, family_id=user_family_id, description=inv_desc_val)
+                        st.success(f"Added {inv_desc_val}!")
+                        st.rerun()
+
             if not inv_df.empty:
                 tot_gain_inv = tot_portfolio - tot_invested
                 tot_ret_pct  = round((tot_gain_inv / tot_invested) * 100, 2) if tot_invested > 0 else 0.0
@@ -2450,7 +2531,6 @@ else:
                 dh2.metric("7-Day Change", "", delta=_fmt_d(deltas_inv["weekly"]), delta_color="normal")
                 dh3.metric("30-Day Change", "", delta=_fmt_d(deltas_inv["monthly"]), delta_color="normal")
                 dh4.metric("1-Year Change", "", delta=_fmt_d(deltas_inv["yearly"]), delta_color="normal")
-
                 # Quick-action buttons
                 st.markdown("<br>", unsafe_allow_html=True)
                 act1, act2, act3 = st.columns([1, 1, 2])
@@ -2461,262 +2541,196 @@ else:
                             update_investments_df(updated_df)
                             record_portfolio_snapshot(user_family_id, float(updated_df["current_value"].sum()))
                         st.success("✅ Prices synced!"); st.rerun()
-
-                # ── AI Portfolio Review at TOP ───────────────────────────────────
                 with act2:
-                    run_ai_review = st.button("🤖 AI Portfolio Review", type="primary", use_container_width=True)
-                if run_ai_review:
-                    with st.spinner("🤖 Gemini AI analyzing portfolio..."):
-                        portfolio_ai = generate_ai_portfolio_suggestions(inv_df, current_user, debts_df_wp, goals_df_wp)
-                    st.success("🎉 AI Review Complete!")
-                    st.info(portfolio_ai.get("summary", ""))
-                    for rec in portfolio_ai.get("recommendations", []):
-                        with st.expander(f"**{rec.get('title', 'Recommendation')}**"):
-                            st.markdown(f"**Observation**: {rec.get('observation', '')}")
-                            st.markdown(f"**Suggestion**: {rec.get('suggestion', '')}")
-                # Automated Investment Playbook
-                st.markdown("---")
-                with st.expander("📖 Automated Investment Playbook"):
-                    st.markdown("Set up standard market rules to get automated alerts on your portfolio.")
-                    pb_c1, pb_c2 = st.columns(2)
-                    with pb_c1:
-                        rule_tp = st.checkbox("Alert me to Take Profits at +25%", value=True, key="rule_tp")
-                        rule_sl = st.checkbox("Enforce -8% Stop Loss on Individual Stocks", value=False, key="rule_sl")
-                    with pb_c2:
-                        rule_ad = st.checkbox("Notify me to Average Down on -15% drops", value=True, key="rule_ad")
-                        rule_fr = st.checkbox("Highlight 'Free Ride' (+100% gain) opportunities", value=True, key="rule_fr")
-                    
-                    if "returns_pct" in inv_df.columns:
-                        playbook_alerts = []
-                        for _, r in inv_df.iterrows():
-                            name = r.get("resolved_name") or r.get("description")
-                            ret = r["returns_pct"]
-                            itype = str(r.get("investment_type", "")).lower()
-                            
-                            if rule_fr and ret >= 100:
-                                playbook_alerts.append(f"🎉 **{name}** is up {ret:.2f}%. **Action:** Consider a 'Free Ride' (sell 50% to retrieve principal).")
-                            elif rule_tp and ret >= 25 and ret < 100:
-                                playbook_alerts.append(f"📈 **{name}** is up {ret:.2f}%. **Action:** Take Profit Zone (Consider locking in some gains).")
-                            elif rule_sl and ret <= -8 and ("stock" in itype or "equity" in itype):
-                                playbook_alerts.append(f"🚨 **{name}** triggered Stop-Loss ({ret:.2f}%). **Action:** Cut losses (-8% rule for Stocks).")
-                            elif rule_ad and ret <= -15 and ("mutual fund" in itype or "etf" in itype or "index" in itype):
-                                playbook_alerts.append(f"🛒 **{name}** dropped by {ret:.2f}%. **Action:** Buy the Dip (Average down on quality funds).")
-                        
-                        if playbook_alerts:
-                            st.markdown("##### 🔔 Active Playbook Alerts")
-                            for alert in playbook_alerts:
-                                st.info(alert)
-                        else:
-                            st.success("No active playbook alerts right now. Your portfolio is sailing smoothly!")
-
-                # Movers & Shakers Widget
-                st.markdown("---")
-                st.markdown("##### 🚀 Movers & Shakers")
-                if "returns_pct" in inv_df.columns:
-                    avg_portfolio_return = inv_df["returns_pct"].mean()
-                    st.caption(f"Portfolio Average Return: **{avg_portfolio_return:.2f}%**")
-                    
-                    ms_c1, ms_c2 = st.columns(2)
-                    
-                    # Fastest Rising
-                    with ms_c1:
-                        st.markdown("**Fastest Rising (vs Avg)**")
-                        rising = inv_df[inv_df["returns_pct"] > avg_portfolio_return].sort_values("returns_pct", ascending=False).head(3)
-                        if rising.empty:
-                            st.info("No assets beating the average right now.")
-                        else:
-                            for _, r in rising.iterrows():
-                                name = r.get("resolved_name") or r.get("description")
-                                diff = r["returns_pct"] - avg_portfolio_return
-                                st.markdown(f"- 🟢 **{name}**: {r['returns_pct']:.2f}% *(+{diff:.2f}% vs avg)*")
-                                
-                    # Fastest Falling
-                    with ms_c2:
-                        st.markdown("**Fastest Falling (vs Avg)**")
-                        falling = inv_df[inv_df["returns_pct"] < avg_portfolio_return].sort_values("returns_pct", ascending=True).head(3)
-                        if falling.empty:
-                            st.info("No assets lagging the average right now.")
-                        else:
-                            for _, r in falling.iterrows():
-                                name = r.get("resolved_name") or r.get("description")
-                                diff = avg_portfolio_return - r["returns_pct"]
-                                st.markdown(f"- 🔴 **{name}**: {r['returns_pct']:.2f}% *(-{diff:.2f}% vs avg)*")
-                                
-                                # AI Replacement trigger for worst performers
-                                if st.button(f"🔍 Optimize {name}", key=f"opt_{r['id']}"):
-                                    st.session_state["optimize_target"] = dict(r)
-                                    st.rerun()
-
-                # Optimization Modal Logic
-                if "optimize_target" in st.session_state:
-                    tgt = st.session_state["optimize_target"]
-                    with st.expander(f"🤖 AI Optimization for {tgt.get('resolved_name') or tgt.get('description')}", expanded=True):
-                        st.warning(f"This asset is underperforming. Return: {tgt.get('returns_pct', 0):.2f}%")
-                        if st.button("Generate Replacements (Uses Gemini)"):
-                            with st.spinner("Analyzing market alternatives..."):
-                                prompt = f"The user holds {tgt.get('resolved_name') or tgt.get('description')} in the {tgt.get('sector_segment')} sector, which is underperforming. Suggest 3 better-performing alternatives in the Indian market with a brief rationale."
-                                try:
-                                    from gemini_helper import get_gemini_client
-                                    client = get_gemini_client(current_user.get("gemini_api_key") or os.environ.get("GEMINI_API_KEY", "") or st.secrets.get("GEMINI_API_KEY", ""))
-                                    response = client.models.generate_content(
-                                        model='gemini-2.5-flash',
-                                        contents=prompt
-                                    )
-                                    st.markdown(response.text)
-                                except Exception as e:
-                                    st.error(f"Failed to generate alternatives: {e}")
-                        if st.button("Close Optimizer"):
-                            del st.session_state["optimize_target"]
-                            st.rerun()
-
+                    if st.button("➕ Add / Import Holdings", type="primary", use_container_width=True, key="btn_open_add_holdings"):
+                        _add_holdings_dialog()
             else:
-                st.info("💡 No holdings yet. Add your first investment below.")
+                st.info("💡 No holdings yet. Add your first investment to get started.")
+                if st.button("➕ Add / Import Holdings", type="primary", key="btn_open_add_holdings_empty"):
+                    _add_holdings_dialog()
 
-            st.markdown("---")
+            st.markdown("<br>", unsafe_allow_html=True)
+            sub_ov, sub_hold, sub_adv, sub_plan = st.tabs([
+                "📊 Overview", "💼 Holdings", "🧭 Advisor", "🎯 SIP Planner"
+            ])
 
-            # ── Add Holdings (collapsed by default if data exists) ───────────────
-            with st.expander("➕ Add / Import Holdings", expanded=inv_df.empty):
-                # CAS Uploader
-                st.markdown("##### 📤 Import from Broker Statement (AI-Powered)")
-                default_api_key = current_user.get("gemini_api_key") or os.environ.get("GEMINI_API_KEY", "") or st.secrets.get("GEMINI_API_KEY", "")
-                template_df_inv = pd.DataFrame({
-                    "Stock Code / Name": ["HDFC Bank", "Nifty 50 Index Fund"],
-                    "Platform / Broker": ["Zerodha", "ICICI Direct"],
-                    "Asset Class": ["Equity", "Mutual Funds"],
-                    "Invested Amount": [50000.0, 31575.0],
-                    "Year Invested": [2022, 2023],
-                    "Current Value": [51850.0, 33750.0],
-                    "Units": [30.5, 150.25],
-                    "Average Buy Price": [1639.34, 210.50],
-                    "Market Cap": ["Large Cap", "Unknown"],
-                    "Sector / Theme": ["Banking", "Index"],
-                })
-                st.download_button("⬇️ Download Standard CSV Template", template_df_inv.to_csv(index=False).encode(), "investment_template.csv", "text/csv")
-                uploaded_file_inv = st.file_uploader("Upload CSV, Excel, PDF or Image", type=["csv", "xlsx", "xls", "pdf", "png", "jpg", "jpeg"], key="stmt_upload")
-                if uploaded_file_inv and st.button("Parse & Import", type="primary"):
-                    with st.spinner("Parsing..."):
-                        try:
-                            parsed_data = statement_parser.identify_and_parse_statement(uploaded_file_inv.getvalue(), uploaded_file_inv.name, api_key=default_api_key)
-                            if parsed_data:
-                                import amfi_lookup
-                                for inv_dict in parsed_data:
-                                    code_candidate = inv_dict.get("name_or_symbol") or inv_dict.get("platform")
-                                    if code_candidate and str(code_candidate).strip().isdigit():
-                                        resolved = amfi_lookup.resolve_amfi_code(code_candidate)
-                                        if resolved:
-                                            inv_dict["resolved_name"] = resolved["name"]
-                                            inv_dict["sector_segment"] = resolved["category"]
-                                from database import batch_insert_investments
-                                count = batch_insert_investments(parsed_data, username=current_user["username"], family_id=user_family_id)
-                                st.success(f"🎉 Imported {count} holdings!")
-                                st.rerun()
-                            else:
-                                st.warning("Could not extract holdings from this file.")
-                        except Exception as e:
-                            st.error(f"Parse error: {e}")
+            with sub_ov:
+                if inv_df.empty:
+                    st.info("📊 Add holdings to see allocation charts, movers and alerts.")
+                else:
+                    chart_choice = st.radio(
+                        "Breakdown by", ["Asset Type", "Market Cap", "Sector / Theme", "Platform"],
+                        horizontal=True, key="inv_chart_choice", label_visibility="collapsed"
+                    )
+                    cc1, cc2 = st.columns(2)
+                    with cc1:
+                        if chart_choice == "Asset Type":
+                            fig_sel = px.pie(inv_df, names="investment_type", values="current_value", hole=0.4, template="plotly_dark")
+                        elif chart_choice == "Market Cap":
+                            fig_sel = px.pie(inv_df, names="market_cap", values="current_value", hole=0.4, template="plotly_dark")
+                        elif chart_choice == "Sector / Theme":
+                            _sec_df = inv_df[inv_df["sector_segment"].astype(str).str.strip().astype(bool)]
+                            fig_sel = px.pie(_sec_df, names="sector_segment", values="current_value", hole=0.4, template="plotly_dark") if not _sec_df.empty else None
+                        else:
+                            fig_sel = px.bar(inv_df.groupby("platform", as_index=False)["current_value"].sum(),
+                                             x="platform", y="current_value", color="platform", template="plotly_dark",
+                                             labels={"current_value": "₹", "platform": ""})
+                            fig_sel.update_layout(showlegend=False)
+                        if fig_sel is None:
+                            st.info("No sector data.")
+                        else:
+                            fig_sel.update_layout(margin=dict(l=5, r=5, t=10, b=5), height=340)
+                            st.plotly_chart(fig_sel, use_container_width=True)
+                    with cc2:
+                        _top = inv_df.copy()
+                        _top["_name"] = _top["description"].astype(str)
+                        if "resolved_name" in _top.columns:
+                            _rn = _top["resolved_name"].fillna("").astype(str).str.strip()
+                            _top["_name"] = _rn.where(_rn != "", _top["_name"])
+                        _top = _top.nlargest(8, "current_value").sort_values("current_value")
+                        fig_top = px.bar(_top, x="current_value", y="_name", orientation="h", template="plotly_dark",
+                                         labels={"current_value": "₹", "_name": ""}, title="Top holdings")
+                        fig_top.update_layout(paper_bgcolor="#1e293b", plot_bgcolor="#1e293b",
+                                              margin=dict(l=5, r=5, t=40, b=5), height=340)
+                        st.plotly_chart(fig_top, use_container_width=True)
 
-                st.markdown("##### ➕ Manual Entry")
-                PRESET_TYPES = ["Equity (Stocks)", "Mutual funds", "Structured funds", "EPF", "PPF",
-                                "KVP (Kisan Vikas Patra)", "NSC (National Savings Certificate)",
-                                "Fixed Deposits / Recurring Deposits", "Startup investments",
-                                "Gold / Sovereign Gold Bonds (SGB)", "Real Estate", "Other (Add Custom Type)"]
-                PRESET_PLATFORMS = ["Zerodha", "Groww", "SBI / SBI Mutual Fund", "Post Office", "Coin (Zerodha)",
-                                    "Angel One", "Upstox", "ICICI Direct", "HDFC Securities", "IndMoney",
-                                    "Direct / Primary Institution", "Other (Add Custom Platform)"]
-                mc1, mc2, mc3, mc4, mc5 = st.columns([1.5, 1.5, 1.2, 1.0, 1.2])
-                with mc1:
-                    sel_plat = st.selectbox("Platform", PRESET_PLATFORMS, key="inv_plat_sel")
-                    final_plat = st.text_input("Custom Platform", key="inv_plat_custom") if sel_plat == "Other (Add Custom Platform)" else sel_plat
-                with mc2:
-                    sel_type = st.selectbox("Type", PRESET_TYPES, key="inv_type_sel")
-                    final_type = st.text_input("Custom Type", key="inv_type_custom") if sel_type == "Other (Add Custom Type)" else sel_type
-                with mc3:
-                    inv_desc_val = st.text_input("Stock Code / Name", value="HDFCBANK", key="inv_desc_input")
-                with mc4:
-                    inv_amt_val = st.number_input("Invested (₹)", min_value=100.0, value=50000.0, step=5000.0, key="inv_amt_input")
-                with mc5:
-                    inv_yr_val = st.number_input("Year", min_value=1990, max_value=datetime.datetime.now().year + 5, value=datetime.datetime.now().year, step=1, key="inv_yr_input")
-                    curr_val_input = st.number_input("Current Value (₹)", min_value=0.0, value=inv_amt_val * 1.10, step=5000.0, key="inv_curr_input")
-                if st.button("➕ Add Holding", type="primary", use_container_width=True):
-                    insert_investment(username=current_user["username"], platform=final_plat, investment_type=final_type,
-                                     investment_amount=inv_amt_val, year_invested=inv_yr_val,
-                                     current_value=curr_val_input, family_id=user_family_id, description=inv_desc_val)
-                    st.success(f"Added {inv_desc_val}!")
-                    st.rerun()
+                    st.markdown("---")
+                    st.markdown("##### 🔔 Needs Attention")
+                    st.markdown("---")
+                    if "sector_segment" in inv_df.columns:
+                        sector_totals = inv_df.groupby("sector_segment")["current_value"].sum()
+                        for sec, val in sector_totals.items():
+                            if pd.isna(sec) or sec == "Unknown" or str(sec).strip() == "": continue
+                            pct = (val / tot_portfolio) * 100
+                            if pct > 30.0:
+                                st.warning(f"⚠️ **High Concentration Risk**: You have **{pct:.1f}%** of your portfolio ({format_inr(val)}) in the **{sec}** sector. Consider diversifying to reduce risk.")
 
-            # ── Holdings Grid ────────────────────────────────────────────────────
-            if not inv_df.empty:
-                st.markdown("---")
-
-                # Distribution charts
-                chart_c1, chart_c2, chart_c3, chart_c4 = st.columns(4)
-                with chart_c1:
-                    st.markdown("##### Asset Type")
-                    fig_type = px.pie(inv_df, names="investment_type", values="current_value", hole=0.4, template="plotly_dark")
-                    fig_type.update_layout(margin=dict(l=5,r=5,t=10,b=5), height=220)
-                    st.plotly_chart(fig_type, use_container_width=True)
-                with chart_c2:
-                    st.markdown("##### Market Cap")
-                    fig_mc = px.pie(inv_df, names="market_cap", values="current_value", hole=0.4, template="plotly_dark")
-                    fig_mc.update_layout(margin=dict(l=5,r=5,t=10,b=5), height=220)
-                    st.plotly_chart(fig_mc, use_container_width=True)
-                with chart_c3:
-                    st.markdown("##### Sector / Theme")
-                    # Filter out "Unknown" or "" for better visualization
-                    sec_df = inv_df[inv_df["sector_segment"].astype(str).str.strip().astype(bool)]
-                    if not sec_df.empty:
-                        fig_sec = px.pie(sec_df, names="sector_segment", values="current_value", hole=0.4, template="plotly_dark")
-                        fig_sec.update_layout(margin=dict(l=5,r=5,t=10,b=5), height=220)
-                        st.plotly_chart(fig_sec, use_container_width=True)
-                    else:
-                        st.info("No sector data.")
-                with chart_c4:
-                    st.markdown("##### Platform")
-                    fig_plat = px.bar(inv_df.groupby("platform", as_index=False)["current_value"].sum(),
-                                      x="platform", y="current_value", color="platform", template="plotly_dark",
-                                      labels={"current_value": "₹", "platform": ""})
-                    fig_plat.update_layout(paper_bgcolor="#1e293b", plot_bgcolor="#1e293b", margin=dict(l=5,r=5,t=10,b=5), height=220, showlegend=False)
-                    st.plotly_chart(fig_plat, use_container_width=True)
+                    # Automated Investment Playbook
+                    st.markdown("---")
+                    with st.expander("📖 Automated Investment Playbook"):
+                        st.markdown("Set up standard market rules to get automated alerts on your portfolio.")
+                        pb_c1, pb_c2 = st.columns(2)
+                        with pb_c1:
+                            rule_tp = st.checkbox("Alert me to Take Profits at +25%", value=True, key="rule_tp")
+                            rule_sl = st.checkbox("Enforce -8% Stop Loss on Individual Stocks", value=False, key="rule_sl")
+                        with pb_c2:
+                            rule_ad = st.checkbox("Notify me to Average Down on -15% drops", value=True, key="rule_ad")
+                            rule_fr = st.checkbox("Highlight 'Free Ride' (+100% gain) opportunities", value=True, key="rule_fr")
                     
-                # Sector Concentration Alerts
-                st.markdown("---")
-                if "sector_segment" in inv_df.columns:
-                    sector_totals = inv_df.groupby("sector_segment")["current_value"].sum()
-                    for sec, val in sector_totals.items():
-                        if pd.isna(sec) or sec == "Unknown" or str(sec).strip() == "": continue
-                        pct = (val / tot_portfolio) * 100
-                        if pct > 30.0:
-                            st.warning(f"⚠️ **High Concentration Risk**: You have **{pct:.1f}%** of your portfolio ({format_inr(val)}) in the **{sec}** sector. Consider diversifying to reduce risk.")
+                        if "returns_pct" in inv_df.columns:
+                            playbook_alerts = []
+                            for _, r in inv_df.iterrows():
+                                name = r.get("resolved_name") or r.get("description")
+                                ret = r["returns_pct"]
+                                itype = str(r.get("investment_type", "")).lower()
                             
-                # Dividend & Yield Projections
-                st.markdown("##### 💸 Projected Annual Passive Income (Estimated)")
-                # Rough estimates based on typical yields
-                def estimate_yield(row):
-                    itype = str(row.get("investment_type")).lower()
-                    if "fd" in itype or "fixed deposit" in itype or "bond" in itype: return 0.065
-                    elif "dividend" in itype: return 0.04
-                    elif "equity" in itype or "stock" in itype: return 0.015
-                    elif "mutual fund" in itype: return 0.005 # assuming mostly growth funds
-                    return 0.0
-                
-                inv_df["est_yield"] = inv_df.apply(estimate_yield, axis=1)
-                inv_df["est_annual_income"] = inv_df["current_value"] * inv_df["est_yield"]
-                total_annual_income = inv_df["est_annual_income"].sum()
-                overall_yield = (total_annual_income / tot_portfolio) * 100 if tot_portfolio > 0 else 0
-                
-                inc_c1, inc_c2, inc_c3 = st.columns([1, 1, 2])
-                inc_c1.metric("Projected Annual Income", format_inr(total_annual_income))
-                inc_c2.metric("Avg Portfolio Yield", f"{overall_yield:.2f}%")
-                with inc_c3:
-                    st.caption("Estimates are based on asset class averages (e.g. FDs ~6.5%, Stocks ~1.5%, MFs ~0.5%). Real dividends will vary.")
+                                if rule_fr and ret >= 100:
+                                    playbook_alerts.append(f"🎉 **{name}** is up {ret:.2f}%. **Action:** Consider a 'Free Ride' (sell 50% to retrieve principal).")
+                                elif rule_tp and ret >= 25 and ret < 100:
+                                    playbook_alerts.append(f"📈 **{name}** is up {ret:.2f}%. **Action:** Take Profit Zone (Consider locking in some gains).")
+                                elif rule_sl and ret <= -8 and ("stock" in itype or "equity" in itype):
+                                    playbook_alerts.append(f"🚨 **{name}** triggered Stop-Loss ({ret:.2f}%). **Action:** Cut losses (-8% rule for Stocks).")
+                                elif rule_ad and ret <= -15 and ("mutual fund" in itype or "etf" in itype or "index" in itype):
+                                    playbook_alerts.append(f"🛒 **{name}** dropped by {ret:.2f}%. **Action:** Buy the Dip (Average down on quality funds).")
+                        
+                            if playbook_alerts:
+                                st.markdown("##### 🔔 Active Playbook Alerts")
+                                for alert in playbook_alerts:
+                                    st.info(alert)
+                            else:
+                                st.success("No active playbook alerts right now. Your portfolio is sailing smoothly!")
 
-                st.markdown("<br>", unsafe_allow_html=True)
-                
-                # Grouped summary
-                render_grouped_portfolio_summary(inv_df)
+                    # Movers & Shakers Widget
+                    st.markdown("---")
+                    st.markdown("##### 🚀 Movers & Shakers")
+                    if "returns_pct" in inv_df.columns:
+                        avg_portfolio_return = inv_df["returns_pct"].mean()
+                        st.caption(f"Portfolio Average Return: **{avg_portfolio_return:.2f}%**")
+                    
+                        ms_c1, ms_c2 = st.columns(2)
+                    
+                        # Fastest Rising
+                        with ms_c1:
+                            st.markdown("**Fastest Rising (vs Avg)**")
+                            rising = inv_df[inv_df["returns_pct"] > avg_portfolio_return].sort_values("returns_pct", ascending=False).head(3)
+                            if rising.empty:
+                                st.info("No assets beating the average right now.")
+                            else:
+                                for _, r in rising.iterrows():
+                                    name = r.get("resolved_name") or r.get("description")
+                                    diff = r["returns_pct"] - avg_portfolio_return
+                                    st.markdown(f"- 🟢 **{name}**: {r['returns_pct']:.2f}% *(+{diff:.2f}% vs avg)*")
+                                
+                        # Fastest Falling
+                        with ms_c2:
+                            st.markdown("**Fastest Falling (vs Avg)**")
+                            falling = inv_df[inv_df["returns_pct"] < avg_portfolio_return].sort_values("returns_pct", ascending=True).head(3)
+                            if falling.empty:
+                                st.info("No assets lagging the average right now.")
+                            else:
+                                for _, r in falling.iterrows():
+                                    name = r.get("resolved_name") or r.get("description")
+                                    diff = avg_portfolio_return - r["returns_pct"]
+                                    st.markdown(f"- 🔴 **{name}**: {r['returns_pct']:.2f}% *(-{diff:.2f}% vs avg)*")
+                                
+                                    # AI Replacement trigger for worst performers
+                                    if st.button(f"🔍 Optimize {name}", key=f"opt_{r['id']}"):
+                                        st.session_state["optimize_target"] = dict(r)
+                                        st.rerun()
 
-                # Editable grid
-                with st.expander("✏️ Edit Holdings"):
+                    # Optimization Modal Logic
+                    if "optimize_target" in st.session_state:
+                        tgt = st.session_state["optimize_target"]
+                        with st.expander(f"🤖 AI Optimization for {tgt.get('resolved_name') or tgt.get('description')}", expanded=True):
+                            st.warning(f"This asset is underperforming. Return: {tgt.get('returns_pct', 0):.2f}%")
+                            if st.button("Generate Replacements (Uses Gemini)"):
+                                with st.spinner("Analyzing market alternatives..."):
+                                    prompt = f"The user holds {tgt.get('resolved_name') or tgt.get('description')} in the {tgt.get('sector_segment')} sector, which is underperforming. Suggest 3 better-performing alternatives in the Indian market with a brief rationale."
+                                    try:
+                                        from gemini_helper import get_gemini_client
+                                        client = get_gemini_client(current_user.get("gemini_api_key") or os.environ.get("GEMINI_API_KEY", "") or st.secrets.get("GEMINI_API_KEY", ""))
+                                        response = client.models.generate_content(
+                                            model='gemini-2.5-flash',
+                                            contents=prompt
+                                        )
+                                        st.markdown(response.text)
+                                    except Exception as e:
+                                        st.error(f"Failed to generate alternatives: {e}")
+                            if st.button("Close Optimizer"):
+                                del st.session_state["optimize_target"]
+                                st.rerun()
+
+                    # Dividend & Yield Projections
+                    st.markdown("##### 💸 Projected Annual Passive Income (Estimated)")
+                    # Rough estimates based on typical yields
+                    def estimate_yield(row):
+                        itype = str(row.get("investment_type")).lower()
+                        if "fd" in itype or "fixed deposit" in itype or "bond" in itype: return 0.065
+                        elif "dividend" in itype: return 0.04
+                        elif "equity" in itype or "stock" in itype: return 0.015
+                        elif "mutual fund" in itype: return 0.005 # assuming mostly growth funds
+                        return 0.0
+                
+                    inv_df["est_yield"] = inv_df.apply(estimate_yield, axis=1)
+                    inv_df["est_annual_income"] = inv_df["current_value"] * inv_df["est_yield"]
+                    total_annual_income = inv_df["est_annual_income"].sum()
+                    overall_yield = (total_annual_income / tot_portfolio) * 100 if tot_portfolio > 0 else 0
+                
+                    inc_c1, inc_c2, inc_c3 = st.columns([1, 1, 2])
+                    inc_c1.metric("Projected Annual Income", format_inr(total_annual_income))
+                    inc_c2.metric("Avg Portfolio Yield", f"{overall_yield:.2f}%")
+                    with inc_c3:
+                        st.caption("Estimates are based on asset class averages (e.g. FDs ~6.5%, Stocks ~1.5%, MFs ~0.5%). Real dividends will vary.")
+
+            with sub_hold:
+                if inv_df.empty:
+                    st.info("No holdings yet. Use ➕ Add / Import Holdings above.")
+                else:
+                    # Grouped summary
+                    render_grouped_portfolio_summary(inv_df)
+
+                    st.markdown("---")
+                    st.markdown("##### ✏️ Edit Holdings")
                     all_asset_types = sorted(inv_df["investment_type"].unique().tolist())
                     sel_types = st.multiselect("Filter by Asset Class", all_asset_types, default=all_asset_types)
                     filt_inv = inv_df[inv_df["investment_type"].isin(sel_types)] if sel_types else inv_df.head(0)
@@ -2748,111 +2762,61 @@ else:
                         },
                         use_container_width=True, hide_index=True, num_rows="dynamic", key="editor_holdings"
                     )
-                    ec1, ec2 = st.columns([2, 1])
-                    with ec1:
-                        if st.button("💾 Save Edits", type="primary", use_container_width=True):
-                            cnt_upd = update_investments_df(edited_holdings)
-                            st.success(f"Updated {cnt_upd} entries!"); st.rerun()
-                    with ec2:
-                        del_id = st.number_input("Delete by ID", min_value=1, step=1, key="del_inv_id")
-                        if st.button("🗑️ Delete", type="secondary", use_container_width=True):
-                            delete_investment(del_id)
-                            st.success(f"Deleted ID {del_id}!"); st.rerun()
-                    with st.expander("⚠️ Delete All Holdings"):
-                        st.warning("Permanent — cannot be undone.")
-                        if st.button("🗑️ Confirm Delete ALL", type="primary", use_container_width=True):
+                    if st.button("💾 Save Edits", type="primary", use_container_width=True):
+                        cnt_upd = update_investments_df(edited_holdings)
+                        st.success(f"Updated {cnt_upd} entries!"); st.rerun()
+
+                    with st.expander("🧰 Maintenance — delete & duplicates"):
+                        mdel1, mdel2 = st.columns([2, 1])
+                        with mdel1:
+                            del_id = st.number_input("Delete by ID", min_value=1, step=1, key="del_inv_id")
+                        with mdel2:
+                            st.markdown("<br>", unsafe_allow_html=True)
+                            if st.button("🗑️ Delete", type="secondary", use_container_width=True):
+                                delete_investment(del_id)
+                                st.success(f"Deleted ID {del_id}!"); st.rerun()
+                        st.markdown("---")
+                        st.warning("Delete All is permanent — cannot be undone.")
+                        confirm_del_all = st.checkbox("I understand this permanently deletes all holdings", key="confirm_del_all_hold")
+                        if st.button("🗑️ Confirm Delete ALL", type="primary", use_container_width=True, disabled=not confirm_del_all):
                             deleted_count = delete_all_investments(username=current_user["username"] if view_mode != "Family" else None, family_id=user_family_id)
                             st.success(f"Deleted {deleted_count} holdings!"); st.rerun()
+                        st.markdown("---")
+                        st.markdown("##### 🧹 Duplicate Holdings")
+                        from database import find_duplicate_investments, delete_duplicate_investments
+                        duplicates = find_duplicate_investments(username=current_user["username"] if view_mode != "Family" else None, family_id=user_family_id)
+                        if not duplicates:
+                            st.success("No duplicates found!")
+                        else:
+                            st.warning(f"Found {len(duplicates)} duplicate group(s).")
+                            dup_ids = []
+                            dup_list = []
+                            for group in duplicates:
+                                orig = group[0]
+                                for d in group[1:]:
+                                    dup_ids.append(d["id"])
+                                    dup_list.append({"Dup ID": d["id"], "Original ID": orig["id"], "Platform": d["platform"], "Name": d["description"], "Invested": d["investment_amount"]})
+                            st.dataframe(pd.DataFrame(dup_list), use_container_width=True)
+                            if st.button(f"🗑️ Delete {len(dup_ids)} Duplicates", type="primary"):
+                                st.success(f"Deleted {delete_duplicate_investments(dup_ids)} entries!"); st.rerun()
 
-                # Duplicate finder
-                with st.expander("🧹 Find Duplicate Holdings"):
-                    from database import find_duplicate_investments, delete_duplicate_investments
-                    duplicates = find_duplicate_investments(username=current_user["username"] if view_mode != "Family" else None, family_id=user_family_id)
-                    if not duplicates:
-                        st.success("No duplicates found!")
-                    else:
-                        st.warning(f"Found {len(duplicates)} duplicate group(s).")
-                        dup_ids = []
-                        dup_list = []
-                        for group in duplicates:
-                            orig = group[0]
-                            for d in group[1:]:
-                                dup_ids.append(d["id"])
-                                dup_list.append({"Dup ID": d["id"], "Original ID": orig["id"], "Platform": d["platform"], "Name": d["description"], "Invested": d["investment_amount"]})
-                        st.dataframe(pd.DataFrame(dup_list), use_container_width=True)
-                        if st.button(f"🗑️ Delete {len(dup_ids)} Duplicates", type="primary"):
-                            st.success(f"Deleted {delete_duplicate_investments(dup_ids)} entries!"); st.rerun()
-
-            # ── SIP Planner & Wealth Trajectory ─────────────────────────────────
-            st.markdown("---")
-            with st.expander("📈 SIP Planner & Wealth Growth Trajectory", expanded=True):
-                curr_ins_monthly = float(st.session_state.get("budget_dict", {}).get("Insurance & Investments", 20000.0))
-                use_portfolio_nw = st.toggle("Link Portfolio Net Worth", value=True)
-                sip_c1, sip_c2, sip_c3 = st.columns(3)
-                with sip_c1:
-                    u_age = st.number_input("Your Age", min_value=18, max_value=85, value=current_user.get("age", 35), step=1, key="invest_user_age")
-                    if u_age != current_user.get("age", 35):
-                        from database import update_user_age
-                        if update_user_age(current_user["username"], u_age):
-                            st.session_state["user"]["age"] = u_age
-                with sip_c2:
-                    u_savings = tot_portfolio if use_portfolio_nw else st.number_input("Current Networth (₹)", min_value=0.0, value=tot_portfolio, step=50000.0, key="invest_user_savings_manual")
-                    if use_portfolio_nw:
-                        st.metric("💰 Linked Portfolio Value", format_inr_short(u_savings))
-                with sip_c3:
-                    u_sip_budget = st.number_input("Monthly Investment (₹)", min_value=1000.0, value=max(5000.0, curr_ins_monthly), step=1000.0, key="invest_user_sip")
-
-                inv_plan = calculate_investment_plan(
-                    age=u_age, current_savings=u_savings, monthly_investment_budget=u_sip_budget,
-                    monthly_expenses=total_spent / max(1, num_months) if not df_fy.empty else 50000.0
-                )
-
-                ip1, ip2, ip3, ip4 = st.columns(4)
-                ip1.metric("🚀 Equity", f"{inv_plan['equity_pct']:.0f}%", f"SIP {format_inr(inv_plan['equity_sip'])}")
-                ip2.metric("🛡️ Debt", f"{inv_plan['debt_pct']:.0f}%", f"SIP {format_inr(inv_plan['debt_sip'])}")
-                ip3.metric("🪙 Gold", f"{inv_plan['gold_pct']:.0f}%", f"SIP {format_inr(inv_plan['gold_sip'])}")
-                ip4.metric("📈 Blended CAGR", f"~{inv_plan['blended_cagr_pct']}%/yr")
-
-                ch1, ch2 = st.columns([1, 2])
-                with ch1:
-                    pie_df_sip = pd.DataFrame([
-                        {"Asset": "Equity", "Allocation_%": inv_plan["equity_pct"]},
-                        {"Asset": "Debt / FI", "Allocation_%": inv_plan["debt_pct"]},
-                        {"Asset": "Gold", "Allocation_%": inv_plan["gold_pct"]},
-                    ])
-                    fig_asset = px.pie(pie_df_sip, names="Asset", values="Allocation_%",
-                                       color_discrete_map={"Equity": "#38bdf8", "Debt / FI": "#34d399", "Gold": "#fbbf24"}, hole=0.4)
-                    fig_asset.update_layout(margin=dict(l=5,r=5,t=5,b=5), height=220)
-                    st.plotly_chart(fig_asset, use_container_width=True)
-                with ch2:
-                    proj_data = []
-                    for yrs, p_data in inv_plan["projections"].items():
-                        proj_data.append({"Horizon": f"{yrs}yr", "Total Invested": p_data["total_invested"], "Compounding Gain": p_data["wealth_gain"]})
-                    fig_sip = px.bar(pd.DataFrame(proj_data), x="Horizon", y=["Total Invested", "Compounding Gain"],
-                                     barmode="stack", template="plotly_dark",
-                                     color_discrete_map={"Total Invested": "#64748b", "Compounding Gain": "#10b981"},
-                                     labels={"value": "₹", "variable": ""})
-                    fig_sip.update_layout(paper_bgcolor="#1e293b", plot_bgcolor="#1e293b", margin=dict(l=5,r=5,t=10,b=5), height=220,
-                                          legend=dict(orientation="h", yanchor="bottom", y=1.02, xanchor="right", x=1, font=dict(size=10)))
-                    st.plotly_chart(fig_sip, use_container_width=True)
-
-                em_status = inv_plan["emergency_status"]
-                if em_status == "Sufficient":
-                    st.success(f"✅ Emergency Buffer Healthy: {format_inr(u_savings)} > required {format_inr(inv_plan['req_emergency'])}")
+            with sub_adv:
+                st.markdown("#### 🤖 AI Portfolio Review")
+                if inv_df.empty:
+                    st.info("Add holdings to run an AI review.")
                 else:
-                    st.warning(f"⚠️ Emergency Buffer Deficit: {format_inr(inv_plan['emergency_gap'])} short of 6-month target {format_inr(inv_plan['req_emergency'])}.")
-
-                if st.button("💡 Generate AI Wealth Advisory", type="primary", use_container_width=True):
-                    with st.spinner("🤖 Generating AI wealth strategy..."):
-                        wealth_advice = generate_ai_wealth_advice(inv_plan)
-                    st.success("🎉 AI Wealth Strategy Ready!")
-                    st.info(wealth_advice.get("summary", ""))
-                    for bullet in wealth_advice.get("key_takeaways", []):
-                        st.markdown(f"- {bullet}")
-
-            # ── Rebalance Advisor ────────────────────────────────────────────────
-            st.markdown("---")
-            with st.expander("⚖️ Portfolio Rebalance & Deploy New Money"):
+                    run_ai_review = st.button("🤖 Run AI Portfolio Review", type="primary", use_container_width=True, key="btn_ai_review")
+                    if run_ai_review:
+                        with st.spinner("🤖 Gemini AI analyzing portfolio..."):
+                            portfolio_ai = generate_ai_portfolio_suggestions(inv_df, current_user, debts_df_wp, goals_df_wp)
+                        st.success("🎉 AI Review Complete!")
+                        st.info(portfolio_ai.get("summary", ""))
+                        for rec in portfolio_ai.get("recommendations", []):
+                            with st.expander(f"**{rec.get('title', 'Recommendation')}**"):
+                                st.markdown(f"**Observation**: {rec.get('observation', '')}")
+                                st.markdown(f"**Suggestion**: {rec.get('suggestion', '')}")
+                st.markdown("---")
+                st.markdown("#### ⚖️ Portfolio Rebalance & Deploy New Money")
                 gemini_api_key_wp = (current_user.get("gemini_api_key") or get_admin_gemini_api_key()
                                      or os.environ.get("GEMINI_API_KEY", "") or st.secrets.get("GEMINI_API_KEY", ""))
                 from investment_planner import generate_rebalance_advice, generate_new_money_advice
@@ -2953,9 +2917,85 @@ else:
                                 <div style="color:{color}; font-weight:700; margin-top:4px;">{instr.get('suggested_amount','')}</div>
                             </div>""", unsafe_allow_html=True)
 
-            # ── Retirement Planner ───────────────────────────────────────────────
-            st.markdown("---")
-            with st.expander("🏖️ Retirement Planner"):
+            with sub_plan:
+                st.markdown("#### 📈 SIP Planner & Wealth Growth Trajectory")
+                curr_ins_monthly = float(st.session_state.get("budget_dict", {}).get("Insurance & Investments", 20000.0))
+                use_portfolio_nw = st.toggle("Link Portfolio Net Worth", value=True)
+                sip_c1, sip_c2, sip_c3 = st.columns(3)
+                with sip_c1:
+                    u_age = st.number_input("Your Age", min_value=18, max_value=85, value=current_user.get("age", 35), step=1, key="invest_user_age")
+                    if u_age != current_user.get("age", 35):
+                        from database import update_user_age
+                        if update_user_age(current_user["username"], u_age):
+                            st.session_state["user"]["age"] = u_age
+                with sip_c2:
+                    u_savings = tot_portfolio if use_portfolio_nw else st.number_input("Current Networth (₹)", min_value=0.0, value=tot_portfolio, step=50000.0, key="invest_user_savings_manual")
+                    if use_portfolio_nw:
+                        st.metric("💰 Linked Portfolio Value", format_inr_short(u_savings))
+                with sip_c3:
+                    u_sip_budget = st.number_input("Monthly Investment (₹)", min_value=1000.0, value=max(5000.0, curr_ins_monthly), step=1000.0, key="invest_user_sip")
+
+                inv_plan = calculate_investment_plan(
+                    age=u_age, current_savings=u_savings, monthly_investment_budget=u_sip_budget,
+                    monthly_expenses=total_spent / max(1, num_months) if not df_fy.empty else 50000.0
+                )
+
+                ip1, ip2, ip3, ip4 = st.columns(4)
+                ip1.metric("🚀 Equity", f"{inv_plan['equity_pct']:.0f}%", f"SIP {format_inr(inv_plan['equity_sip'])}")
+                ip2.metric("🛡️ Debt", f"{inv_plan['debt_pct']:.0f}%", f"SIP {format_inr(inv_plan['debt_sip'])}")
+                ip3.metric("🪙 Gold", f"{inv_plan['gold_pct']:.0f}%", f"SIP {format_inr(inv_plan['gold_sip'])}")
+                ip4.metric("📈 Blended CAGR", f"~{inv_plan['blended_cagr_pct']}%/yr")
+
+                ch1, ch2 = st.columns([1, 2])
+                with ch1:
+                    pie_df_sip = pd.DataFrame([
+                        {"Asset": "Equity", "Allocation_%": inv_plan["equity_pct"]},
+                        {"Asset": "Debt / FI", "Allocation_%": inv_plan["debt_pct"]},
+                        {"Asset": "Gold", "Allocation_%": inv_plan["gold_pct"]},
+                    ])
+                    fig_asset = px.pie(pie_df_sip, names="Asset", values="Allocation_%",
+                                       color_discrete_map={"Equity": "#38bdf8", "Debt / FI": "#34d399", "Gold": "#fbbf24"}, hole=0.4)
+                    fig_asset.update_layout(margin=dict(l=5,r=5,t=5,b=5), height=220)
+                    st.plotly_chart(fig_asset, use_container_width=True)
+                with ch2:
+                    proj_data = []
+                    for yrs, p_data in inv_plan["projections"].items():
+                        proj_data.append({"Horizon": f"{yrs}yr", "Total Invested": p_data["total_invested"], "Compounding Gain": p_data["wealth_gain"]})
+                    fig_sip = px.bar(pd.DataFrame(proj_data), x="Horizon", y=["Total Invested", "Compounding Gain"],
+                                     barmode="stack", template="plotly_dark",
+                                     color_discrete_map={"Total Invested": "#64748b", "Compounding Gain": "#10b981"},
+                                     labels={"value": "₹", "variable": ""})
+                    fig_sip.update_layout(paper_bgcolor="#1e293b", plot_bgcolor="#1e293b", margin=dict(l=5,r=5,t=10,b=5), height=220,
+                                          legend=dict(orientation="h", yanchor="bottom", y=1.02, xanchor="right", x=1, font=dict(size=10)))
+                    st.plotly_chart(fig_sip, use_container_width=True)
+
+                em_status = inv_plan["emergency_status"]
+                if em_status == "Sufficient":
+                    st.success(f"✅ Emergency Buffer Healthy: {format_inr(u_savings)} > required {format_inr(inv_plan['req_emergency'])}")
+                else:
+                    st.warning(f"⚠️ Emergency Buffer Deficit: {format_inr(inv_plan['emergency_gap'])} short of 6-month target {format_inr(inv_plan['req_emergency'])}.")
+
+                if st.button("💡 Generate AI Wealth Advisory", type="primary", use_container_width=True):
+                    with st.spinner("🤖 Generating AI wealth strategy..."):
+                        wealth_advice = generate_ai_wealth_advice(inv_plan)
+                    st.success("🎉 AI Wealth Strategy Ready!")
+                    st.info(wealth_advice.get("summary", ""))
+                    for bullet in wealth_advice.get("key_takeaways", []):
+                        st.markdown(f"- {bullet}")
+
+        # ════════════════════════════════════════════════════════════════════════
+        # TAB ─ RETIREMENT PLANNER (promoted from Investments)
+        # ════════════════════════════════════════════════════════════════════════
+        with wp_tab_retire:
+            st.markdown("#### 🏖️ Retirement Planner")
+            # Age & monthly investment are shared with the SIP Planner (Investments → SIP Planner)
+            u_age = int(st.session_state.get("invest_user_age", current_user.get("age", 35)) or 35)
+            u_sip_budget = float(st.session_state.get(
+                "invest_user_sip",
+                max(5000.0, float(st.session_state.get("budget_dict", {}).get("Insurance & Investments", 20000.0)))
+            ))
+            st.caption(f"Using age **{u_age}** and monthly investment **{format_inr(u_sip_budget)}** from the SIP Planner (Investments → SIP Planner).")
+            with st.container():
                 # Separate Liquid Assets from Real Estate and Debt
                 re_keywords = ["real estate", "property", "land", "plot", "flat", "apartment", "house", "villa"]
                 if not inv_df.empty and "investment_type" in inv_df.columns:
