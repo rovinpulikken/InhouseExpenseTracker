@@ -676,6 +676,44 @@ def test_friendly_gemini_errors():
     assert "went wrong" in friendly_gemini_error(Exception("weird"))
     print("✅ Friendly Gemini error mapping test passed.")
 
+def test_academy_fallback():
+    from academy_fallback import (fallback_new_session, fallback_next_question, fallback_record_answer,
+                                  fallback_result, fallback_learning_path, MAX_QUESTIONS)
+    from ai_errors import is_service_unavailable
+    assert is_service_unavailable("503 UNAVAILABLE high demand")
+    assert not is_service_unavailable("API key not valid")
+    profile = {"monthly_income": 200000.0, "monthly_expense": 150000.0, "top_category": "Dining",
+               "top_category_amount": 30000.0, "top_category_pct": 20.0, "total_debt": 500000.0,
+               "portfolio_value": 1000000.0, "equity_pct": 60.0, "asset_classes": {}}
+    for best, expect in ((2, "Advanced"), (0, "Beginner")):
+        st_ = fallback_new_session(profile)
+        seen = set()
+        while True:
+            q = fallback_next_question(st_)
+            if q is None:
+                break
+            assert q["id"] not in seen
+            seen.add(q["id"])
+            idx = q["scores"].index(best)
+            fallback_record_answer(st_, q, idx)
+        assert len(st_["answers"]) == MAX_QUESTIONS
+        assert fallback_result(st_)["final_score"] == expect
+    # real figures appear in question text
+    q = fallback_next_question(fallback_new_session(profile))
+    assert "Dining" in q["text"] and "30,000" in q["text"]
+    # works with an empty profile (generic wording)
+    empty = fallback_new_session({"monthly_income": 0, "monthly_expense": 0, "top_category": None,
+                                  "top_category_amount": 0, "top_category_pct": 0, "total_debt": 0,
+                                  "portfolio_value": 0, "equity_pct": None, "asset_classes": {}})
+    assert fallback_next_question(empty)["options"]
+    path = fallback_learning_path({"knowledge_level": "Beginner", "location_preference": "Both",
+                                   "investment_interests": ["Mutual Funds (Equity, Debt, Hybrid)", "Direct Stocks"],
+                                   "total_monthly_income": 200000, "total_debt": 500000})
+    names = [m["module_name"] for m in path["modules"]]
+    assert path["source"] == "database" and len(names) == 4, names
+    print("✅ Academy database fallback test passed.")
+
+
 if __name__ == "__main__":
     try:
         test_strict_uploaded_date_enforcement()
@@ -697,6 +735,7 @@ if __name__ == "__main__":
         test_option_b_full_resolution()
         test_retire_at_55_statement_parsing()
         test_friendly_gemini_errors()
+        test_academy_fallback()
         print("🎉 All test suite assertions passed successfully!")
     finally:
         if os.path.exists(database.DB_PATH):

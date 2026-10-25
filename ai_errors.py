@@ -27,3 +27,15 @@ def friendly_gemini_error(err, attempts: int = 0) -> str:
     if "safety" in low or "blocked" in low:
         return "🛡️ The AI could not respond to this request. Please rephrase and try again."
     return "⚠️ Something went wrong while contacting the AI service. Please try again shortly."
+
+
+def is_service_unavailable(err) -> bool:
+    """True when the failure is a temporary outage/overload (503, 429, timeout, network).
+    Used to decide when to switch to the database-driven fallback."""
+    raw = str(err or "")
+    low = raw.lower()
+    return ("503" in raw or "unavailable" in low or "high demand" in low or "overloaded" in low
+            or "429" in raw or "resource_exhausted" in low or "quota" in low or "rate limit" in low
+            or "deadline" in low or "timed out" in low or "timeout" in low or "504" in raw
+            or "connection" in low or "network" in low or "name resolution" in low
+            or "unreachable" in low)

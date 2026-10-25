@@ -1,5 +1,18 @@
 import streamlit as st
 from academy_assessment import generate_next_assessment_question
+from academy_fallback import (build_user_profile, fallback_new_session, fallback_next_question,
+                              fallback_record_answer, fallback_result, MAX_QUESTIONS)
+
+
+def _start_db_fallback():
+    """Switch the assessment to database-driven multiple-choice questions."""
+    user = st.session_state.get("user", {}) or {}
+    profile = build_user_profile(user.get("username"), user.get("family_id", 1))
+    state = fallback_new_session(profile)
+    st.session_state.academy_mode = "database"
+    st.session_state.academy_fb_state = state
+    st.session_state.academy_fb_question = fallback_next_question(state)
+    st.session_state.academy_status = "in_progress"
 
 def render_financial_academy_tab(api_key=""):
     st.header("🎓 Financial Academy")
@@ -25,13 +38,41 @@ def render_financial_academy_tab(api_key=""):
                 st.session_state.academy_status = "in_progress"
                 with st.spinner("Generating first scenario..."):
                     response = generate_next_assessment_question(st.session_state.academy_chat_history, api_key)
-                    if "error" in response:
+                    if response.get("ai_unavailable"):
+                        _start_db_fallback()
+                        st.rerun()
+                    elif "error" in response:
                         st.error(response["error"])
                         st.session_state.academy_status = "not_started"
                     else:
+                        st.session_state.academy_mode = "ai"
                         st.session_state.academy_chat_history.append({"role": "assistant", "content": response.get("question_text", "Ready?")})
                         st.rerun()
                 
+        elif st.session_state.academy_status == "in_progress" and st.session_state.get("academy_mode") == "database":
+            st.info("⏳ The AI service is busy, so we're using questions built from your own financial data. "
+                    "Start a new assessment later for the AI version.")
+            fb_state = st.session_state.academy_fb_state
+            q = st.session_state.academy_fb_question
+            st.progress(len(fb_state["answers"]) / MAX_QUESTIONS,
+                        text=f"Question {len(fb_state['answers']) + 1} of {MAX_QUESTIONS}")
+            st.markdown(f"**{q['category']}** — {q['text']}")
+            with st.form(f"fb_form_{q['id']}"):
+                choice = st.radio("Your answer", q["options"], index=None, key=f"fb_choice_{q['id']}")
+                submitted = st.form_submit_button("Submit answer")
+            if submitted:
+                if choice is None:
+                    st.warning("Please select an answer.")
+                else:
+                    fallback_record_answer(fb_state, q, q["options"].index(choice))
+                    nxt = fallback_next_question(fb_state)
+                    if nxt is None:
+                        st.session_state.academy_persona = fallback_result(fb_state)
+                        st.session_state.academy_status = "completed"
+                    else:
+                        st.session_state.academy_fb_question = nxt
+                    st.rerun()
+
         elif st.session_state.academy_status == "in_progress":
             for msg in st.session_state.academy_chat_history:
                 with st.chat_message(msg["role"]):
@@ -45,7 +86,10 @@ def render_financial_academy_tab(api_key=""):
                     
                 with st.spinner("Analyzing..."):
                     response = generate_next_assessment_question(st.session_state.academy_chat_history, api_key)
-                    if "error" in response:
+                    if response.get("ai_unavailable"):
+                        _start_db_fallback()
+                        st.rerun()
+                    elif "error" in response:
                         st.error(response["error"])
                     elif response.get("status") == "complete":
                         st.session_state.academy_status = "completed"
@@ -63,6 +107,8 @@ def render_financial_academy_tab(api_key=""):
                 st.metric("Level Assessed", persona.get("final_score", "Unknown"))
                 st.markdown(f"**Your Persona:** {persona.get('persona', '')}")
                 st.info(persona.get("summary", ""))
+                if persona.get("source") == "database":
+                    st.caption("Generated from your financial data while the AI service was busy.")
             
             if st.button("Retake Assessment"):
                 st.session_state.academy_status = "not_started"
@@ -160,6 +206,9 @@ def render_financial_academy_tab(api_key=""):
             if "error" in course_data:
                 st.error(course_data["error"])
             else:
+                if course_data.get("source") == "database":
+                    st.info("⏳ The AI service is busy, so this course was built from curated resources and your data. "
+                            "Regenerate later for a fully AI-personalised plan.")
                 st.markdown(f"## 🎯 {course_data.get('course_title', 'Your Personalized Course')}")
                 st.info(course_data.get('summary', ''))
                 

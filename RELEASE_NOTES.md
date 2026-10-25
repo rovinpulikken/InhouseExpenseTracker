@@ -1,5 +1,12 @@
 # Release Notes
 
+## v1.14.0 (2026-10-25)
+### Added — Database-Driven Fallback When AI Is Busy
+- New `academy_fallback.py`: when Gemini is unavailable (503 / quota / timeout / network), the Financial Academy automatically switches to multiple-choice questions built from the user's own data (income, expenses, top spending category, debt, portfolio mix) with rule-based scoring into Beginner / Intermediate / Advanced, persona and summary. Falls back to generic wording where the user has no data.
+- Learning-path generation falls back to a rule-based course built from curated resources, the user's knowledge level, location and interests (adds a foundation module for beginners / high debt).
+- UI shows a notice when fallback content is used; AI is used whenever available. New `ai_errors.is_service_unavailable()` decides when to switch (missing/invalid API key still shows its own message).
+- Test: `test_academy_fallback`.
+
 ## v1.13.2 (2026-10-25)
 ### Changed — User-Friendly AI Error Messages
 - New `ai_errors.friendly_gemini_error()` converts raw Gemini/Google API exceptions into short plain-language messages (service busy / 503, usage limit / 429, invalid API key, timeout, network, blocked content, generic). The raw error JSON is no longer shown to users; it is only printed to the server log.

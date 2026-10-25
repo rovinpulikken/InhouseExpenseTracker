@@ -83,8 +83,9 @@ def generate_next_assessment_question(chat_history: List[Dict[str, str]], api_ke
             return json.loads(cleaned)
     except Exception as e:
         print(f"Gemini assessment error: {e}")
-        from ai_errors import friendly_gemini_error
-        return {"error": friendly_gemini_error(e, max_retries)}
+        from ai_errors import friendly_gemini_error, is_service_unavailable
+        return {"error": friendly_gemini_error(e, max_retries),
+                "ai_unavailable": is_service_unavailable(e)}
     
     return {"error": "Failed to generate response"}
 
@@ -165,7 +166,11 @@ def generate_ai_learning_path(user_context: Dict[str, Any], api_key: str = "") -
                 return {"error": "⚠️ AI generated malformed JSON. Please try again."}
     except Exception as e:
         print(f"Gemini learning path error: {e}")
-        from ai_errors import friendly_gemini_error
+        from ai_errors import friendly_gemini_error, is_service_unavailable
+        if is_service_unavailable(e):
+            # AI busy/down: build the course from curated, rule-based content instead
+            from academy_fallback import fallback_learning_path
+            return fallback_learning_path(user_context)
         return {"error": friendly_gemini_error(e, max_retries)}
     
     return {"error": "⚠️ Failed to generate response from AI."}
