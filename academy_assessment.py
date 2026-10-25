@@ -82,7 +82,9 @@ def generate_next_assessment_question(chat_history: List[Dict[str, str]], api_ke
             cleaned = response.text.replace("```json", "").replace("```", "").strip()
             return json.loads(cleaned)
     except Exception as e:
-        return {"error": f"⚠️ Gemini API Error (after {max_retries} attempts): {str(e)}"}
+        print(f"Gemini assessment error: {e}")
+        from ai_errors import friendly_gemini_error
+        return {"error": friendly_gemini_error(e, max_retries)}
     
     return {"error": "Failed to generate response"}
 
@@ -162,6 +164,8 @@ def generate_ai_learning_path(user_context: Dict[str, Any], api_key: str = "") -
             except json.JSONDecodeError:
                 return {"error": "⚠️ AI generated malformed JSON. Please try again."}
     except Exception as e:
-        return {"error": f"⚠️ Failed to generate learning path (Gemini API Error after {max_retries} attempts): {str(e)}"}
+        print(f"Gemini learning path error: {e}")
+        from ai_errors import friendly_gemini_error
+        return {"error": friendly_gemini_error(e, max_retries)}
     
     return {"error": "⚠️ Failed to generate response from AI."}

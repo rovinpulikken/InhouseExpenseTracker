@@ -2687,7 +2687,7 @@ else:
                                 with st.spinner("Analyzing market alternatives..."):
                                     prompt = f"The user holds {tgt.get('resolved_name') or tgt.get('description')} in the {tgt.get('sector_segment')} sector, which is underperforming. Suggest 3 better-performing alternatives in the Indian market with a brief rationale."
                                     try:
-                                        from gemini_helper import get_gemini_client
+                                        from academy_assessment import get_gemini_client
                                         client = get_gemini_client(current_user.get("gemini_api_key") or os.environ.get("GEMINI_API_KEY", "") or st.secrets.get("GEMINI_API_KEY", ""))
                                         response = client.models.generate_content(
                                             model='gemini-2.5-flash',
@@ -2695,7 +2695,9 @@ else:
                                         )
                                         st.markdown(response.text)
                                     except Exception as e:
-                                        st.error(f"Failed to generate alternatives: {e}")
+                                        print(f"Optimizer Gemini error: {e}")
+                                        from ai_errors import friendly_gemini_error
+                                        st.error(friendly_gemini_error(e))
                             if st.button("Close Optimizer"):
                                 del st.session_state["optimize_target"]
                                 st.rerun()

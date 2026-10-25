@@ -666,6 +666,16 @@ def test_retire_at_55_statement_parsing():
     assert {f["role"] for f in r["family"]} == {"Son", "Daughter"}
     print("✅ Retire-at-55 free-text statement parsing test passed.")
 
+def test_friendly_gemini_errors():
+    from ai_errors import friendly_gemini_error
+    raw503 = "503 UNAVAILABLE. {'error': {'code': 503, 'message': 'This model is currently experiencing high demand.', 'status': 'UNAVAILABLE'}}"
+    msg = friendly_gemini_error(Exception(raw503), 3)
+    assert "busy" in msg and "503" not in msg and "UNAVAILABLE" not in msg and "{" not in msg
+    assert "limit" in friendly_gemini_error(Exception("429 RESOURCE_EXHAUSTED quota"))
+    assert "API key" in friendly_gemini_error(Exception("400 API key not valid"))
+    assert "went wrong" in friendly_gemini_error(Exception("weird"))
+    print("✅ Friendly Gemini error mapping test passed.")
+
 if __name__ == "__main__":
     try:
         test_strict_uploaded_date_enforcement()
@@ -686,6 +696,7 @@ if __name__ == "__main__":
         test_mutual_exclusive_expense_sources()
         test_option_b_full_resolution()
         test_retire_at_55_statement_parsing()
+        test_friendly_gemini_errors()
         print("🎉 All test suite assertions passed successfully!")
     finally:
         if os.path.exists(database.DB_PATH):

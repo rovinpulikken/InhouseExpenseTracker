@@ -1,5 +1,13 @@
 # Release Notes
 
+## v1.13.2 (2026-10-25)
+### Changed — User-Friendly AI Error Messages
+- New `ai_errors.friendly_gemini_error()` converts raw Gemini/Google API exceptions into short plain-language messages (service busy / 503, usage limit / 429, invalid API key, timeout, network, blocked content, generic). The raw error JSON is no longer shown to users; it is only printed to the server log.
+- Applied to the Financial Academy assessment and learning-path generators and the portfolio "Optimize" panel.
+### Fixed
+- The portfolio "Generate Replacements" action imported a non-existent `gemini_helper` module; it now uses `academy_assessment.get_gemini_client`.
+- Test: `test_friendly_gemini_errors`.
+
 ## v1.13.1 (2026-10-24)
 ### Fixed — Option B Retirement Age / Expenses Stuck on Old Values
 - **Root cause**: the Option B "Extracted Living Expense / Healthcare Buffer / Target Retirement Age" fields are keyed widgets; Streamlit ignores `value=` once a key has session state, so they stayed frozen on the first values shown (e.g. age 62) even after the vision text was edited. They are now re-seeded from the parsed text whenever the text (or profile age) changes, while manual tweaks are kept until the text changes again.
