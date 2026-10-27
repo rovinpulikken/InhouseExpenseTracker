@@ -2803,6 +2803,12 @@ else:
                                 st.success(f"Deleted {delete_duplicate_investments(dup_ids)} entries!"); st.rerun()
 
             with sub_adv:
+                from algo_advisor import render_algo_advisor
+                _algo_sip = float(st.session_state.get(
+                    "invest_user_sip",
+                    max(5000.0, float(st.session_state.get("budget_dict", {}).get("Insurance & Investments", 20000.0)))))
+                render_algo_advisor(inv_df, current_user, _algo_sip)
+                st.markdown("---")
                 st.markdown("#### 🤖 AI Portfolio Review")
                 if inv_df.empty:
                     st.info("Add holdings to run an AI review.")

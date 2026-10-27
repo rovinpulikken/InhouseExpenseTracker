@@ -714,6 +714,51 @@ def test_academy_fallback():
     print("✅ Academy database fallback test passed.")
 
 
+def test_algo_advisor():
+    import pandas as pd
+    from algo_advisor import (build_algo_advice, select_tier, classify_holding, evaluate_regime,
+                              LARGE, FLEXI, MIDSMALL, DEBT, GOLD, EXCLUDED)
+    assert select_tier("Aggressive", 35)[0] == "High"
+    assert select_tier("Aggressive", 62)[0] == "Moderate"
+    assert select_tier("Moderate", 72)[0] == "Low"
+    assert select_tier("Conservative", 30, override="High")[0] == "High"
+    assert classify_holding({"investment_type": "PPF"}) == DEBT
+    assert classify_holding({"investment_type": "Real Estate"}) == EXCLUDED
+    assert classify_holding({"investment_type": "Gold / Sovereign Gold Bonds (SGB)"}) == GOLD
+    assert classify_holding({"investment_type": "Mutual funds", "resolved_name": "UTI Nifty 50 Index Fund"}) == LARGE
+    assert classify_holding({"investment_type": "Equity (Stocks)", "market_cap": "Small Cap"}) == MIDSMALL
+    assert classify_holding({"investment_type": "Mutual funds", "resolved_name": "XYZ Flexi Cap Fund"}) == FLEXI
+
+    df = pd.DataFrame([
+        {"investment_type": "Equity (Stocks)", "description": "SMALLCO", "market_cap": "Small Cap", "current_value": 600000, "returns_pct": -20},
+        {"investment_type": "Mutual funds", "resolved_name": "Nifty 50 Index Fund", "current_value": 200000, "returns_pct": 12},
+        {"investment_type": "PPF", "current_value": 100000, "returns_pct": 7},
+        {"investment_type": "Real Estate", "current_value": 5000000, "returns_pct": 30},
+    ])
+    res = build_algo_advice(df, "Conservative", 40, 20000, None)
+    assert res["tier"] == "Low" and res["total_value"] == 900000 and res["excluded_value"] == 5000000
+    acts = {h["Holding"]: h for h in res["holding_actions"]}
+    assert acts["SMALLCO"]["Action"] == "SELL / TRIM" and acts["SMALLCO"]["Amount"] > 0
+    assert any(b["Sleeve"] == GOLD and b["Amount"] > 0 for b in res["buys"])
+    assert any(b["Sleeve"] == DEBT for b in res["buys"])
+    assert abs(sum(x["Monthly ₹"] for x in res["sip_plan"]) - 20000) < 1
+    assert res["summary_lines"] and "SELL / TRIM" in " ".join(res["summary_lines"])
+
+    # regime triggers
+    low = evaluate_regime({"available": True, "nifty": 80, "dma200": 100, "drawdown_pct": 12, "drop_10d_pct": 1, "vix": 15}, "Low")
+    assert low["freeze_equity"]
+    mod = evaluate_regime({"available": True, "nifty": 80, "dma200": 100, "drawdown_pct": 3, "drop_10d_pct": 1, "vix": 15}, "Moderate")
+    assert mod["halve_equity"]
+    high = evaluate_regime({"available": True, "nifty": 90, "dma200": 80, "drawdown_pct": 9, "drop_10d_pct": 9, "vix": 25}, "High")
+    assert high["deploy_tranches"] == 3 and high["vix_shift"]
+    # frozen equity buys in Low tier
+    df2 = pd.DataFrame([{"investment_type": "PPF", "current_value": 1000000, "returns_pct": 7}])
+    r2 = build_algo_advice(df2, "Conservative", 40, 0, {"available": True, "nifty": 80, "dma200": 100, "drawdown_pct": 12, "drop_10d_pct": 1, "vix": 15})
+    assert any(b["Sleeve"] == LARGE and b["Amount"] == 0 for b in r2["buys"])
+    assert build_algo_advice(pd.DataFrame(), "Moderate")["error"]
+    print("✅ Algorithmic advisor test passed.")
+
+
 if __name__ == "__main__":
     try:
         test_strict_uploaded_date_enforcement()
@@ -736,6 +781,7 @@ if __name__ == "__main__":
         test_retire_at_55_statement_parsing()
         test_friendly_gemini_errors()
         test_academy_fallback()
+        test_algo_advisor()
         print("🎉 All test suite assertions passed successfully!")
     finally:
         if os.path.exists(database.DB_PATH):

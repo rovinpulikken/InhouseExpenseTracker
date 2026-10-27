@@ -1,5 +1,15 @@
 # Release Notes
 
+## v1.15.0 (2026-10-27)
+### Added — Risk-Budgeted Core-Satellite Algorithmic Wealth Advisor
+- Integrated the quantitative **Risk-Budgeted Core-Satellite Algorithmic Model** into the **Investments → Advisor** sub-tab (`algo_advisor.py`).
+- **Profile-Driven Tiers:**
+  - **Tier 1 (Low Risk, 9%–10% Target Return):** 65% Debt/Bonds/G-Secs, 15% Gold (SGB/ETF), 20% Large-Cap Equity. Algorithmic trigger freezes equity purchases if Nifty drops >10% from 52-week peak.
+  - **Tier 2 (Moderate Risk, 10%–12% Target Return):** 50% Equity (35% Large-Cap Index + 15% Flexi-Cap), 35% Debt & Arbitrage, 15% Gold. Algorithmic trigger monitors 200-DMA; below 200-DMA, equity inflows are halved and parked in arbitrage funds.
+  - **Tier 3 (High Risk, 12%–15% Target Return):** 75% Equity (40% Large-Cap + 20% Factor/Momentum + 15% Mid/Small-Cap), 10% Gold, 15% Opportunistic Liquid Cash. Triggers tranche deployment (5% per 3% drop) on 7%–10% flash corrections and guards against India VIX spikes (≥22).
+- **Executive Summary & Holding-Level Action:** Provides an algorithmic Executive Summary with clear **HOLD**, **BUY**, **SELL / TRIM**, or **REVIEW** decisions for every portfolio holding, dynamic drift rebalancing (>5%), and monthly SIP allocation routing.
+- **Automated Tests:** Added `test_algo_advisor` to `test_app.py` covering tier selection, holding classification, allocation drift, regime triggers, and edge cases.
+
 ## v1.14.0 (2026-10-25)
 ### Added — Database-Driven Fallback When AI Is Busy
 - New `academy_fallback.py`: when Gemini is unavailable (503 / quota / timeout / network), the Financial Academy automatically switches to multiple-choice questions built from the user's own data (income, expenses, top spending category, debt, portfolio mix) with rule-based scoring into Beginner / Intermediate / Advanced, persona and summary. Falls back to generic wording where the user has no data.
