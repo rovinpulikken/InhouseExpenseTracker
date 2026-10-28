@@ -4501,6 +4501,9 @@ else:
 
                 calc_age = max(0, today.year - parsed_dob.year - ((today.month, today.day) < (parsed_dob.month, parsed_dob.day)))
 
+                is_admin_or_super = (current_user["username"] == "admin" or current_user.get("role") in ["Admin", "Super Admin"])
+                can_edit_dob = is_admin_or_super or (not is_dob_set)
+
                 c1, c2, c3, c4 = st.columns(4)
                 with c1:
                     new_name = st.text_input("Full Name", value=current_user.get("full_name", ""))
@@ -4510,8 +4513,8 @@ else:
                         value=parsed_dob,
                         min_value=datetime.date(1900, 1, 1),
                         max_value=today,
-                        disabled=is_dob_set,
-                        help="Date of Birth cannot be updated once set." if is_dob_set else "Set your Date of Birth. Once saved, it cannot be modified."
+                        disabled=not can_edit_dob,
+                        help="Editable by Admin / Super Admin." if is_admin_or_super else ("Date of Birth cannot be updated once set." if is_dob_set else "Set your Date of Birth.")
                     )
                 with c3:
                     st.number_input(
@@ -4567,12 +4570,12 @@ else:
                 new_sa = st.text_input("Security Answer", type="password", help="Leave blank if you do not want to change your existing security answer.")
 
                 if st.form_submit_button("💾 Save Profile", type="primary", use_container_width=True):
-                    if is_dob_set:
-                        final_dob = user_dob_str
-                        final_age = calc_age
-                    else:
+                    if can_edit_dob:
                         final_dob = new_dob.isoformat()
                         final_age = max(0, today.year - new_dob.year - ((today.month, today.day) < (new_dob.month, new_dob.day)))
+                    else:
+                        final_dob = user_dob_str
+                        final_age = calc_age
 
                     profile_data = {
                         "full_name": new_name,

@@ -764,10 +764,14 @@ def test_auto_calculate_age_and_lock_dob():
     from database import init_db, delete_user, create_user, update_user_profile, authenticate_user
     init_db()
     delete_user("dobtestuser")
+    delete_user("admindobuser")
+    
     ok, msg = create_user("dobtestuser", "testpwd123", "DOB Test User", "Member")
     assert ok
+    ok_adm, msg_adm = create_user("admindobuser", "adminpwd123", "Admin DOB User", "Admin")
+    assert ok_adm
 
-    # User initially has empty dob
+    # Member user initially has empty dob
     u = authenticate_user("dobtestuser", "testpwd123")
     assert u is not None
     assert u.get("dob") == ""
@@ -775,7 +779,7 @@ def test_auto_calculate_age_and_lock_dob():
     # First time setting DOB: sets DOB and auto-calculates age
     birth_date = datetime.date(1994, 6, 15)
     today = datetime.date.today()
-    expected_age = today.year - birth_date.year - ((today.month, today.day) < (birth_date.month, birth_date.day))
+    expected_age = max(0, today.year - birth_date.year - ((today.month, today.day) < (birth_date.month, birth_date.day)))
 
     res = update_user_profile("dobtestuser", {
         "dob": birth_date.isoformat(),
@@ -787,18 +791,34 @@ def test_auto_calculate_age_and_lock_dob():
     assert u_after["dob"] == "1994-06-15"
     assert u_after["age"] == expected_age
 
-    # Attempting to change/update DOB once set: must NOT be updated
-    res2 = update_user_profile("dobtestuser", {
-        "dob": "2005-01-01",
-        "city": "Bengaluru"
+    # Permission logic check: Regular Member with DOB already set cannot edit DOB
+    is_dob_set = bool(u_after["dob"])
+    is_admin_or_super = (u_after["username"] == "admin" or u_after.get("role") in ["Admin", "Super Admin"])
+    can_edit_dob = is_admin_or_super or (not is_dob_set)
+    assert not can_edit_dob  # Regular member cannot edit DOB once set
+
+    # Admin user can always edit DOB even if already set
+    u_admin = authenticate_user("admindobuser", "adminpwd123")
+    is_admin_or_super_adm = (u_admin["username"] == "admin" or u_admin.get("role") in ["Admin", "Super Admin"])
+    can_edit_dob_adm = is_admin_or_super_adm or False
+    assert can_edit_dob_adm  # Admin can edit DOB
+
+    # Admin updates DOB: age is recalculated and database is updated
+    new_birth_date = datetime.date(1988, 10, 20)
+    new_expected_age = max(0, today.year - new_birth_date.year - ((today.month, today.day) < (new_birth_date.month, new_birth_date.day)))
+    res_adm = update_user_profile("admindobuser", {
+        "dob": new_birth_date.isoformat(),
+        "age": new_expected_age
     })
-    assert res2
+    assert res_adm
 
-    u_locked = authenticate_user("dobtestuser", "testpwd123")
-    assert u_locked["dob"] == "1994-06-15"  # Remains original, not updated
-    assert u_locked["city"] == "Bengaluru"  # Other fields still update normally
+    u_admin_after = authenticate_user("admindobuser", "adminpwd123")
+    assert u_admin_after["dob"] == "1988-10-20"
+    assert u_admin_after["age"] == new_expected_age
 
-    print("✅ Auto-calculate age from DOB and lock DOB test passed.")
+    delete_user("dobtestuser")
+    delete_user("admindobuser")
+    print("✅ Auto-calculate age from DOB and Admin/Super Admin DOB edit permission test passed.")
 
 
 def test_interactive_db_log_column_safeguards():

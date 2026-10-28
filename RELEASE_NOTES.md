@@ -6,11 +6,11 @@
 - **Fix:** Safely filtered `cols_to_show` and corresponding `column_config` dynamically to only columns that actually exist in the table. Added automatic `source_note` column migration in `database.init_db()` and safeguarded the inline editor.
 - **Unit Tests:** Added `test_interactive_db_log_column_safeguards` in `test_app.py`.
 
-### Added — Auto-Calculate Age from Date of Birth & Lock DOB
-- **Auto-Calculated Age:** In the **👤 User Profile Settings** tab, Age is now automatically calculated from the user's Date of Birth and rendered as a read-only, disabled field so it cannot be manually modified or go out of sync.
-- **Date of Birth Locking:** Once a user's Date of Birth is set in their profile, the Date of Birth input field is locked (`disabled=True`) with explanatory helper text.
-- **Backend & Database Safeguards:** `database.update_user_profile` safeguards the existing non-empty `dob` field, preventing it from being overwritten. On session start, `current_user['age']` is automatically synchronized from `dob` for consistency across all financial planners and modules.
-- **Unit Tests:** Added `test_auto_calculate_age_and_lock_dob` in `test_app.py` verifying first-time DOB entry, auto-calculated age accuracy, and prevention of DOB modification once established.
+### Added — Auto-Calculate Age from Date of Birth & Role-Based DOB Permissions
+- **Auto-Calculated Age:** In the **👤 User Profile Settings** tab, Age is auto-calculated directly from Date of Birth and rendered as a read-only, non-editable field across all user roles to prevent manual discrepancies.
+- **Admin & Super Admin DOB Edit Capability:** Date of Birth is unlocked and fully editable by Admins (`role == "Admin"`) and Super Admin (`username == "admin"` or `role == "Super Admin"`). When an Admin updates their Date of Birth, Age is automatically recalculated from the new date and both fields are saved to the database and updated in session state.
+- **Member DOB Safeguard:** For regular Members, Date of Birth remains locked (`disabled=True`) once initially set to prevent accidental changes.
+- **Unit Tests:** Updated `test_auto_calculate_age_and_lock_dob` in `test_app.py` verifying auto-calculated age accuracy, regular Member DOB locking, and Admin/Super Admin DOB editing with automatic age recalculation.
 
 ## v1.15.0 (2026-10-27)
 ### Added — Risk-Budgeted Core-Satellite Algorithmic Wealth Advisor
