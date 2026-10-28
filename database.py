@@ -335,6 +335,8 @@ def init_db():
     """)
     cursor.execute("PRAGMA table_info(expenses)")
     e_cols = [row[1] for row in cursor.fetchall()]
+    if "source_note" not in e_cols:
+        cursor.execute("ALTER TABLE expenses ADD COLUMN source_note TEXT DEFAULT 'Manual'")
     if "half_year" not in e_cols:
         cursor.execute("ALTER TABLE expenses ADD COLUMN half_year TEXT DEFAULT 'H1'")
     if "transaction_type" not in e_cols:

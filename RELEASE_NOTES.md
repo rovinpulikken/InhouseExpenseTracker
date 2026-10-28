@@ -1,6 +1,11 @@
 # Release Notes
 
 ## v1.15.1 (2026-10-28)
+### Fixed — Interactive Database Log KeyError on Missing Columns
+- **Root cause:** In the **Interactive Database Log, Edit & Delete Manager** (`sa_tab1`), `expenses_table[cols_to_show]` unconditionally indexed columns like `source_note` which may be absent in existing database schemas, causing pandas to crash with `KeyError: "[...] not in index"`.
+- **Fix:** Safely filtered `cols_to_show` and corresponding `column_config` dynamically to only columns that actually exist in the table. Added automatic `source_note` column migration in `database.init_db()` and safeguarded the inline editor.
+- **Unit Tests:** Added `test_interactive_db_log_column_safeguards` in `test_app.py`.
+
 ### Added — Auto-Calculate Age from Date of Birth & Lock DOB
 - **Auto-Calculated Age:** In the **👤 User Profile Settings** tab, Age is now automatically calculated from the user's Date of Birth and rendered as a read-only, disabled field so it cannot be manually modified or go out of sync.
 - **Date of Birth Locking:** Once a user's Date of Birth is set in their profile, the Date of Birth input field is locked (`disabled=True`) with explanatory helper text.

@@ -1411,10 +1411,10 @@ else:
             else:
                 # ── Section 1: Inline table editor ──────────────────────────────
                 with st.expander("📝 Edit All Records in Table (Inline Grid)", expanded=True):
-                    st.caption("Edit dates, categories, descriptions, or amounts directly. Click **Save Changes** when done.")
+                    inline_wanted_cols = ["id", "expense_date", "category", "description", "amount", "visibility", "source_note"]
+                    inline_cols = [c for c in inline_wanted_cols if c in expenses_df_all.columns]
                     edited_df_inline = st.data_editor(
-                        expenses_df_all[["id", "expense_date", "category", "description",
-                                          "amount", "visibility", "source_note"]],
+                        expenses_df_all[inline_cols],
                         num_rows="dynamic",
                         column_config={
                             "id":           st.column_config.NumberColumn("ID", disabled=True),
@@ -4671,28 +4671,32 @@ else:
                 if "expense_date" in expenses_table.columns:
                     expenses_table["expense_date"] = pd.to_datetime(expenses_table["expense_date"]).dt.date
                     
-                cols_to_show = ["id", "expense_date", "category", "description", "amount", "financial_year", "quarter", "half_year", "visibility", "username"]
-                if "family_id" in expenses_table.columns and is_super_admin:
-                    cols_to_show.append("family_id")
-                cols_to_show.append("source_note")
+                desired_cols = ["id", "expense_date", "category", "description", "amount", "financial_year", "quarter", "half_year", "visibility", "username"]
+                if is_super_admin:
+                    desired_cols.append("family_id")
+                desired_cols.append("source_note")
+                
+                cols_to_show = [c for c in desired_cols if c in expenses_table.columns]
+
+                col_cfg_map = {
+                    "id": st.column_config.NumberColumn("ID", disabled=True),
+                    "expense_date": st.column_config.DateColumn("Date", required=True),
+                    "category": st.column_config.SelectboxColumn("Category", options=EXPENSE_CATEGORIES, required=True),
+                    "description": st.column_config.TextColumn("Description"),
+                    "amount": st.column_config.NumberColumn("Amount (₹)", min_value=0.0, format="₹ %.2f", required=True),
+                    "financial_year": st.column_config.TextColumn("FY", disabled=True),
+                    "quarter": st.column_config.TextColumn("Quarter", disabled=True),
+                    "half_year": st.column_config.TextColumn("Half Year", disabled=True),
+                    "visibility": st.column_config.SelectboxColumn("Sharing", options=["Family", "Private"], required=True),
+                    "username": st.column_config.TextColumn("Logged By", disabled=True),
+                    "family_id": st.column_config.NumberColumn("Family ID", disabled=True),
+                    "source_note": st.column_config.TextColumn("Source", disabled=True)
+                }
 
                 edited_db = st.data_editor(
                     expenses_table[cols_to_show],
                     num_rows="dynamic",
-                    column_config={
-                        "id": st.column_config.NumberColumn("ID", disabled=True),
-                        "expense_date": st.column_config.DateColumn("Date", required=True),
-                        "category": st.column_config.SelectboxColumn("Category", options=EXPENSE_CATEGORIES, required=True),
-                        "description": st.column_config.TextColumn("Description"),
-                        "amount": st.column_config.NumberColumn("Amount (₹)", min_value=0.0, format="₹ %.2f", required=True),
-                        "financial_year": st.column_config.TextColumn("FY", disabled=True),
-                        "quarter": st.column_config.TextColumn("Quarter", disabled=True),
-                        "half_year": st.column_config.TextColumn("Half Year", disabled=True),
-                        "visibility": st.column_config.SelectboxColumn("Sharing", options=["Family", "Private"], required=True),
-                        "username": st.column_config.TextColumn("Logged By", disabled=True),
-                        "family_id": st.column_config.NumberColumn("Family ID", disabled=True),
-                        "source_note": st.column_config.TextColumn("Source", disabled=True)
-                    },
+                    column_config={c: col_cfg_map[c] for c in cols_to_show if c in col_cfg_map},
                     use_container_width=True,
                     hide_index=True,
                     key="db_log_editor"

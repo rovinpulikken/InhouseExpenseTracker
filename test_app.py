@@ -801,6 +801,27 @@ def test_auto_calculate_age_and_lock_dob():
     print("✅ Auto-calculate age from DOB and lock DOB test passed.")
 
 
+def test_interactive_db_log_column_safeguards():
+    import pandas as pd
+    from database import init_db, get_connection
+    init_db()
+    # Verify source_note column is present in DB table info
+    conn = get_connection()
+    cursor = conn.cursor()
+    cursor.execute("PRAGMA table_info(expenses)")
+    cols = [r[1] for r in cursor.fetchall()]
+    conn.close()
+    assert "source_note" in cols
+
+    # Verify that slice with missing columns does not throw KeyError
+    partial_df = pd.DataFrame([{"id": 1, "amount": 100.0, "category": "Food"}])
+    desired_cols = ["id", "expense_date", "category", "description", "amount", "financial_year", "quarter", "half_year", "visibility", "username", "family_id", "source_note"]
+    safe_cols = [c for c in desired_cols if c in partial_df.columns]
+    sliced = partial_df[safe_cols]
+    assert list(sliced.columns) == ["id", "category", "amount"]
+    print("✅ Interactive database log column safeguards test passed.")
+
+
 if __name__ == "__main__":
     try:
         test_strict_uploaded_date_enforcement()
@@ -825,6 +846,7 @@ if __name__ == "__main__":
         test_academy_fallback()
         test_algo_advisor()
         test_auto_calculate_age_and_lock_dob()
+        test_interactive_db_log_column_safeguards()
         print("🎉 All test suite assertions passed successfully!")
     finally:
         if os.path.exists(database.DB_PATH):
