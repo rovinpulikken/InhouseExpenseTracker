@@ -842,6 +842,87 @@ def test_interactive_db_log_column_safeguards():
     print("✅ Interactive database log column safeguards test passed.")
 
 
+def test_financial_health_report_and_customization():
+    import io
+    import pandas as pd
+    from financial_report import compute_financial_health, generate_html_report, generate_excel_report
+
+    mock_user = {
+        "username": "tester",
+        "full_name": "Test Investor",
+        "age": 36,
+        "income_range": "₹10L - ₹25L",
+        "risk_tolerance": "Moderate"
+    }
+
+    mock_inv = pd.DataFrame([
+        {"description": "Nifty 50 ETF", "investment_type": "Equity", "investment_amount": 300000.0, "current_value": 360000.0},
+        {"description": "Corporate Bond Fund", "investment_type": "Debt", "investment_amount": 200000.0, "current_value": 215000.0},
+        {"description": "Sovereign Gold Bond", "investment_type": "Gold", "investment_amount": 100000.0, "current_value": 130000.0},
+    ])
+
+    mock_debts = pd.DataFrame([
+        {"debt_name": "Car Loan", "debt_category": "Auto", "outstanding_principal": 150000.0, "interest_rate": 8.5, "monthly_emi": 12000.0, "tenure_months": 15}
+    ])
+
+    # 1. Test scoring engine
+    res = compute_financial_health(
+        user=mock_user,
+        inv_df=mock_inv,
+        debts_df=mock_debts,
+        monthly_income=125000.0,
+        monthly_expenses=65000.0,
+        liquid_cash=150000.0
+    )
+
+    assert 0 <= res["score"] <= 100
+    assert res["rating"] in ["Excellent", "Good", "Fair", "Needs Action"]
+    assert len(res["pillars"]) == 5
+    for p_name, p_data in res["pillars"].items():
+        assert p_data["score"] <= p_data["max"]
+
+    m = res["metrics"]
+    assert m["tot_portfolio"] == 705000.0
+    assert m["tot_debt"] == 150000.0
+    assert m["net_worth"] == (705000.0 + 150000.0) - 150000.0  # (Portfolio + Liquid) - Debt
+    assert m["savings_rate"] == ((125000.0 - 65000.0) / 125000.0) * 100.0
+    assert len(res["strengths"]) > 0
+
+    # 2. Test customizable HTML generation
+    custom_opts = {
+        "title": "Custom Family Q4 Audit",
+        "custom_note": "Targeting 2027 home down payment",
+        "sections": ["executive_summary", "net_worth_balance_sheet", "actionable_recommendations"],
+        "include_holding_details": False
+    }
+
+    html = generate_html_report(mock_user, res, inv_df=mock_inv, debts_df=mock_debts, options=custom_opts)
+    assert "Custom Family Q4 Audit" in html
+    assert "Targeting 2027 home down payment" in html
+    assert "Financial Health Summary" in html
+    assert "Net Worth &amp; Wealth Balance Sheet" in html or "Net Worth & Wealth Balance Sheet" in html
+    # Sections NOT in custom_opts should not appear
+    assert "Debt &amp; Liabilities Audit" not in html and "Debt & Liabilities Audit" not in html
+
+    # 3. Test customizable Excel generation
+    excel_bytes = generate_excel_report(mock_user, res, inv_df=mock_inv, debts_df=mock_debts, options=custom_opts)
+    assert isinstance(excel_bytes, bytes)
+    assert len(excel_bytes) > 200
+
+    try:
+        from openpyxl import load_workbook
+        wb = load_workbook(io.BytesIO(excel_bytes))
+        sheet_names = wb.sheetnames
+        assert "Executive Summary" in sheet_names
+        assert "Action Plan & Tax" in sheet_names
+        assert "Debts & Liabilities" not in sheet_names  # Unselected section excluded
+    except ImportError:
+        # Fallback text format verified
+        assert b"Custom Family Q4 Audit" in excel_bytes
+
+    print("✅ Financial health status & customized report test passed.")
+
+
 if __name__ == "__main__":
     try:
         test_strict_uploaded_date_enforcement()
@@ -867,6 +948,7 @@ if __name__ == "__main__":
         test_algo_advisor()
         test_auto_calculate_age_and_lock_dob()
         test_interactive_db_log_column_safeguards()
+        test_financial_health_report_and_customization()
         print("🎉 All test suite assertions passed successfully!")
     finally:
         if os.path.exists(database.DB_PATH):

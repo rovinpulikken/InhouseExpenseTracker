@@ -1,5 +1,17 @@
 # Release Notes
 
+## v1.16.0 (2026-10-28)
+### Added — Comprehensive Financial Health Status & Customisable Wealth Report
+- **5-Pillar Financial Health Scoring Engine:** Implemented `compute_financial_health()` in `financial_report.py`, providing a 360° diagnostic score (0–100) and rating (Excellent / Good / Fair / Needs Action) across five pillars: Savings Rate, Emergency Runway, Debt Burden (DTI), Net Worth & Solvency, and Investment Diversification.
+- **Deep Investment Portfolio Audit:** Integrated with the Risk-Budgeted Core-Satellite algorithmic model to provide holding-level actions (HOLD, BUY, TRIM, REVIEW), asset allocation drift analysis, and concentration risk monitoring.
+- **Debt & Cashflow Analysis:** Computes Debt-to-Income (DTI) and Debt-to-Asset ratios, active loan amortization schedules, emergency fund adequacy (in months), and savings rate metrics.
+- **User Customization Controls:** Users can tailor the generated report by toggling specific sections (Executive Summary, Net Worth Balance Sheet, Investment Audit, Debt Schedule, Cash Flow, Strategic Action Plan), customizing report title and personal cover notes, and choosing between holding-level granularity or summary view.
+- **Dual Export Formats & Live Preview:**
+  - **Print-Ready / PDF Report (`.html`):** Executive-styled HTML document with modern typography and `@media print` CSS for one-click browser printing/saving as clean A4 PDF.
+  - **Multi-Tab Excel Workbook (`.xlsx`):** Formatted Excel workbook using `openpyxl` with tabs for Executive Summary, Holdings Audit, Debt Schedule, and Strategic Action Plan.
+  - **In-App Live Preview:** Interactive preview toggle inside Wealth Planner → Net Worth Overview (`wp_tab_nw`).
+- **Unit Tests:** Added `test_financial_health_report_and_customization` to `test_app.py` verifying metric bounds, pillar weights, customizable HTML section inclusion, and Excel workbook generation.
+
 ## v1.15.1 (2026-10-28)
 ### Fixed — Interactive Database Log KeyError on Missing Columns
 - **Root cause:** In the **Interactive Database Log, Edit & Delete Manager** (`sa_tab1`), `expenses_table[cols_to_show]` unconditionally indexed columns like `source_note` which may be absent in existing database schemas, causing pandas to crash with `KeyError: "[...] not in index"`.

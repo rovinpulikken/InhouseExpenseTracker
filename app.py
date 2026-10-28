@@ -2149,6 +2149,17 @@ else:
                         st.caption(f"**{g['goal_name']}** — {int(pct*100)}%")
                         st.progress(pct)
 
+            # ── Comprehensive Financial Health Status & Custom Report ────────────────
+            from financial_report import render_financial_health_report_ui
+            render_financial_health_report_ui(
+                current_user=current_user,
+                inv_df=inv_df,
+                debts_df=debts_df_wp,
+                expenses_df=df_fy,
+                monthly_income=_monthly_inc_wp,
+                monthly_expenses=_monthly_exp_wp,
+            )
+
 
 
         # ════════════════════════════════════════════════════════════════════════
