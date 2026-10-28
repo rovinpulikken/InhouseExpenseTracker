@@ -857,6 +857,13 @@ def update_user_profile(username: str, profile_data: dict) -> bool:
         conn = get_connection()
         cursor = conn.cursor()
         
+        # Safeguard: if user already has a non-empty dob, do not allow it to be updated
+        if "dob" in profile_data:
+            cursor.execute("SELECT dob FROM users WHERE username = ?", (username.strip().lower(),))
+            row = cursor.fetchone()
+            if row and row[0] and str(row[0]).strip():
+                profile_data = {k: v for k, v in profile_data.items() if k != "dob"}
+        
         update_fields = []
         params = []
         for key, value in profile_data.items():

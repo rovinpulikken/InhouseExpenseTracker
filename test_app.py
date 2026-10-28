@@ -759,6 +759,48 @@ def test_algo_advisor():
     print("✅ Algorithmic advisor test passed.")
 
 
+def test_auto_calculate_age_and_lock_dob():
+    import datetime
+    from database import init_db, delete_user, create_user, update_user_profile, authenticate_user
+    init_db()
+    delete_user("dobtestuser")
+    ok, msg = create_user("dobtestuser", "testpwd123", "DOB Test User", "Member")
+    assert ok
+
+    # User initially has empty dob
+    u = authenticate_user("dobtestuser", "testpwd123")
+    assert u is not None
+    assert u.get("dob") == ""
+
+    # First time setting DOB: sets DOB and auto-calculates age
+    birth_date = datetime.date(1994, 6, 15)
+    today = datetime.date.today()
+    expected_age = today.year - birth_date.year - ((today.month, today.day) < (birth_date.month, birth_date.day))
+
+    res = update_user_profile("dobtestuser", {
+        "dob": birth_date.isoformat(),
+        "age": expected_age
+    })
+    assert res
+
+    u_after = authenticate_user("dobtestuser", "testpwd123")
+    assert u_after["dob"] == "1994-06-15"
+    assert u_after["age"] == expected_age
+
+    # Attempting to change/update DOB once set: must NOT be updated
+    res2 = update_user_profile("dobtestuser", {
+        "dob": "2005-01-01",
+        "city": "Bengaluru"
+    })
+    assert res2
+
+    u_locked = authenticate_user("dobtestuser", "testpwd123")
+    assert u_locked["dob"] == "1994-06-15"  # Remains original, not updated
+    assert u_locked["city"] == "Bengaluru"  # Other fields still update normally
+
+    print("✅ Auto-calculate age from DOB and lock DOB test passed.")
+
+
 if __name__ == "__main__":
     try:
         test_strict_uploaded_date_enforcement()
@@ -782,6 +824,7 @@ if __name__ == "__main__":
         test_friendly_gemini_errors()
         test_academy_fallback()
         test_algo_advisor()
+        test_auto_calculate_age_and_lock_dob()
         print("🎉 All test suite assertions passed successfully!")
     finally:
         if os.path.exists(database.DB_PATH):

@@ -458,8 +458,14 @@ else:
     # LOGGED IN USER & SIDEBAR SETUP
     # ----------------------------------------------------
     current_user = st.session_state["user"]
+    if current_user.get("dob"):
+        try:
+            _dob_dt = datetime.datetime.strptime(str(current_user["dob"]).strip(), "%Y-%m-%d").date()
+            _today = datetime.date.today()
+            current_user["age"] = max(0, _today.year - _dob_dt.year - ((_today.month, _today.day) < (_dob_dt.month, _dob_dt.day)))
+        except Exception:
+            pass
 
-    if st.session_state.get("is_sandbox_mode", False):
         global get_expenses_df, get_user_investments_df, get_budget_status, insert_expenses, insert_investment, update_investments_df, get_debts, get_portfolio_snapshots_deltas
         get_expenses_df = sandbox_get_expenses_df
         get_user_investments_df = sandbox_get_user_investments_df
@@ -4476,20 +4482,50 @@ else:
             
             with st.form("update_profile_form"):
                 st.markdown("#### 1. Basic Information")
+                today = datetime.date.today()
+                user_dob_str = str(current_user.get("dob") or "").strip()
+                is_dob_set = False
+                if user_dob_str:
+                    try:
+                        parsed_dob = datetime.datetime.strptime(user_dob_str, "%Y-%m-%d").date()
+                        is_dob_set = True
+                    except Exception:
+                        parsed_dob = datetime.date(1990, 1, 1)
+                else:
+                    cur_u_age = current_user.get("age", 35)
+                    try:
+                        cur_u_age = int(cur_u_age)
+                    except Exception:
+                        cur_u_age = 35
+                    parsed_dob = datetime.date(max(1900, today.year - cur_u_age), 1, 1)
+
+                calc_age = max(0, today.year - parsed_dob.year - ((today.month, today.day) < (parsed_dob.month, parsed_dob.day)))
+
                 c1, c2, c3, c4 = st.columns(4)
                 with c1:
                     new_name = st.text_input("Full Name", value=current_user.get("full_name", ""))
                 with c2:
-                    new_age = st.number_input("Age", min_value=18, max_value=100, value=current_user.get("age", 35), step=1)
+                    new_dob = st.date_input(
+                        "Date of Birth",
+                        value=parsed_dob,
+                        min_value=datetime.date(1900, 1, 1),
+                        max_value=today,
+                        disabled=is_dob_set,
+                        help="Date of Birth cannot be updated once set." if is_dob_set else "Set your Date of Birth. Once saved, it cannot be modified."
+                    )
                 with c3:
+                    st.number_input(
+                        "Age",
+                        min_value=0,
+                        max_value=120,
+                        value=calc_age,
+                        step=1,
+                        disabled=True,
+                        help="Age is auto-calculated from Date of Birth and cannot be manually modified."
+                    )
+                with c4:
                     cur_sex = current_user.get("sex", "Not Specified")
                     new_sex = st.selectbox("Sex", ["Not Specified", "Male", "Female", "Other"], index=["Not Specified", "Male", "Female", "Other"].index(cur_sex) if cur_sex in ["Not Specified", "Male", "Female", "Other"] else 0)
-                with c4:
-                    try:
-                        parsed_dob = datetime.datetime.strptime(current_user.get("dob", ""), "%Y-%m-%d").date()
-                    except:
-                        parsed_dob = datetime.date(1990, 1, 1)
-                    new_dob = st.date_input("Date of Birth", value=parsed_dob, min_value=datetime.date(1900, 1, 1), max_value=datetime.date.today())
                 
                 st.markdown("#### 2. Location Details")
                 new_address = st.text_area("Address", value=current_user.get("address", ""))
@@ -4531,11 +4567,18 @@ else:
                 new_sa = st.text_input("Security Answer", type="password", help="Leave blank if you do not want to change your existing security answer.")
 
                 if st.form_submit_button("💾 Save Profile", type="primary", use_container_width=True):
+                    if is_dob_set:
+                        final_dob = user_dob_str
+                        final_age = calc_age
+                    else:
+                        final_dob = new_dob.isoformat()
+                        final_age = max(0, today.year - new_dob.year - ((today.month, today.day) < (new_dob.month, new_dob.day)))
+
                     profile_data = {
                         "full_name": new_name,
-                        "age": new_age,
+                        "age": final_age,
                         "sex": new_sex,
-                        "dob": new_dob.isoformat(),
+                        "dob": final_dob,
                         "address": new_address,
                         "city": new_city,
                         "state": new_state,

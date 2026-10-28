@@ -1,5 +1,12 @@
 # Release Notes
 
+## v1.15.1 (2026-10-28)
+### Added — Auto-Calculate Age from Date of Birth & Lock DOB
+- **Auto-Calculated Age:** In the **👤 User Profile Settings** tab, Age is now automatically calculated from the user's Date of Birth and rendered as a read-only, disabled field so it cannot be manually modified or go out of sync.
+- **Date of Birth Locking:** Once a user's Date of Birth is set in their profile, the Date of Birth input field is locked (`disabled=True`) with explanatory helper text.
+- **Backend & Database Safeguards:** `database.update_user_profile` safeguards the existing non-empty `dob` field, preventing it from being overwritten. On session start, `current_user['age']` is automatically synchronized from `dob` for consistency across all financial planners and modules.
+- **Unit Tests:** Added `test_auto_calculate_age_and_lock_dob` in `test_app.py` verifying first-time DOB entry, auto-calculated age accuracy, and prevention of DOB modification once established.
+
 ## v1.15.0 (2026-10-27)
 ### Added — Risk-Budgeted Core-Satellite Algorithmic Wealth Advisor
 - Integrated the quantitative **Risk-Budgeted Core-Satellite Algorithmic Model** into the **Investments → Advisor** sub-tab (`algo_advisor.py`).
