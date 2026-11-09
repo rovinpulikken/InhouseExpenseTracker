@@ -1031,6 +1031,12 @@ def test_monthly_view_and_transaction_type_handling():
     assert updated_rec["amount"] == 500.0
     assert updated_rec["description"] == "Electricity Refund"
 
+    # 7. Test monthly_view module imports and configuration
+    import monthly_view
+    assert monthly_view.INCOME_CATEGORIES
+    assert "Salary" in monthly_view.INCOME_CATEGORIES
+    assert monthly_view.ALL_TRANSACTION_CATEGORIES
+
     print("✅ Monthly view transaction type handling & net savings test passed.")
 
 

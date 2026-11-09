@@ -542,6 +542,7 @@ def _render_transactions_table_and_editor(
         qa_col1, qa_col2, qa_col3, qa_col4 = st.columns([1.2, 1.2, 2.5, 1.5])
         
         # default date inside selected month
+        today = datetime.date.today()
         default_day = min(today.day, 28) if sel_month == today.strftime("%Y-%m") else 1
         try:
             default_entry_date = datetime.date(int(sel_month.split("-")[0]), int(sel_month.split("-")[1]), default_day)

@@ -24,7 +24,7 @@
   - `Net Savings`: Cash Flow Bridge waterfall chart (Plotly) comparing Income vs Top 5 Expense Categories vs Net Savings, side-by-side cash flow breakdown table, 50/30/20 benchmark evaluation, and dedicated Net Savings summary CSV export.
 - **Inline Editing & Batch Operations:** Interactive `st.data_editor` allowing inline editing of Date, Type (`Expense` / `Income`), Category (including all expense and income categories), Description, Amount, and Visibility. Includes single-click `💾 Save Changes`, dynamic row additions, and `Delete?` checkbox batch removal.
 - **Direct Exporting:** One-click `📥 Export to CSV` button for any active view filter with standardized filenames (`Transactions_{YYYY-MM}_{Filter}.csv`).
-- **Quick-Add Entry:** Dedicated expander to log new Income or Expense entries directly into the selected month.
+- **Quick-Add Entry & NameError Fix:** Dedicated expander to log new Income or Expense entries directly into the selected month. Resolved a `NameError` where `today` was referenced before local initialization in `monthly_view._render_transactions_table_and_editor`.
 - **Unit Tests:** Added `test_monthly_view_and_transaction_type_handling` to `test_app.py` verifying `transaction_type="All"` filtering, type reclassification, and net savings calculations. All test suite assertions pass cleanly.
 
 ## v1.16.1 (2026-11-09)
