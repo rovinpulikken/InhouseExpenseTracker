@@ -1,5 +1,16 @@
 # Release Notes
 
+## v1.17.1 (2026-11-09)
+### Fixed — `KeyError: "Month_Year"` Crash & Accidental Sandbox Override for Users with DOB Set
+- **Root Cause:** 
+  1. In `app.py` (line 464), an `if st.session_state.get("is_sandbox_mode", False):` check had been accidentally replaced by `if current_user.get("dob"):`, causing any logged-in user with a Date of Birth configured in their profile to have `get_expenses_df`, `get_user_investments_df`, `get_budget_status`, and write functions silently overwritten with `sandbox_data` mocks!
+  2. Furthermore, `sandbox_get_expenses_df` in `sandbox_data.py` did not populate the derived `Month_Year`, `Month_Key`, `Year`, `financial_year`, `quarter`, `half_year`, or `transaction_type` columns. When `app.py` (line 601) sorted `df_raw_for_months` by `expense_date` and indexed `df_sorted_m["Month_Year"]`, pandas raised `KeyError: 'Month_Year'`.
+- **Fix:**
+  - Restored the `if st.session_state.get("is_sandbox_mode", False):` guard in `app.py` so real users with a Date of Birth set always query and persist against the real database instead of sandbox mock data.
+  - Updated `sandbox_get_expenses_df` in `sandbox_data.py` to match the full `database.get_expenses_df` signature and schema (`Month_Year`, `Month_Key`, `Year`, `financial_year`, `quarter`, `half_year`, `transaction_type`).
+  - Added defensive fallback derivation of `Month_Year` from `expense_date` in `app.py` whenever `"Month_Year" not in df.columns` before indexing.
+- **Unit Tests:** Expanded `test_monthly_view_and_transaction_type_handling` in `test_app.py` to verify `sandbox_get_expenses_df` schema completeness and ensure `app.py` strictly gates sandbox overrides behind `is_sandbox_mode`.
+
 ## v1.17.0 (2026-11-09)
 ### Fixed — Household Scoping Bug in Manage Records & Expense Analysis
 - **Root Cause:** In **Transactions → Manage Records** (`tx_tab_manage`), the duplicate detector, and the **Insights & Analytics** itemized expense list, `get_expenses_df()` was invoked without passing `family_id`. As a result, the query defaulted to `family_id=1`, causing users in non-primary households to either see records belonging to household 1 or fail to see their own records.

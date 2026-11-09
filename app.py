@@ -469,6 +469,7 @@ else:
         except Exception:
             pass
 
+    if st.session_state.get("is_sandbox_mode", False):
         global get_expenses_df, get_user_investments_df, get_budget_status, insert_expenses, insert_investment, update_investments_df, get_debts, get_portfolio_snapshots_deltas
         get_expenses_df = sandbox_get_expenses_df
         get_user_investments_df = sandbox_get_user_investments_df
@@ -598,7 +599,9 @@ else:
     df_raw_for_months = get_expenses_df(fy=selected_fy, username=current_user["username"], view_mode=view_mode, family_id=user_family_id)
     if not df_raw_for_months.empty and "expense_date" in df_raw_for_months.columns:
         df_sorted_m = df_raw_for_months.sort_values("expense_date", ascending=False)
-        avail_months = df_sorted_m["Month_Year"].drop_duplicates().tolist()
+        if "Month_Year" not in df_sorted_m.columns:
+            df_sorted_m["Month_Year"] = pd.to_datetime(df_sorted_m["expense_date"], errors="coerce").dt.strftime("%b %Y")
+        avail_months = df_sorted_m["Month_Year"].dropna().drop_duplicates().tolist()
     else:
         avail_months = []
     
@@ -1556,8 +1559,10 @@ else:
                 with st.expander("⚠️ Danger Zone — Bulk Delete", expanded=False):
                     st.warning("**This cannot be undone.** This permanently removes all entries for a selected month.")
                     if not expenses_df_all.empty and "expense_date" in expenses_df_all.columns:
+                        if "Month_Year" not in expenses_df_all.columns:
+                            expenses_df_all["Month_Year"] = pd.to_datetime(expenses_df_all["expense_date"], errors="coerce").dt.strftime("%b %Y")
                         df_m_del = expenses_df_all.sort_values("expense_date", ascending=False)
-                        available_m = df_m_del["Month_Year"].drop_duplicates().tolist()
+                        available_m = df_m_del["Month_Year"].dropna().drop_duplicates().tolist()
                     else:
                         available_m = []
                     if available_m:
@@ -1763,8 +1768,10 @@ else:
             with fc2:
                 if granularity == "Monthly":
                     if not all_df.empty and "expense_date" in all_df.columns:
+                        if "Month_Year" not in all_df.columns:
+                            all_df["Month_Year"] = pd.to_datetime(all_df["expense_date"], errors="coerce").dt.strftime("%b %Y")
                         df_ia_sorted = all_df.sort_values("expense_date", ascending=False)
-                        months_available = df_ia_sorted["Month_Year"].drop_duplicates().tolist()
+                        months_available = df_ia_sorted["Month_Year"].dropna().drop_duplicates().tolist()
                         sel_month = st.selectbox("Month", ["All"] + months_available, format_func=format_month_label, key="ia_month")
                         filtered_df  = all_df if sel_month == "All" else all_df[all_df["Month_Year"] == sel_month]
                         period_title = f"All Months — {selected_fy}" if sel_month == "All" else format_month_label(sel_month)

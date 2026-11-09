@@ -1037,6 +1037,20 @@ def test_monthly_view_and_transaction_type_handling():
     assert "Salary" in monthly_view.INCOME_CATEGORIES
     assert monthly_view.ALL_TRANSACTION_CATEGORIES
 
+    # 8. Test sandbox_get_expenses_df schema completeness (Month_Year, Month_Key, financial_year, etc.)
+    from sandbox_data import sandbox_get_expenses_df
+    sb_df = sandbox_get_expenses_df(fy="All FYs", username="admin", view_mode="Family", family_id=1)
+    assert not sb_df.empty
+    for required_col in ["expense_date", "Month_Year", "Month_Key", "Year", "financial_year", "quarter", "half_year", "transaction_type"]:
+        assert required_col in sb_df.columns, f"Missing {required_col} in sandbox_get_expenses_df"
+    avail_months_sb = sb_df.sort_values("expense_date", ascending=False)["Month_Year"].drop_duplicates().tolist()
+    assert len(avail_months_sb) > 0
+
+    # Verify app.py properly gates sandbox mode behind st.session_state.get("is_sandbox_mode", False)
+    with open(os.path.join(os.path.dirname(__file__), "app.py"), "r") as f_app:
+        app_src = f_app.read()
+    assert 'if st.session_state.get("is_sandbox_mode", False):\n        global get_expenses_df' in app_src
+
     print("✅ Monthly view transaction type handling & net savings test passed.")
 
 
