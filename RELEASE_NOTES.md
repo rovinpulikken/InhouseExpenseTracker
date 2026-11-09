@@ -24,6 +24,11 @@
   - `Net Savings`: Cash Flow Bridge waterfall chart (Plotly) comparing Income vs Top 5 Expense Categories vs Net Savings, side-by-side cash flow breakdown table, 50/30/20 benchmark evaluation, and dedicated Net Savings summary CSV export.
 - **Inline Editing & Batch Operations:** Interactive `st.data_editor` allowing inline editing of Date, Type (`Expense` / `Income`), Category (including all expense and income categories), Description, Amount, and Visibility. Includes single-click `💾 Save Changes`, dynamic row additions, and `Delete?` checkbox batch removal.
 - **Direct Exporting:** One-click `📥 Export to CSV` button for any active view filter with standardized filenames (`Transactions_{YYYY-MM}_{Filter}.csv`).
+- **All Historical Months Discovery & Cross-FY Navigation:** 
+  - In `monthly_view.py`, queried transactions across `fy="All FYs"` by default so that all earlier months (such as January, February, March 2026, May 2025, and April 2024) are immediately visible and navigable in the Month selector without being hidden behind the current Financial Year filter.
+  - Added a dedicated "Filter Months by FY" selector in the Monthly View header and displayed the matching Indian Financial Year tag (`sel_month_fy`) alongside each month label (e.g. `March 2026 (FY 2025-26)`).
+  - Fixed alphabetical month string sorting in `app.py` (sidebar month filter, Danger Zone, and Insights & Analytics) to strict chronological sorting descending by `expense_date`.
+  - Added an in-tab FY scope switcher in **Manage Existing Records** (`tx_tab_manage`) to allow switching between the selected FY and all historical records directly.
 - **Quick-Add Entry & NameError Fix:** Dedicated expander to log new Income or Expense entries directly into the selected month. Resolved a `NameError` where `today` was referenced before local initialization in `monthly_view._render_transactions_table_and_editor`.
 - **Unit Tests:** Added `test_monthly_view_and_transaction_type_handling` to `test_app.py` verifying `transaction_type="All"` filtering, type reclassification, and net savings calculations. All test suite assertions pass cleanly.
 

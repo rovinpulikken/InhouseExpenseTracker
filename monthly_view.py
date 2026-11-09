@@ -55,18 +55,39 @@ def render_monthly_view(
     """
     Renders the Monthly View tab under Transactions.
     """
-    st.markdown("### 📅 Monthly Transactions & Net Savings Ledger")
-    st.caption("Inspect, inline-edit, and export all monthly cash flows with real-time income, expense, and savings summaries.")
+    col_hdr1, col_hdr2 = st.columns([3, 1.6])
+    with col_hdr1:
+        st.markdown("### 📅 Monthly Transactions & Net Savings Ledger")
+        st.caption("Inspect, inline-edit, and export all monthly cash flows with real-time income, expense, and savings summaries.")
 
-    # 1. Fetch all transactions (both Expense & Income) for user/family scope
-    # We fetch all FYs or selected FY
+    # 1. Fetch all transactions (both Expense & Income) for user/family scope across ALL financial years
     all_tx_df = get_expenses_df(
-        fy="All FYs" if selected_fy == "All FYs" else selected_fy,
+        fy="All FYs",
         username=current_user["username"],
         view_mode=view_mode,
         family_id=user_family_id,
         transaction_type="All",
     )
+
+    with col_hdr2:
+        # Allow user to scope months by FY or view All Historical Months
+        fy_list = []
+        if not all_tx_df.empty and "financial_year" in all_tx_df.columns:
+            fy_list = sorted([str(f) for f in all_tx_df["financial_year"].dropna().unique() if str(f).strip()], reverse=True)
+        fy_options = ["🌐 All Historical Months"] + fy_list
+        selected_fy_scope = st.selectbox(
+            "Filter Months by FY",
+            options=fy_options,
+            index=0,
+            key="mv_fy_scope_select",
+            help="Select a specific Financial Year or keep 'All Historical Months' to access all earlier records."
+        )
+
+    # Filter tx pool if a specific FY is selected
+    if selected_fy_scope != "🌐 All Historical Months":
+        active_tx_df = all_tx_df[all_tx_df["financial_year"] == selected_fy_scope].copy() if not all_tx_df.empty else pd.DataFrame()
+    else:
+        active_tx_df = all_tx_df
 
     # Also fetch recurring income sources
     income_sources_df = get_income_sources_df(
@@ -85,13 +106,13 @@ def render_monthly_view(
     current_month_key = today.strftime("%Y-%m")
     
     month_keys_set = {current_month_key}
-    if not all_tx_df.empty and "expense_date" in all_tx_df.columns:
-        dates = pd.to_datetime(all_tx_df["expense_date"], errors="coerce").dropna()
+    if not active_tx_df.empty and "expense_date" in active_tx_df.columns:
+        dates = pd.to_datetime(active_tx_df["expense_date"], errors="coerce").dropna()
         for mk in dates.dt.strftime("%Y-%m").unique():
             if mk and isinstance(mk, str):
                 month_keys_set.add(mk)
 
-    # Sort months descending (most recent first)
+    # Sort months descending (chronologically newest to oldest)
     sorted_month_keys = sorted(list(month_keys_set), reverse=True)
 
     # Month selection UI controls
@@ -113,7 +134,8 @@ def render_monthly_view(
         def _label_fn(mk: str) -> str:
             try:
                 dt = datetime.datetime.strptime(mk, "%Y-%m")
-                return dt.strftime("%B %Y") + f"  ({mk})"
+                fy_tag = get_indian_fy(dt.date())
+                return f"{dt.strftime('%B %Y')}  ({fy_tag})"
             except Exception:
                 return mk
 
@@ -139,8 +161,10 @@ def render_monthly_view(
     try:
         sel_month_dt = datetime.datetime.strptime(sel_month, "%Y-%m")
         sel_month_title = sel_month_dt.strftime("%B %Y")
+        sel_month_fy = get_indian_fy(sel_month_dt.date())
     except Exception:
         sel_month_title = sel_month
+        sel_month_fy = ""
 
     # 3. Filter transactions for the selected month
     if not all_tx_df.empty and "expense_date" in all_tx_df.columns:
@@ -202,6 +226,7 @@ def render_monthly_view(
             <div style="font-size: 1.15rem; font-weight: 700; color: #f8fafc; display: flex; align-items: center; gap: 8px;">
                 <span>📊 Financial Summary for</span>
                 <span style="color: #38bdf8;">{sel_month_title}</span>
+                <span style="font-size: 0.8rem; background: #334155; color: #38bdf8; padding: 2px 8px; border-radius: 6px; font-weight: 600;">{sel_month_fy}</span>
             </div>
             <div style="font-size: 0.85rem; color: #94a3b8; background: #1e293b; padding: 4px 10px; border-radius: 8px; border: 1px solid #475569;">
                 {total_tx_count} record(s) &bull; Income {income_source_note}

@@ -596,7 +596,11 @@ else:
 
     # Sidebar Monthly Dropdown List Filter
     df_raw_for_months = get_expenses_df(fy=selected_fy, username=current_user["username"], view_mode=view_mode, family_id=user_family_id)
-    avail_months = sorted(df_raw_for_months["Month_Year"].unique().tolist(), reverse=True) if not df_raw_for_months.empty and "Month_Year" in df_raw_for_months.columns else []
+    if not df_raw_for_months.empty and "expense_date" in df_raw_for_months.columns:
+        df_sorted_m = df_raw_for_months.sort_values("expense_date", ascending=False)
+        avail_months = df_sorted_m["Month_Year"].drop_duplicates().tolist()
+    else:
+        avail_months = []
     
     selected_month_filter = st.sidebar.selectbox(
         "🗓️ Select Month Filter",
@@ -604,6 +608,8 @@ else:
         format_func=format_month_label,
         help="Filter dashboard metrics, trajectory charts, and itemized lists by a specific month."
     )
+    if selected_fy != "All FYs":
+        st.sidebar.caption(f"🗓️ Scoped to **{selected_fy}**. Select **'All FYs'** above to view earlier years.")
 
     def render_grouped_portfolio_summary(holdings_df):
         # --- GROUPED PORTFOLIO SUMMARY ---
@@ -1417,13 +1423,24 @@ else:
         # TAB 4 ─ Manage Records  (Edit / Delete / Duplicates — consolidated)
         # ────────────────────────────────────────────────────────────────────────
         with tx_tab_manage:
-            st.markdown("#### 🗃️ Manage Existing Records")
+            col_mng_hdr1, col_mng_hdr2 = st.columns([3, 1.5])
+            with col_mng_hdr1:
+                st.markdown("#### 🗃️ Manage Existing Records")
+            with col_mng_hdr2:
+                mng_fy_opts = ["All FYs"] + all_fys
+                mng_fy_target = st.selectbox(
+                    "Scope",
+                    options=mng_fy_opts,
+                    index=mng_fy_opts.index(selected_fy) if selected_fy in mng_fy_opts else 0,
+                    key="mng_records_fy_filter",
+                    help="Switch between current FY and all historical records."
+                )
 
-            expenses_df_all = get_expenses_df(fy=selected_fy, username=current_user["username"],
+            expenses_df_all = get_expenses_df(fy=mng_fy_target, username=current_user["username"],
                                                view_mode=view_mode, family_id=user_family_id)
 
             if expenses_df_all.empty:
-                st.info(f"No expense records found for **{selected_fy}**. Add some entries first!")
+                st.info(f"No expense records found for **{mng_fy_target}**. Add some entries first!")
             else:
                 # ── Section 1: Inline table editor ──────────────────────────────
                 with st.expander("📝 Edit All Records in Table (Inline Grid)", expanded=True):
@@ -1538,8 +1555,12 @@ else:
                 # ── Section 4: Danger Zone ───────────────────────────────────────
                 with st.expander("⚠️ Danger Zone — Bulk Delete", expanded=False):
                     st.warning("**This cannot be undone.** This permanently removes all entries for a selected month.")
-                    if "Month_Year" in expenses_df_all.columns:
-                        available_m    = sorted(expenses_df_all["Month_Year"].unique().tolist(), reverse=True)
+                    if not expenses_df_all.empty and "expense_date" in expenses_df_all.columns:
+                        df_m_del = expenses_df_all.sort_values("expense_date", ascending=False)
+                        available_m = df_m_del["Month_Year"].drop_duplicates().tolist()
+                    else:
+                        available_m = []
+                    if available_m:
                         del_month_target = st.selectbox("Select Month to Wipe", available_m,
                                                          format_func=format_month_label, key="bulk_del_m")
                         month_records  = expenses_df_all[expenses_df_all["Month_Year"] == del_month_target]
@@ -1741,8 +1762,9 @@ else:
 
             with fc2:
                 if granularity == "Monthly":
-                    if not all_df.empty and "Month_Year" in all_df.columns:
-                        months_available = sorted(all_df["Month_Year"].unique().tolist(), reverse=True)
+                    if not all_df.empty and "expense_date" in all_df.columns:
+                        df_ia_sorted = all_df.sort_values("expense_date", ascending=False)
+                        months_available = df_ia_sorted["Month_Year"].drop_duplicates().tolist()
                         sel_month = st.selectbox("Month", ["All"] + months_available, format_func=format_month_label, key="ia_month")
                         filtered_df  = all_df if sel_month == "All" else all_df[all_df["Month_Year"] == sel_month]
                         period_title = f"All Months — {selected_fy}" if sel_month == "All" else format_month_label(sel_month)
