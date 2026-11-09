@@ -972,7 +972,66 @@ def test_turso_error_fallback_resilience():
         database._DB_INITIALIZED = False
         init_db(force=True)
         
-    print("✅ Turso LibsqlError graceful fallback resilience test passed.")
+def test_monthly_view_and_transaction_type_handling():
+    init_db()
+    # 1. Insert both Expense and Income records
+    test_records = [
+        {"date": "2026-10-01", "category": "Salary", "description": "October Monthly Salary", "amount": 80000.0, "visibility": "Family", "transaction_type": "Income"},
+        {"date": "2026-10-05", "category": "Groceries & Provisions", "description": "Supermarket essentials", "amount": 12000.0, "visibility": "Family", "transaction_type": "Expense"},
+        {"date": "2026-10-12", "category": "Utilities (Electricity/Water/Gas)", "description": "Electricity Bill", "amount": 3000.0, "visibility": "Family", "transaction_type": "Expense"},
+    ]
+    inserted = insert_expenses(test_records, source="Monthly Test", username="admin", visibility="Family", family_id=1)
+    assert inserted == 3
+
+    # 2. Test get_expenses_df with transaction_type="All"
+    df_all = get_expenses_df(username="admin", family_id=1, view_mode="Family", transaction_type="All")
+    assert not df_all.empty
+    types_found = set(df_all["transaction_type"].unique())
+    assert "Income" in types_found and "Expense" in types_found
+    assert "Month_Key" in df_all.columns
+
+    # 3. Test get_expenses_df with transaction_type="Income"
+    df_income = get_expenses_df(username="admin", family_id=1, view_mode="Family", transaction_type="Income")
+    assert not df_income.empty
+    assert (df_income["transaction_type"] == "Income").all()
+    oct_income_sum = df_income[df_income["expense_date"].dt.strftime("%Y-%m") == "2026-10"]["amount"].sum()
+    assert oct_income_sum == 80000.0
+
+    # 4. Test get_expenses_df with transaction_type="Expense"
+    df_expense = get_expenses_df(username="admin", family_id=1, view_mode="Family", transaction_type="Expense")
+    assert not df_expense.empty
+    assert (df_expense["transaction_type"] == "Expense").all()
+    oct_exp_sum = df_expense[df_expense["expense_date"].dt.strftime("%Y-%m") == "2026-10"]["amount"].sum()
+    assert oct_exp_sum == 15000.0
+
+    # 5. Test Net Savings calculation
+    net_savings = oct_income_sum - oct_exp_sum
+    assert net_savings == 65000.0
+    savings_rate = (net_savings / oct_income_sum) * 100.0
+    assert round(savings_rate, 2) == 81.25
+
+    # 6. Test inline editing of transaction_type via update_expenses_df
+    target_row = df_expense[df_expense["description"] == "Electricity Bill"].iloc[0]
+    update_payload = pd.DataFrame([{
+        "id": target_row["id"],
+        "expense_date": "2026-10-12",
+        "category": "Refund",
+        "description": "Electricity Refund",
+        "amount": 500.0,
+        "visibility": "Family",
+        "transaction_type": "Income"
+    }])
+    upd_cnt = update_expenses_df(update_payload)
+    assert upd_cnt == 1
+
+    # Verify that the record is now an Income transaction
+    df_recheck = get_expenses_df(username="admin", family_id=1, view_mode="Family", transaction_type="All")
+    updated_rec = df_recheck[df_recheck["id"] == target_row["id"]].iloc[0]
+    assert updated_rec["transaction_type"] == "Income"
+    assert updated_rec["amount"] == 500.0
+    assert updated_rec["description"] == "Electricity Refund"
+
+    print("✅ Monthly view transaction type handling & net savings test passed.")
 
 
 if __name__ == "__main__":
@@ -1002,6 +1061,7 @@ if __name__ == "__main__":
         test_interactive_db_log_column_safeguards()
         test_financial_health_report_and_customization()
         test_turso_error_fallback_resilience()
+        test_monthly_view_and_transaction_type_handling()
         print("🎉 All test suite assertions passed successfully!")
     finally:
         if os.path.exists(database.DB_PATH):

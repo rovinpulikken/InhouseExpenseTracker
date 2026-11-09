@@ -975,8 +975,9 @@ else:
         </div>
         """, unsafe_allow_html=True)
 
-        # ── 4-tab layout ────────────────────────────────────────────────────────
-        tx_tab_add, tx_tab_grid, tx_tab_import, tx_tab_manage = st.tabs([
+        # ── 5-tab layout ────────────────────────────────────────────────────────
+        tx_tab_monthly, tx_tab_add, tx_tab_grid, tx_tab_import, tx_tab_manage = st.tabs([
+            "📅 Monthly View",
             "➕ Add Entry",
             "📋 Bulk Entry Grid",
             "📤 Import Statement",
@@ -984,7 +985,19 @@ else:
         ])
 
         # ────────────────────────────────────────────────────────────────────────
-        # TAB 1 ─ Add Entry  (most common action, put first)
+        # TAB 1 ─ Monthly View
+        # ────────────────────────────────────────────────────────────────────────
+        with tx_tab_monthly:
+            from monthly_view import render_monthly_view
+            render_monthly_view(
+                current_user=current_user,
+                selected_fy=selected_fy,
+                view_mode=view_mode,
+                user_family_id=user_family_id,
+            )
+
+        # ────────────────────────────────────────────────────────────────────────
+        # TAB 2 ─ Add Entry
         # ────────────────────────────────────────────────────────────────────────
         with tx_tab_add:
             st.markdown("#### ➕ Quick Single-Expense Entry")
@@ -1407,7 +1420,7 @@ else:
             st.markdown("#### 🗃️ Manage Existing Records")
 
             expenses_df_all = get_expenses_df(fy=selected_fy, username=current_user["username"],
-                                               view_mode=view_mode)
+                                               view_mode=view_mode, family_id=user_family_id)
 
             if expenses_df_all.empty:
                 st.info(f"No expense records found for **{selected_fy}**. Add some entries first!")
@@ -1487,7 +1500,7 @@ else:
                 # ── Section 3: Duplicate detector ───────────────────────────────
                 with st.expander("🕵️ Detect & Remove Duplicates"):
                     st.write("Scans **all Financial Years** for entries with the same Date + Amount.")
-                    all_time_df = get_expenses_df(fy="All FYs", username=current_user["username"], view_mode=view_mode)
+                    all_time_df = get_expenses_df(fy="All FYs", username=current_user["username"], view_mode=view_mode, family_id=user_family_id)
                     if not all_time_df.empty:
                         dup_counts = all_time_df.groupby(["expense_date", "amount"]).size().reset_index(name="count")
                         dup_groups = dup_counts[dup_counts["count"] > 1]
@@ -1722,7 +1735,7 @@ else:
             with fc3:
                 search_term = st.text_input("🔍 Search description", placeholder="e.g. Swiggy", key="ia_search")
 
-            all_df = get_expenses_df(fy=selected_fy, username=current_user["username"], view_mode=view_mode)
+            all_df = get_expenses_df(fy=selected_fy, username=current_user["username"], view_mode=view_mode, family_id=user_family_id)
             filtered_df  = pd.DataFrame()
             period_title = ""
 

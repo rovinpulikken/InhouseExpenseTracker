@@ -1130,11 +1130,15 @@ def get_expenses_df(
     username: Optional[str] = None,
     view_mode: str = "Family",
     family_id: Optional[int] = 1,
-    transaction_type: str = "Expense"
+    transaction_type: Optional[str] = "Expense"
 ) -> pd.DataFrame:
     conn = get_connection()
-    query = "SELECT * FROM expenses WHERE transaction_type = ?"
-    params = [transaction_type]
+    if transaction_type and transaction_type != "All":
+        query = "SELECT * FROM expenses WHERE transaction_type = ?"
+        params = [transaction_type]
+    else:
+        query = "SELECT * FROM expenses WHERE 1=1"
+        params = []
     
     if (username == "admin" or view_mode == "SuperAdmin") and (family_id is None or family_id == 0):
         # Super Admin viewing entire database across all families
@@ -1158,6 +1162,7 @@ def get_expenses_df(
     if not df.empty and "expense_date" in df.columns:
         df["expense_date"] = pd.to_datetime(df["expense_date"])
         df["Month_Year"] = df["expense_date"].dt.strftime("%b %Y")
+        df["Month_Key"] = df["expense_date"].dt.strftime("%Y-%m")
         df["Year"] = df["expense_date"].dt.year
     return df
 
@@ -1592,6 +1597,14 @@ def update_expenses_df(updated_df: pd.DataFrame) -> int:
         except (ValueError, TypeError):
             continue
             
+        t_type = row.get("transaction_type", "Expense")
+        if pd.isna(t_type) or not str(t_type).strip():
+            t_type = "Expense"
+        else:
+            t_type = str(t_type).strip().title()
+            if t_type not in ["Expense", "Income"]:
+                t_type = "Expense"
+
         cursor.execute("""
             UPDATE expenses
             SET expense_date = ?,
@@ -1601,9 +1614,10 @@ def update_expenses_df(updated_df: pd.DataFrame) -> int:
                 category = ?,
                 description = ?,
                 amount = ?,
-                visibility = ?
+                visibility = ?,
+                transaction_type = ?
             WHERE id = ?
-        """, (dt.isoformat(), fy, q_code, h_code, cat, desc, amt, vis, int(exp_id)))
+        """, (dt.isoformat(), fy, q_code, h_code, cat, desc, amt, vis, t_type, int(exp_id)))
         updated_count += 1
         
     conn.commit()

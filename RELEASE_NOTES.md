@@ -1,5 +1,32 @@
 # Release Notes
 
+## v1.17.0 (2026-11-09)
+### Fixed — Household Scoping Bug in Manage Records & Expense Analysis
+- **Root Cause:** In **Transactions → Manage Records** (`tx_tab_manage`), the duplicate detector, and the **Insights & Analytics** itemized expense list, `get_expenses_df()` was invoked without passing `family_id`. As a result, the query defaulted to `family_id=1`, causing users in non-primary households to either see records belonging to household 1 or fail to see their own records.
+- **Fix:** 
+  - Passed `family_id=user_family_id` to all `get_expenses_df` calls in `app.py`.
+  - Updated `database.get_expenses_df` to properly handle `transaction_type="All"` or `None` so queries fetch all transaction types (both Income and Expense) without returning empty result sets.
+  - Enhanced `database.get_expenses_df` with `Month_Key` (`YYYY-MM`) for reliable chronological sorting across month boundaries.
+  - Updated `database.update_expenses_df` to include `transaction_type` in the SQL `UPDATE` statement, allowing inline editors to reclassify transactions between Expense and Income.
+
+### Added — Monthly Transactions & Net Savings View (`📅 Monthly View` Tab)
+- **New Tab Under Transactions:** Placed a prominent `📅 Monthly View` as the first tab under **💸 Transactions** (`tx_tab_monthly`) in `app.py` via `monthly_view.py`.
+- **Top Financial Summary Cards:** When any month is selected, a top-level summary strip displays:
+  - 💵 **Total Income**: Aggregated from logged income transactions or configured recurring income sources.
+  - 💸 **Total Expenses**: Sum of all categorized expense outflows for the month.
+  - 💰 **Net Savings**: `Income - Expenses` with dynamic green surplus / red deficit indicators.
+  - 📈 **Savings Rate (%)**: Percentage of monthly income retained, accompanied by contextual savings benchmark feedback.
+  - 🧾 **Transaction Count**: Total records for the month with income source breakdown attribution.
+- **Multi-View Filter:**
+  - `All Transactions`: Complete monthly ledger showing both inflows and outflows.
+  - `Income`: Inflow transactions for the selected month.
+  - `Expenses`: Outflow transactions for the selected month.
+  - `Net Savings`: Cash Flow Bridge waterfall chart (Plotly) comparing Income vs Top 5 Expense Categories vs Net Savings, side-by-side cash flow breakdown table, 50/30/20 benchmark evaluation, and dedicated Net Savings summary CSV export.
+- **Inline Editing & Batch Operations:** Interactive `st.data_editor` allowing inline editing of Date, Type (`Expense` / `Income`), Category (including all expense and income categories), Description, Amount, and Visibility. Includes single-click `💾 Save Changes`, dynamic row additions, and `Delete?` checkbox batch removal.
+- **Direct Exporting:** One-click `📥 Export to CSV` button for any active view filter with standardized filenames (`Transactions_{YYYY-MM}_{Filter}.csv`).
+- **Quick-Add Entry:** Dedicated expander to log new Income or Expense entries directly into the selected month.
+- **Unit Tests:** Added `test_monthly_view_and_transaction_type_handling` to `test_app.py` verifying `transaction_type="All"` filtering, type reclassification, and net savings calculations. All test suite assertions pass cleanly.
+
 ## v1.16.1 (2026-11-09)
 ### Fixed — LibsqlError Crash on Turso Cloud Database Server Errors / Cold Starts
 - **Root Cause:** When running on Streamlit Cloud with Turso configured via `libsql_client`, transient cloud server issues (such as `HTTP 500`, `502`, `503 Service Unavailable` on database cold boot, or `429` rate limits) caused `cursor.execute()` during `init_db()` to raise `LibsqlError: Server returned HTTP status {resp.status}, SERVER_ERROR`. Because `init_db()` ran unhandled at application startup and fired dozens of sequential HTTP queries on every single Streamlit script rerun, any remote glitch crashed the entire application with a red error screen.
