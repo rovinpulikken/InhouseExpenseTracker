@@ -1,5 +1,14 @@
 # Release Notes
 
+## v1.16.1 (2026-11-09)
+### Fixed — LibsqlError Crash on Turso Cloud Database Server Errors / Cold Starts
+- **Root Cause:** When running on Streamlit Cloud with Turso configured via `libsql_client`, transient cloud server issues (such as `HTTP 500`, `502`, `503 Service Unavailable` on database cold boot, or `429` rate limits) caused `cursor.execute()` during `init_db()` to raise `LibsqlError: Server returned HTTP status {resp.status}, SERVER_ERROR`. Because `init_db()` ran unhandled at application startup and fired dozens of sequential HTTP queries on every single Streamlit script rerun, any remote glitch crashed the entire application with a red error screen.
+- **Fix:**
+  - **Transient Retry Engine:** Added automatic retry logic with exponential backoff (up to 3 attempts) in `LibSQLCursorWrapper.execute` to gracefully absorb momentary 5xx/429 responses and cold-start wake-up lag.
+  - **Graceful Fallback to Local SQLite:** Wrapped `init_db()` and `seed_sample_data_if_empty()` so that if Turso cannot be initialized or fails, the application automatically catches the error, sets `_turso_disabled = True`, logs the reason, and initializes local SQLite (`data/expenses.db`). This allows the app to load normally and display the built-in warning banner (`⚠️ Turso Remote Database Unreachable`) instead of halting.
+  - **Startup Lifecycle Caching:** Cached schema initialization via `_DB_INITIALIZED` so `init_db()` only executes once per process rather than firing 40+ DDL/PRAGMA network requests on every user interaction.
+- **Unit Tests:** Added `test_turso_error_fallback_resilience` to `test_app.py` to ensure simulated Turso `LibsqlError` exceptions cleanly trigger local SQLite fallback without raising.
+
 ## v1.16.0 (2026-10-28)
 ### Added — Comprehensive Financial Health Status & Customisable Wealth Report
 - **5-Pillar Financial Health Scoring Engine:** Implemented `compute_financial_health()` in `financial_report.py`, providing a 360° diagnostic score (0–100) and rating (Excellent / Good / Fair / Needs Action) across five pillars: Savings Rate, Emergency Runway, Debt Burden (DTI), Net Worth & Solvency, and Investment Diversification.

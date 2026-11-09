@@ -923,6 +923,58 @@ def test_financial_health_report_and_customization():
     print("✅ Financial health status & customized report test passed.")
 
 
+def test_turso_error_fallback_resilience():
+    import sqlite3
+    import database
+    from database import init_db, get_connection, check_turso_connection, enable_turso, disable_turso
+    
+    # 1. Reset state
+    enable_turso()
+    database._DB_INITIALIZED = False
+    
+    # 2. Simulate Turso throwing a LibsqlError during init_db
+    class MockFailingLibSqlClient:
+        def execute(self, sql, params=()):
+            raise Exception("LibsqlError: Server returned HTTP status 503, SERVER_ERROR")
+        def close(self):
+            pass
+
+    original_get_turso_credentials = database.get_turso_credentials
+    original_get_connection = database.get_connection
+    try:
+        database.get_turso_credentials = lambda: ("libsql://mock-cloud.turso.io", "mocktoken")
+        
+        def mock_get_conn():
+            if database._turso_disabled:
+                return original_get_connection()
+            return database.LibSQLConnectionWrapper(MockFailingLibSqlClient())
+        database.get_connection = mock_get_conn
+        
+        # Run init_db - must NOT raise, and must fall back to local SQLite cleanly
+        init_db(force=True)
+        assert database._turso_disabled is True
+        assert "503" in database._turso_fallback_reason
+        
+        # check_turso_connection should report failure with reason
+        ok, reason = check_turso_connection()
+        assert ok is False
+        assert reason is not None
+        
+        # Subsequent get_connection should return local SQLite connection
+        conn = get_connection()
+        assert isinstance(conn, sqlite3.Connection)
+        conn.close()
+        
+    finally:
+        database.get_turso_credentials = original_get_turso_credentials
+        database.get_connection = original_get_connection
+        enable_turso()
+        database._DB_INITIALIZED = False
+        init_db(force=True)
+        
+    print("✅ Turso LibsqlError graceful fallback resilience test passed.")
+
+
 if __name__ == "__main__":
     try:
         test_strict_uploaded_date_enforcement()
@@ -949,6 +1001,7 @@ if __name__ == "__main__":
         test_auto_calculate_age_and_lock_dob()
         test_interactive_db_log_column_safeguards()
         test_financial_health_report_and_customization()
+        test_turso_error_fallback_resilience()
         print("🎉 All test suite assertions passed successfully!")
     finally:
         if os.path.exists(database.DB_PATH):

@@ -23,7 +23,23 @@ class LibSQLCursorWrapper:
     def execute(self, sql, params=()):
         if isinstance(params, (tuple, set)):
             params = list(params)
-        res = self.client.execute(sql, params)
+        
+        # Automatic retry with exponential backoff for transient Turso cloud errors (500, 502, 503, 504, 429)
+        max_retries = 3
+        for attempt in range(max_retries):
+            try:
+                res = self.client.execute(sql, params)
+                break
+            except Exception as e:
+                err_str = str(e).lower()
+                is_transient = any(k in err_str for k in ["500", "502", "503", "504", "429", "server_error", "timeout", "temporarily", "unavailable", "connection"])
+                if is_transient and attempt < max_retries - 1:
+                    import time
+                    time.sleep(0.4 * (attempt + 1))
+                    continue
+                # If non-transient or all retries exhausted, mark Turso as failed for fallback
+                disable_turso(str(e))
+                raise
         if hasattr(res, 'columns') and res.columns:
             self.description = [(col, None, None, None, None, None, None) for col in res.columns]
         else:
@@ -113,6 +129,8 @@ def get_turso_credentials() -> Tuple[Optional[str], Optional[str]]:
     return url, token
 
 def get_db_type() -> str:
+    if _turso_disabled:
+        return f"Local SQLite Database (Turso fallback)"
     turso_url, turso_token = get_turso_credentials()
     if turso_url and turso_token:
         try:
@@ -126,12 +144,31 @@ def get_db_type() -> str:
                 return "Local SQLite Database (Turso driver missing)"
     return "Local SQLite Database"
 
-# Stores the last Turso connection failure reason (set by get_connection)
+# Stores the last Turso connection failure reason and fallback status
 _turso_fallback_reason: Optional[str] = None
+_turso_disabled: bool = False
+
+def disable_turso(reason: str):
+    global _turso_disabled, _turso_fallback_reason
+    _turso_disabled = True
+    _turso_fallback_reason = reason
+    print(f"[Turso Engine] Turso disabled for current session, fallback to local SQLite: {reason}")
+
+def enable_turso():
+    global _turso_disabled, _turso_fallback_reason
+    _turso_disabled = False
+    _turso_fallback_reason = None
 
 def get_connection():
-    global _turso_fallback_reason
-    _turso_fallback_reason = None
+    global _turso_fallback_reason, _turso_disabled
+    
+    # If Turso was flagged as broken/unreachable in this session, immediately use local SQLite
+    if _turso_disabled:
+        os.makedirs(DB_DIR, exist_ok=True)
+        conn = sqlite3.connect(DB_PATH)
+        conn.row_factory = sqlite3.Row
+        return conn
+
     turso_url, turso_token = get_turso_credentials()
 
     if turso_url and turso_token:
@@ -147,26 +184,16 @@ def get_connection():
             _turso_fallback_reason = str(e)
 
         # --- Attempt 2: libsql_client (HTTP mode, works on Streamlit Cloud) ---
-        if not _turso_fallback_reason:
-            try:
-                import libsql_client
-                http_url = turso_url.replace("libsql://", "https://") if turso_url.startswith("libsql://") else turso_url
-                client = libsql_client.create_client_sync(url=http_url, auth_token=turso_token)
-                return LibSQLConnectionWrapper(client)
-            except (ImportError, ModuleNotFoundError) as e:
-                _turso_fallback_reason = f"Turso driver not installed: {e}"
-            except Exception as e:
-                _turso_fallback_reason = str(e)
-        else:
-            # libsql_experimental had a connection error; still try HTTP mode
-            try:
-                import libsql_client
-                http_url = turso_url.replace("libsql://", "https://") if turso_url.startswith("libsql://") else turso_url
-                client = libsql_client.create_client_sync(url=http_url, auth_token=turso_token)
-                _turso_fallback_reason = None  # HTTP succeeded
-                return LibSQLConnectionWrapper(client)
-            except Exception as e2:
-                _turso_fallback_reason = f"{_turso_fallback_reason} / HTTP fallback: {e2}"
+        try:
+            import libsql_client
+            http_url = turso_url.replace("libsql://", "https://") if turso_url.startswith("libsql://") else turso_url
+            client = libsql_client.create_client_sync(url=http_url, auth_token=turso_token)
+            return LibSQLConnectionWrapper(client)
+        except (ImportError, ModuleNotFoundError) as e:
+            _turso_fallback_reason = f"Turso driver not installed: {e}"
+        except Exception as e:
+            _turso_fallback_reason = str(e)
+            disable_turso(str(e))
 
         if _turso_fallback_reason:
             print(f"Turso connection failed, falling back to SQLite: {_turso_fallback_reason}")
@@ -186,6 +213,10 @@ def check_turso_connection() -> Tuple[bool, Optional[str]]:
                                  Returns (False, None) when Turso is not configured
                                  (i.e. app intentionally uses local SQLite).
     """
+    global _turso_disabled, _turso_fallback_reason
+    if _turso_disabled and _turso_fallback_reason:
+        return False, _turso_fallback_reason
+
     turso_url, turso_token = get_turso_credentials()
     if not turso_url or not turso_token:
         # Not configured — this is intentional, not an error
@@ -242,10 +273,9 @@ def verify_password(stored_password_hash: str, password_attempt: str) -> bool:
 # ----------------------------------------------------
 # DB INITIALIZATION & MIGRATIONS
 # ----------------------------------------------------
-def init_db():
-    conn = get_connection()
-    cursor = conn.cursor()
-    
+_DB_INITIALIZED: bool = False
+
+def _run_db_migrations(cursor):
     # 1. Families Table
     cursor.execute("""
         CREATE TABLE IF NOT EXISTS families (
@@ -561,9 +591,40 @@ def init_db():
             INSERT INTO users (username, password_hash, full_name, role, family_id)
             VALUES (?, ?, ?, ?, ?)
         """, ("admin", admin_hash, "Administrator", "Admin", 1))
-        
-    conn.commit()
-    conn.close()
+def init_db(force: bool = False):
+    global _DB_INITIALIZED
+    if _DB_INITIALIZED and not force:
+        return
+
+    conn = get_connection()
+    is_turso = not isinstance(conn, sqlite3.Connection)
+    try:
+        cursor = conn.cursor()
+        _run_db_migrations(cursor)
+        conn.commit()
+        conn.close()
+        _DB_INITIALIZED = True
+    except Exception as e:
+        try:
+            conn.close()
+        except Exception:
+            pass
+
+        if is_turso:
+            err_msg = str(e)
+            print(f"[Database Init] Turso schema migration failed ({err_msg}). Falling back to local SQLite.")
+            disable_turso(f"Turso initialization error: {err_msg}")
+            
+            # Immediately run migrations on local SQLite so the application starts up cleanly
+            local_conn = sqlite3.connect(DB_PATH)
+            local_conn.row_factory = sqlite3.Row
+            local_cursor = local_conn.cursor()
+            _run_db_migrations(local_cursor)
+            local_conn.commit()
+            local_conn.close()
+            _DB_INITIALIZED = True
+        else:
+            raise
 
 # ----------------------------------------------------
 # MULTI-FAMILY WORKSPACE MANAGEMENT
@@ -1423,35 +1484,38 @@ def delete_expense(expense_id: int):
 
 def seed_sample_data_if_empty():
     """Seeds realistic sample data for Indian Financial Year testing if database is empty."""
-    conn = get_connection()
-    cursor = conn.cursor()
-    cursor.execute("SELECT COUNT(*) FROM expenses")
-    count = cursor.fetchone()[0]
-    conn.close()
-    
-    if count > 0:
-        return
+    try:
+        conn = get_connection()
+        cursor = conn.cursor()
+        cursor.execute("SELECT COUNT(*) FROM expenses")
+        count = cursor.fetchone()[0]
+        conn.close()
         
-    sample_records = [
-        {"date": "2024-04-05", "category": "Groceries & Provisions", "description": "Monthly D-Mart provisions", "amount": 12500.00, "visibility": "Family"},
-        {"date": "2024-04-10", "category": "Utilities (Electricity/Water/Gas)", "description": "Electricity & Gas Bill", "amount": 3400.00, "visibility": "Family"},
-        {"date": "2024-04-15", "category": "Rent & Housing", "description": "Flat House Rent", "amount": 28000.00, "visibility": "Family"},
-        {"date": "2024-04-20", "category": "Dining & Swiggy/Zomato", "description": "Weekend family dining", "amount": 4200.00, "visibility": "Family"},
-        {"date": "2024-04-25", "category": "Transportation & Fuel", "description": "Car petrol refilling", "amount": 6500.00, "visibility": "Family"},
-        {"date": "2024-05-02", "category": "Groceries & Provisions", "description": "Monthly ration & snacks", "amount": 13200.00, "visibility": "Family"},
-        {"date": "2024-05-12", "category": "Healthcare & Medicines", "description": "Apollo pharmacy medicines", "amount": 4800.00, "visibility": "Family"},
-        {"date": "2024-05-18", "category": "Domestic Help & Services", "description": "Maid & Cook salary", "amount": 9500.00, "visibility": "Family"},
-        {"date": "2024-05-28", "category": "Shopping & Apparel", "description": "Summer clothing purchase", "amount": 8400.00, "visibility": "Private"},
-        {"date": "2024-06-04", "category": "Groceries & Provisions", "description": "Vegetables & groceries", "amount": 14100.00, "visibility": "Family"},
-        {"date": "2024-06-15", "category": "Rent & Housing", "description": "Flat Rent", "amount": 28000.00, "visibility": "Family"},
-        {"date": "2024-06-22", "category": "Utilities (Electricity/Water/Gas)", "description": "Summer AC electricity bill", "amount": 6200.00, "visibility": "Family"},
-        {"date": "2025-04-05", "category": "Groceries & Provisions", "description": "Monthly Provisions", "amount": 14800.00, "visibility": "Family"},
-        {"date": "2025-04-12", "category": "Rent & Housing", "description": "Flat Rent (Revised)", "amount": 30000.00, "visibility": "Family"},
-        {"date": "2025-05-10", "category": "Healthcare & Medicines", "description": "Annual health checkups", "amount": 12000.00, "visibility": "Family"},
-        {"date": "2025-06-15", "category": "Utilities (Electricity/Water/Gas)", "description": "AC Electricity peak bill", "amount": 7800.00, "visibility": "Family"}
-    ]
-    
-    insert_expenses(sample_records, source="Sample Seeder", username="admin", visibility="Family")
+        if count > 0:
+            return
+            
+        sample_records = [
+            {"date": "2024-04-05", "category": "Groceries & Provisions", "description": "Monthly D-Mart provisions", "amount": 12500.00, "visibility": "Family"},
+            {"date": "2024-04-10", "category": "Utilities (Electricity/Water/Gas)", "description": "Electricity & Gas Bill", "amount": 3400.00, "visibility": "Family"},
+            {"date": "2024-04-15", "category": "Rent & Housing", "description": "Flat House Rent", "amount": 28000.00, "visibility": "Family"},
+            {"date": "2024-04-20", "category": "Dining & Swiggy/Zomato", "description": "Weekend family dining", "amount": 4200.00, "visibility": "Family"},
+            {"date": "2024-04-25", "category": "Transportation & Fuel", "description": "Car petrol refilling", "amount": 6500.00, "visibility": "Family"},
+            {"date": "2024-05-02", "category": "Groceries & Provisions", "description": "Monthly ration & snacks", "amount": 13200.00, "visibility": "Family"},
+            {"date": "2024-05-12", "category": "Healthcare & Medicines", "description": "Apollo pharmacy medicines", "amount": 4800.00, "visibility": "Family"},
+            {"date": "2024-05-18", "category": "Domestic Help & Services", "description": "Maid & Cook salary", "amount": 9500.00, "visibility": "Family"},
+            {"date": "2024-05-28", "category": "Shopping & Apparel", "description": "Summer clothing purchase", "amount": 8400.00, "visibility": "Private"},
+            {"date": "2024-06-04", "category": "Groceries & Provisions", "description": "Vegetables & groceries", "amount": 14100.00, "visibility": "Family"},
+            {"date": "2024-06-15", "category": "Rent & Housing", "description": "Flat Rent", "amount": 28000.00, "visibility": "Family"},
+            {"date": "2024-06-22", "category": "Utilities (Electricity/Water/Gas)", "description": "Summer AC electricity bill", "amount": 6200.00, "visibility": "Family"},
+            {"date": "2025-04-05", "category": "Groceries & Provisions", "description": "Monthly Provisions", "amount": 14800.00, "visibility": "Family"},
+            {"date": "2025-04-12", "category": "Rent & Housing", "description": "Flat Rent (Revised)", "amount": 30000.00, "visibility": "Family"},
+            {"date": "2025-05-10", "category": "Healthcare & Medicines", "description": "Annual health checkups", "amount": 12000.00, "visibility": "Family"},
+            {"date": "2025-06-15", "category": "Utilities (Electricity/Water/Gas)", "description": "AC Electricity peak bill", "amount": 7800.00, "visibility": "Family"}
+        ]
+        
+        insert_expenses(sample_records, source="Sample Seeder", username="admin", visibility="Family")
+    except Exception as e:
+        print(f"[Seed] Sample data seeding skipped or failed ({e})")
 
 def get_cumulative_metrics(fy: Optional[str] = None, username: Optional[str] = None, view_mode: str = "Family", family_id: Optional[int] = 1) -> Dict[str, float]:
     df = get_expenses_df(fy=fy, username=username, view_mode=view_mode, family_id=family_id)

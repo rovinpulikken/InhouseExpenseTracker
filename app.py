@@ -232,9 +232,12 @@ st.markdown("""
 </style>
 """, unsafe_allow_html=True)
 
-# Initialize Database & Seed Data
-init_db()
-seed_sample_data_if_empty()
+# Initialize Database & Seed Data (with fallback protection)
+try:
+    init_db()
+    seed_sample_data_if_empty()
+except Exception as _e_init:
+    print(f"[Startup Warning] DB initialization caught error: {_e_init}")
 
 # ----------------------------------------------------
 # TURSO REMOTE DB CONNECTION CHECK (once per session)
