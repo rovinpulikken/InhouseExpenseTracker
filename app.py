@@ -74,6 +74,7 @@ from database import (
     delete_user,
     get_db_type,
     check_turso_connection,
+    enable_turso,
     insert_investment,
     get_user_investments_df,
     update_investments_df,
@@ -257,7 +258,7 @@ if not st.session_state.get("_turso_ok") and st.session_state.get("_turso_err"):
         border-left: 5px solid #ef4444;
         border-radius: 10px;
         padding: 14px 18px;
-        margin-bottom: 16px;
+        margin-bottom: 8px;
         display: flex;
         align-items: flex-start;
         gap: 12px;
@@ -278,6 +279,18 @@ if not st.session_state.get("_turso_ok") and st.session_state.get("_turso_err"):
         </div>
     </div>
     """, unsafe_allow_html=True)
+    if st.button("🔄 Retry Turso Cloud Connection", key="btn_retry_turso_conn"):
+        enable_turso()
+        _ok_retry, _err_retry = check_turso_connection(force_probe=True)
+        st.session_state["_turso_ok"] = _ok_retry
+        st.session_state["_turso_err"] = _err_retry
+        if _ok_retry:
+            try:
+                init_db(force=True)
+                seed_sample_data_if_empty()
+            except Exception as _e_retry:
+                print(f"[Retry Warning] DB init error: {_e_retry}")
+        st.rerun()
 
 # ----------------------------------------------------
 # USER AUTHENTICATION SCREEN

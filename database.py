@@ -4,12 +4,281 @@ import datetime
 import hashlib
 import secrets
 import re
+import base64
+import json
+import math
+import threading
+import time
+import urllib.parse
+import urllib.request
+import urllib.error
 from typing import List, Dict, Any, Optional, Tuple
 import pandas as pd
 from config import get_indian_fy, get_indian_quarter, EXPENSE_CATEGORIES
 
 DB_DIR = os.path.join(os.path.dirname(__file__), "data")
 DB_PATH = os.path.join(DB_DIR, "expenses.db")
+
+
+class TursoTransportError(Exception):
+    """Raised on Turso network, HTTP 5xx/4xx, auth, or malformed-envelope failures."""
+
+
+class TursoQueryError(Exception):
+    """Raised on SQL-level errors cleanly reported by Turso (should not disable Turso globally)."""
+
+
+class TursoResultSet:
+    """Lightweight ResultSet compatible with LibSQLCursorWrapper."""
+
+    def __init__(
+        self,
+        columns: Tuple[str, ...],
+        rows: List[Tuple[Any, ...]],
+        rows_affected: int = 0,
+        last_insert_rowid: Optional[int] = None,
+    ):
+        self.columns = columns
+        self.rows = rows
+        self.rows_affected = rows_affected
+        self.last_insert_rowid = last_insert_rowid
+
+
+def _encode_hrana_arg(val: Any) -> Dict[str, Any]:
+    """Encode a Python/pandas/numpy parameter into a Hrana v2 JSON value."""
+    if val is None:
+        return {"type": "null"}
+    # Unwrap numpy/pandas scalar types safely
+    if hasattr(val, "item") and not isinstance(val, (bytes, bytearray, str)):
+        try:
+            val = val.item()
+        except Exception:
+            pass
+    try:
+        if pd.isna(val):
+            return {"type": "null"}
+    except Exception:
+        pass
+    if isinstance(val, bool):
+        return {"type": "integer", "value": "1" if val else "0"}
+    if isinstance(val, int):
+        return {"type": "integer", "value": str(val)}
+    if isinstance(val, float):
+        if math.isnan(val) or math.isinf(val):
+            return {"type": "null"}
+        return {"type": "float", "value": val}
+    if isinstance(val, (datetime.datetime, datetime.date)):
+        return {"type": "text", "value": val.isoformat()}
+    if isinstance(val, (bytes, bytearray, memoryview)):
+        return {"type": "blob", "base64": base64.b64encode(bytes(val)).decode("ascii")}
+    return {"type": "text", "value": str(val)}
+
+
+def _decode_hrana_value(cell: Any) -> Any:
+    """Decode a Hrana v2 JSON cell into a native Python scalar."""
+    if not isinstance(cell, dict):
+        return cell
+    vtype = cell.get("type")
+    if vtype == "null" or vtype is None:
+        return None
+    if vtype == "integer":
+        return int(cell["value"])
+    if vtype == "float":
+        return float(cell["value"])
+    if vtype == "text":
+        return str(cell["value"])
+    if vtype == "blob":
+        return base64.b64decode(cell.get("base64", ""))
+    return cell.get("value")
+
+
+def _format_turso_error(exc: Exception) -> str:
+    """Return a clear, user-readable message for Turso connection/API errors."""
+    if isinstance(exc, KeyError) and exc.args == ("result",):
+        return "Turso HTTP API returned a response missing 'result' (unexpected API payload)"
+    msg = str(exc).strip()
+    return msg if msg else repr(exc)
+
+
+_TURSO_SESSIONS_LOCK = threading.Lock()
+_TURSO_SESSIONS: Dict[Tuple[str, str], Any] = {}
+
+
+def _get_pooled_requests_session(base_url: str, auth_token: str):
+    """Return a thread-safe pooled requests.Session if requests is installed, else None."""
+    try:
+        import requests
+    except ImportError:
+        return None
+    key = (base_url, auth_token)
+    with _TURSO_SESSIONS_LOCK:
+        sess = _TURSO_SESSIONS.get(key)
+        if sess is None:
+            sess = requests.Session()
+            sess.headers.update({
+                "Authorization": f"Bearer {auth_token}",
+                "Content-Type": "application/json",
+            })
+            _TURSO_SESSIONS[key] = sess
+        return sess
+
+
+class TursoPipelineClient:
+    """
+    Stateless Hrana-over-HTTP (/v2/pipeline) client for Turso Cloud.
+    Avoids legacy /v1/execute bugs (e.g. KeyError: 'result' on HTTP 200 error JSON)
+    and reuses a persistent requests.Session pool instead of spawning per-query threads.
+    """
+
+    def __init__(self, url: str, auth_token: Optional[str] = None, timeout: Tuple[float, float] = (5.0, 20.0)):
+        parsed = urllib.parse.urlparse(url.strip())
+        scheme = parsed.scheme or "https"
+        if scheme == "libsql":
+            scheme = "http" if "tls=0" in parsed.query else "https"
+        elif scheme == "wss":
+            scheme = "https"
+        elif scheme == "ws":
+            scheme = "http"
+
+        tok = auth_token
+        if not tok and parsed.query:
+            for k, v in urllib.parse.parse_qsl(parsed.query):
+                if k == "authToken" and v:
+                    tok = v
+                    break
+
+        path = parsed.path.rstrip("/")
+        self.base_url = urllib.parse.urlunparse((scheme, parsed.netloc, path, "", "", "")).rstrip("/")
+        self.pipeline_url = f"{self.base_url}/v2/pipeline"
+        self.auth_token = tok or ""
+        self.timeout = timeout
+
+    @staticmethod
+    def _build_stmt(sql: str, params: Any = ()) -> Dict[str, Any]:
+        stmt: Dict[str, Any] = {"sql": sql, "want_rows": True}
+        if isinstance(params, dict):
+            stmt["named_args"] = [
+                {"name": str(k).lstrip(":@$"), "value": _encode_hrana_arg(v)}
+                for k, v in params.items()
+            ]
+        elif params:
+            stmt["args"] = [_encode_hrana_arg(v) for v in params]
+        return stmt
+
+    def _post_pipeline(self, requests_list: List[Dict[str, Any]]) -> Dict[str, Any]:
+        payload = {"requests": requests_list}
+        sess = _get_pooled_requests_session(self.base_url, self.auth_token)
+        if sess is not None:
+            try:
+                resp = sess.post(self.pipeline_url, json=payload, timeout=self.timeout)
+            except Exception as e:
+                raise TursoTransportError(f"Connection failed: {e}") from e
+            status = resp.status_code
+            raw_text = resp.text
+        else:
+            req = urllib.request.Request(
+                self.pipeline_url,
+                data=json.dumps(payload).encode("utf-8"),
+                headers={
+                    "Authorization": f"Bearer {self.auth_token}",
+                    "Content-Type": "application/json",
+                },
+                method="POST",
+            )
+            try:
+                with urllib.request.urlopen(req, timeout=self.timeout[1]) as resp:
+                    status = resp.status
+                    raw_text = resp.read().decode("utf-8", errors="replace")
+            except urllib.error.HTTPError as e:
+                status = e.code
+                raw_text = e.read().decode("utf-8", errors="replace")
+            except Exception as e:
+                raise TursoTransportError(f"Connection failed: {e}") from e
+
+        if status < 200 or status >= 300:
+            detail = raw_text[:300]
+            try:
+                err_json = json.loads(raw_text)
+                if isinstance(err_json, dict):
+                    detail = err_json.get("error") or err_json.get("message") or detail
+            except Exception:
+                pass
+            raise TursoTransportError(f"Server returned HTTP status {status}: {detail}")
+
+        try:
+            data = json.loads(raw_text)
+        except Exception as e:
+            raise TursoTransportError(f"Invalid JSON from Turso: {raw_text[:200]}") from e
+
+        if not isinstance(data, dict) or "results" not in data:
+            if isinstance(data, dict):
+                err_msg = data.get("error") or data.get("message")
+                if err_msg:
+                    raise TursoTransportError(f"Turso API error: {err_msg}")
+            raise TursoTransportError(f"Unexpected Turso pipeline payload: {raw_text[:200]}")
+
+        return data
+
+    @staticmethod
+    def _parse_step_result(res_item: Dict[str, Any]) -> TursoResultSet:
+        rtype = res_item.get("type")
+        if rtype == "error":
+            err = res_item.get("error") or {}
+            msg = err.get("message", "Unknown Turso SQL error")
+            code = err.get("code") or "UNKNOWN"
+            combined = f"{code}: {msg}"
+            low = combined.lower()
+            if any(k in low for k in ["busy", "locked", "unavailable", "timeout", "500", "502", "503", "504", "429", "gateway", "stream"]):
+                raise TursoTransportError(combined)
+            raise TursoQueryError(combined)
+
+        if rtype != "ok":
+            raise TursoTransportError(f"Unexpected Turso step status: {res_item!r}")
+
+        response = res_item.get("response") or {}
+        exec_res = response.get("result")
+        if not isinstance(exec_res, dict):
+            raise TursoTransportError(f"Turso execute response missing 'result': {res_item!r}")
+
+        cols = tuple((c.get("name") or "") for c in exec_res.get("cols", []))
+        rows = [
+            tuple(_decode_hrana_value(cell) for cell in row)
+            for row in exec_res.get("rows", [])
+        ]
+        affected = exec_res.get("affected_row_count")
+        rows_affected = int(affected) if affected is not None else len(rows)
+        last_id_raw = exec_res.get("last_insert_rowid")
+        last_insert_rowid = int(last_id_raw) if last_id_raw is not None else None
+        return TursoResultSet(cols, rows, rows_affected=rows_affected, last_insert_rowid=last_insert_rowid)
+
+    def execute(self, sql: str, params: Any = ()) -> TursoResultSet:
+        data = self._post_pipeline([
+            {"type": "execute", "stmt": self._build_stmt(sql, params)},
+            {"type": "close"},
+        ])
+        results = data.get("results") or []
+        if not results:
+            raise TursoTransportError("Turso pipeline returned empty results")
+        return self._parse_step_result(results[0])
+
+    def execute_many(self, sql: str, seq_of_params: List[Any]) -> List[TursoResultSet]:
+        all_results: List[TursoResultSet] = []
+        chunk_size = 200
+        params_list = list(seq_of_params)
+        for i in range(0, len(params_list), chunk_size):
+            chunk = params_list[i:i + chunk_size]
+            reqs = [{"type": "execute", "stmt": self._build_stmt(sql, p)} for p in chunk]
+            reqs.append({"type": "close"})
+            data = self._post_pipeline(reqs)
+            step_results = (data.get("results") or [])[:len(chunk)]
+            for item in step_results:
+                all_results.append(self._parse_step_result(item))
+        return all_results
+
+    def close(self) -> None:
+        # Shared pooled session stays open across short-lived connection wrappers.
+        pass
+
 
 class LibSQLCursorWrapper:
     def __init__(self, client):
@@ -23,22 +292,33 @@ class LibSQLCursorWrapper:
     def execute(self, sql, params=()):
         if isinstance(params, (tuple, set)):
             params = list(params)
-        
-        # Automatic retry with exponential backoff for transient Turso cloud errors (500, 502, 503, 504, 429)
+
+        # Automatic retry with exponential backoff for transient Turso cloud errors
         max_retries = 3
         for attempt in range(max_retries):
             try:
                 res = self.client.execute(sql, params)
                 break
+            except TursoQueryError:
+                # SQL-level error (e.g. constraint/syntax) — propagate without disabling Turso
+                raise
             except Exception as e:
                 err_str = str(e).lower()
-                is_transient = any(k in err_str for k in ["500", "502", "503", "504", "429", "server_error", "timeout", "temporarily", "unavailable", "connection"])
+                is_keyerror_result = isinstance(e, KeyError) and e.args == ("result",)
+                is_transient = is_keyerror_result or any(
+                    k in err_str
+                    for k in [
+                        "500", "502", "503", "504", "429", "server_error",
+                        "timeout", "temporarily", "unavailable", "connection",
+                        "busy", "locked", "reset", "broken pipe", "eof",
+                        "remotedisconnected", "gateway",
+                    ]
+                )
                 if is_transient and attempt < max_retries - 1:
-                    import time
                     time.sleep(0.4 * (attempt + 1))
                     continue
-                # If non-transient or all retries exhausted, mark Turso as failed for fallback
-                disable_turso(str(e))
+                # If non-transient transport failure or all retries exhausted, fall back to local SQLite
+                disable_turso(_format_turso_error(e))
                 raise
         if hasattr(res, 'columns') and res.columns:
             self.description = [(col, None, None, None, None, None, None) for col in res.columns]
@@ -75,7 +355,38 @@ class LibSQLCursorWrapper:
         pass
 
     def executemany(self, sql, seq_of_params=()):
-        for params in seq_of_params:
+        params_list = [list(p) if isinstance(p, (tuple, set)) else p for p in seq_of_params]
+        if not params_list:
+            return self
+        if hasattr(self.client, "execute_many"):
+            max_retries = 3
+            for attempt in range(max_retries):
+                try:
+                    results = self.client.execute_many(sql, params_list)
+                    self.rowcount = sum(getattr(r, "rows_affected", 0) for r in results)
+                    self.lastrowid = results[-1].last_insert_rowid if results else None
+                    self._rows = []
+                    self._idx = 0
+                    return self
+                except TursoQueryError:
+                    raise
+                except Exception as e:
+                    err_str = str(e).lower()
+                    is_transient = any(
+                        k in err_str
+                        for k in [
+                            "500", "502", "503", "504", "429", "server_error",
+                            "timeout", "temporarily", "unavailable", "connection",
+                            "busy", "locked", "reset", "broken pipe", "eof",
+                            "remotedisconnected", "gateway",
+                        ]
+                    )
+                    if is_transient and attempt < max_retries - 1:
+                        time.sleep(0.4 * (attempt + 1))
+                        continue
+                    disable_turso(_format_turso_error(e))
+                    raise
+        for params in params_list:
             self.execute(sql, params)
         return self
 
@@ -129,71 +440,71 @@ def get_turso_credentials() -> Tuple[Optional[str], Optional[str]]:
     return url, token
 
 def get_db_type() -> str:
-    if _turso_disabled:
-        return f"Local SQLite Database (Turso fallback)"
+    if _turso_disabled and time.monotonic() < _turso_disabled_until:
+        return "Local SQLite Database (Turso fallback)"
     turso_url, turso_token = get_turso_credentials()
     if turso_url and turso_token:
         try:
             import libsql_experimental
             return "Turso Cloud Database"
         except (ImportError, ModuleNotFoundError):
-            try:
-                import libsql_client
-                return "Turso Cloud Database (libsql-client)"
-            except (ImportError, ModuleNotFoundError):
-                return "Local SQLite Database (Turso driver missing)"
+            return "Turso Cloud Database (HTTP v2)"
     return "Local SQLite Database"
 
-# Stores the last Turso connection failure reason and fallback status
+# Stores the last Turso connection failure reason and fallback status (with cooldown auto-recovery)
 _turso_fallback_reason: Optional[str] = None
 _turso_disabled: bool = False
+_turso_disabled_until: float = 0.0
+_TURSO_COOLDOWN_SECONDS: float = 60.0
+
 
 def disable_turso(reason: str):
-    global _turso_disabled, _turso_fallback_reason
+    global _turso_disabled, _turso_fallback_reason, _turso_disabled_until
     _turso_disabled = True
     _turso_fallback_reason = reason
+    _turso_disabled_until = time.monotonic() + _TURSO_COOLDOWN_SECONDS
     print(f"[Turso Engine] Turso disabled for current session, fallback to local SQLite: {reason}")
 
+
 def enable_turso():
-    global _turso_disabled, _turso_fallback_reason
+    global _turso_disabled, _turso_fallback_reason, _turso_disabled_until
     _turso_disabled = False
     _turso_fallback_reason = None
+    _turso_disabled_until = 0.0
+
 
 def get_connection():
     global _turso_fallback_reason, _turso_disabled
-    
-    # If Turso was flagged as broken/unreachable in this session, immediately use local SQLite
+
+    # During cooldown after a failure, use local SQLite; automatically retry once cooldown expires
     if _turso_disabled:
-        os.makedirs(DB_DIR, exist_ok=True)
-        conn = sqlite3.connect(DB_PATH)
-        conn.row_factory = sqlite3.Row
-        return conn
+        if time.monotonic() < _turso_disabled_until:
+            os.makedirs(DB_DIR, exist_ok=True)
+            conn = sqlite3.connect(DB_PATH)
+            conn.row_factory = sqlite3.Row
+            return conn
+        enable_turso()
 
     turso_url, turso_token = get_turso_credentials()
 
     if turso_url and turso_token:
-        # --- Attempt 1: libsql_experimental (native, fastest) ---
+        # --- Attempt 1: libsql_experimental (native, fastest if installed) ---
         try:
             import libsql_experimental as libsql
             conn = libsql.connect(database=turso_url, auth_token=turso_token)
             return conn
         except (ImportError, ModuleNotFoundError):
-            pass  # driver not installed — try HTTP fallback below
+            pass  # driver not installed — use HTTP v2 pipeline below
         except Exception as e:
-            # Connection error (auth, network, etc.)
             _turso_fallback_reason = str(e)
 
-        # --- Attempt 2: libsql_client (HTTP mode, works on Streamlit Cloud) ---
+        # --- Attempt 2: Turso Hrana HTTP /v2/pipeline (pooled, works on Streamlit Cloud) ---
         try:
-            import libsql_client
-            http_url = turso_url.replace("libsql://", "https://") if turso_url.startswith("libsql://") else turso_url
-            client = libsql_client.create_client_sync(url=http_url, auth_token=turso_token)
+            client = TursoPipelineClient(url=turso_url, auth_token=turso_token)
             return LibSQLConnectionWrapper(client)
-        except (ImportError, ModuleNotFoundError) as e:
-            _turso_fallback_reason = f"Turso driver not installed: {e}"
         except Exception as e:
-            _turso_fallback_reason = str(e)
-            disable_turso(str(e))
+            err_msg = _format_turso_error(e)
+            disable_turso(err_msg)
 
         if _turso_fallback_reason:
             print(f"Turso connection failed, falling back to SQLite: {_turso_fallback_reason}")
@@ -203,7 +514,8 @@ def get_connection():
     conn.row_factory = sqlite3.Row
     return conn
 
-def check_turso_connection() -> Tuple[bool, Optional[str]]:
+
+def check_turso_connection(force_probe: bool = False) -> Tuple[bool, Optional[str]]:
     """
     Probe the Turso remote database with a lightweight query.
 
@@ -214,42 +526,51 @@ def check_turso_connection() -> Tuple[bool, Optional[str]]:
                                  (i.e. app intentionally uses local SQLite).
     """
     global _turso_disabled, _turso_fallback_reason
-    if _turso_disabled and _turso_fallback_reason:
-        return False, _turso_fallback_reason
+    if force_probe:
+        enable_turso()
+    elif _turso_disabled and _turso_fallback_reason:
+        if time.monotonic() < _turso_disabled_until:
+            return False, _turso_fallback_reason
+        enable_turso()
 
     turso_url, turso_token = get_turso_credentials()
     if not turso_url or not turso_token:
         # Not configured — this is intentional, not an error
         return False, None
 
-    # Try libsql_experimental first
+    # Try libsql_experimental first if installed
     try:
         import libsql_experimental as libsql
         conn = libsql.connect(database=turso_url, auth_token=turso_token)
-        conn.execute("SELECT 1")
         try:
-            conn.close()
-        except Exception:
-            pass
+            conn.execute("SELECT 1")
+        finally:
+            try:
+                conn.close()
+            except Exception:
+                pass
+        enable_turso()
         return True, None
     except (ImportError, ModuleNotFoundError):
-        pass  # fall through to libsql_client
+        pass  # fall through to HTTP v2 pipeline
     except Exception as e:
-        return False, str(e)
+        return False, _format_turso_error(e)
 
-    # Fall back to libsql_client (HTTP mode)
+    # Probe via Turso Hrana HTTP /v2/pipeline
+    wrapper = None
     try:
-        import libsql_client
-        http_url = turso_url.replace("libsql://", "https://") if turso_url.startswith("libsql://") else turso_url
-        client = libsql_client.create_client_sync(url=http_url, auth_token=turso_token)
+        client = TursoPipelineClient(url=turso_url, auth_token=turso_token)
         wrapper = LibSQLConnectionWrapper(client)
         wrapper.execute("SELECT 1")
-        wrapper.close()
+        enable_turso()
         return True, None
-    except (ImportError, ModuleNotFoundError) as e:
-        return False, f"Turso driver not installed ({e}). App is running on local SQLite."
     except Exception as e:
-        return False, str(e)
+        err_msg = _format_turso_error(e)
+        disable_turso(err_msg)
+        return False, err_msg
+    finally:
+        if wrapper is not None:
+            wrapper.close()
 
 # ----------------------------------------------------
 # PASSWORD HASHING HELPERS
@@ -274,6 +595,7 @@ def verify_password(stored_password_hash: str, password_attempt: str) -> bool:
 # DB INITIALIZATION & MIGRATIONS
 # ----------------------------------------------------
 _DB_INITIALIZED: bool = False
+_SEED_CHECKED: bool = False
 
 def _run_db_migrations(cursor):
     # 1. Families Table
@@ -592,7 +914,9 @@ def _run_db_migrations(cursor):
             VALUES (?, ?, ?, ?, ?)
         """, ("admin", admin_hash, "Administrator", "Admin", 1))
 def init_db(force: bool = False):
-    global _DB_INITIALIZED
+    global _DB_INITIALIZED, _SEED_CHECKED
+    if force:
+        _SEED_CHECKED = False
     if _DB_INITIALIZED and not force:
         return
 
@@ -611,7 +935,7 @@ def init_db(force: bool = False):
             pass
 
         if is_turso:
-            err_msg = str(e)
+            err_msg = _format_turso_error(e)
             print(f"[Database Init] Turso schema migration failed ({err_msg}). Falling back to local SQLite.")
             disable_turso(f"Turso initialization error: {err_msg}")
             
@@ -1071,15 +1395,15 @@ def insert_expenses(
     from config import get_indian_half_year
     conn = get_connection()
     cursor = conn.cursor()
-    count = 0
     user_clean = username.strip().lower()
     fam_id = int(family_id) if family_id else 1
-    
+    rows_to_insert = []
+
     for row in expense_rows:
         raw_date = row.get("date")
         if raw_date is None or pd.isna(raw_date) or str(raw_date).strip() == "":
             continue
-            
+
         try:
             if isinstance(raw_date, (datetime.date, datetime.datetime)):
                 dt = raw_date.date() if isinstance(raw_date, datetime.datetime) else raw_date
@@ -1087,42 +1411,44 @@ def insert_expenses(
                 dt = pd.to_datetime(str(raw_date), dayfirst=True, format="mixed").date()
         except Exception:
             continue
-            
+
         fy = get_indian_fy(dt)
         q_code, _ = get_indian_quarter(dt)
         h_code, _ = get_indian_half_year(dt)
         cat = row.get("category", "Miscellaneous")
         desc = row.get("description", "")
         row_vis = row.get("visibility", visibility)
-        
+
         raw_amt = row.get("amount")
         if raw_amt is None or pd.isna(raw_amt):
             continue
-            
+
         try:
             if isinstance(raw_amt, str):
                 raw_amt = raw_amt.replace("₹", "").replace("Rs", "").replace("INR", "").replace(",", "").strip()
             amt = float(raw_amt)
-            import math
             if math.isnan(amt) or math.isinf(amt) or amt <= 0:
                 continue
         except (ValueError, TypeError):
             continue
-            
+
         t_type = row.get("transaction_type", "Expense")
-        
         row_source = row.get("_source_file")
         actual_source = f"AI Import ({row_source})" if row_source else source
-        
-        cursor.execute("""
+
+        rows_to_insert.append(
+            (dt.isoformat(), fy, q_code, h_code, cat, str(desc), amt, actual_source, user_clean, row_vis, fam_id, t_type)
+        )
+
+    if rows_to_insert:
+        cursor.executemany("""
             INSERT INTO expenses (expense_date, financial_year, quarter, half_year, category, description, amount, source_note, username, visibility, family_id, transaction_type)
             VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-        """, (dt.isoformat(), fy, q_code, h_code, cat, str(desc), amt, actual_source, user_clean, row_vis, fam_id, t_type))
-        count += 1
-        
+        """, rows_to_insert)
+
     conn.commit()
     conn.close()
-    return count
+    return len(rows_to_insert)
 
 def get_expenses_df(
     fy: Optional[str] = None, 
@@ -1370,25 +1696,28 @@ def batch_set_category_budgets(fy: str, budget_records: List[Dict[str, Any]], fa
         return 0
     conn = get_connection()
     cursor = conn.cursor()
-    count = 0
     fam_id = int(family_id) if family_id else 1
-    
+
     # Remove old budgets for this FY & family_id to cleanly save new allocations
     cursor.execute("DELETE FROM budgets WHERE financial_year = ? AND family_id = ?", (fy, fam_id))
-    
+
+    rows_to_insert = []
     for r in budget_records:
         cat = r.get("category")
         m_limit = float(r.get("monthly_limit", 0.0))
         a_limit = float(r.get("annual_limit", m_limit * 12))
         if cat and cat in EXPENSE_CATEGORIES:
-            cursor.execute("""
-                INSERT INTO budgets (financial_year, category, monthly_limit, annual_limit, family_id)
-                VALUES (?, ?, ?, ?, ?)
-            """, (fy, cat, m_limit, a_limit, fam_id))
-            count += 1
+            rows_to_insert.append((fy, cat, m_limit, a_limit, fam_id))
+
+    if rows_to_insert:
+        cursor.executemany("""
+            INSERT INTO budgets (financial_year, category, monthly_limit, annual_limit, family_id)
+            VALUES (?, ?, ?, ?, ?)
+        """, rows_to_insert)
+
     conn.commit()
     conn.close()
-    return count
+    return len(rows_to_insert)
 
 def get_category_budget(fy: str, category: str, family_id: int = 1) -> pd.DataFrame:
     """
@@ -1489,6 +1818,9 @@ def delete_expense(expense_id: int):
 
 def seed_sample_data_if_empty():
     """Seeds realistic sample data for Indian Financial Year testing if database is empty."""
+    global _SEED_CHECKED
+    if _SEED_CHECKED:
+        return
     try:
         conn = get_connection()
         cursor = conn.cursor()
@@ -1497,6 +1829,7 @@ def seed_sample_data_if_empty():
         conn.close()
         
         if count > 0:
+            _SEED_CHECKED = True
             return
             
         sample_records = [
@@ -1519,6 +1852,7 @@ def seed_sample_data_if_empty():
         ]
         
         insert_expenses(sample_records, source="Sample Seeder", username="admin", visibility="Family")
+        _SEED_CHECKED = True
     except Exception as e:
         print(f"[Seed] Sample data seeding skipped or failed ({e})")
 

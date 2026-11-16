@@ -1,5 +1,18 @@
 # Release Notes
 
+## v1.17.2 (2026-11-16)
+### Fixed — Turso Remote Database Unreachable Error (`'result'`) & Permanent Fallback Lockout
+- **Root Cause:**
+  1. Legacy `libsql_client` uses Turso's `/v1/execute` HTTP endpoint (`libsql_client/http.py`) and only checks `if not resp.ok`. When Turso returned an HTTP 200 JSON error payload (`{"message": ..., "code": ...}`) without a `"result"` key (such as on cold-start glitches or query errors), `libsql_client` raised `KeyError('result')`, whose string representation is literally `'result'`.
+  2. In `database.py`, `LibSQLCursorWrapper.execute` did not retry `KeyError('result')` and treated *any* execution exception as a fatal transport error via `disable_turso(str(e))`, permanently setting `_turso_disabled = True` for the entire server process and causing every subsequent request and `check_turso_connection()` call to report `Turso Remote Database Unreachable ... 'result'` on local SQLite.
+  3. Each `get_connection()` call previously spun up a new `libsql_client` `aiohttp` + thread executor and `seed_sample_data_if_empty()` queried `SELECT COUNT(*) FROM expenses` on every rerun.
+- **Fix:**
+  - Implemented `TursoPipelineClient` in `database.py` targeting Turso's modern Hrana v2 HTTP API (`/v2/pipeline`) over a pooled `requests.Session` (with `urllib.request` fallback), removing the `KeyError: 'result'` failure mode, eliminating per-query TLS/thread-spawning overhead, and batching `executemany` (`insert_expenses`, `batch_set_category_budgets`) into single `/v2/pipeline` requests.
+  - Separated `TursoQueryError` (SQL-level errors, which propagate without disabling Turso) from `TursoTransportError` (network/server errors), and added retry + clear error formatting for `KeyError('result')`.
+  - Replaced permanent process-wide `_turso_disabled` lockout with a 60-second automatic recovery cooldown (`_turso_disabled_until`) and added a `🔄 Retry Turso Cloud Connection` button to the warning banner in `app.py`.
+  - Added `_SEED_CHECKED` process guard on `seed_sample_data_if_empty()` to avoid redundant `SELECT COUNT(*)` queries on every rerun, and added `requests>=2.31.0` to `requirements.txt`.
+- **Unit Tests:** Expanded `test_turso_error_fallback_resilience` in `test_app.py` to test transient `KeyError('result')` retry recovery, persistent `KeyError('result')` human-readable error messaging, `TursoQueryError` non-disabling behavior, `TursoPipelineClient` v2 encoding/decoding, and cooldown auto-recovery.
+
 ## v1.17.1 (2026-11-09)
 ### Fixed — `KeyError: "Month_Year"` Crash & Accidental Sandbox Override for Users with DOB Set
 - **Root Cause:** 

@@ -964,7 +964,108 @@ def test_turso_error_fallback_resilience():
         conn = get_connection()
         assert isinstance(conn, sqlite3.Connection)
         conn.close()
-        
+
+        # 3. Verify KeyError('result') resilience: transient retry succeeds on 2nd attempt
+        enable_turso()
+        class MockTransientKeyErrorClient:
+            def __init__(self):
+                self.calls = 0
+            def execute(self, sql, params=()):
+                self.calls += 1
+                if self.calls == 1:
+                    raise KeyError("result")
+                return database.TursoResultSet(("ok",), [(1,)], rows_affected=0)
+            def close(self):
+                pass
+
+        flaky_client = MockTransientKeyErrorClient()
+        w = database.LibSQLConnectionWrapper(flaky_client)
+        cur = w.execute("SELECT 1")
+        assert cur.fetchone() == (1,)
+        assert flaky_client.calls == 2
+        assert database._turso_disabled is False
+
+        # 4. Verify persistent KeyError('result') sets clear message (never bare "'result'")
+        class MockPermanentKeyErrorClient:
+            def execute(self, sql, params=()):
+                raise KeyError("result")
+            def close(self):
+                pass
+
+        bad_wrapper = database.LibSQLConnectionWrapper(MockPermanentKeyErrorClient())
+        try:
+            bad_wrapper.execute("SELECT 1")
+            assert False, "Expected KeyError to propagate after retries"
+        except KeyError:
+            pass
+        assert database._turso_disabled is True
+        assert "missing 'result'" in database._turso_fallback_reason
+
+        # 5. Verify TursoQueryError (SQL error) does NOT disable Turso globally
+        enable_turso()
+        class MockQueryErrorClient:
+            def execute(self, sql, params=()):
+                raise database.TursoQueryError("SQLITE_UNKNOWN: no such table")
+            def close(self):
+                pass
+
+        q_wrapper = database.LibSQLConnectionWrapper(MockQueryErrorClient())
+        try:
+            q_wrapper.execute("SELECT * FROM missing_tbl")
+            assert False, "Expected TursoQueryError to propagate"
+        except database.TursoQueryError:
+            pass
+        assert database._turso_disabled is False
+
+        # 6. Verify TursoPipelineClient v2 parsing, error classification, and arg encoding
+        p_client = database.TursoPipelineClient("libsql://example-db.turso.io", auth_token="tok")
+        assert p_client.pipeline_url == "https://example-db.turso.io/v2/pipeline"
+        encoded = [
+            database._encode_hrana_arg(None),
+            database._encode_hrana_arg(True),
+            database._encode_hrana_arg(42),
+            database._encode_hrana_arg(3.5),
+            database._encode_hrana_arg("hello"),
+            database._encode_hrana_arg(b"ab"),
+        ]
+        assert encoded[0] == {"type": "null"}
+        assert encoded[1] == {"type": "integer", "value": "1"}
+        assert encoded[2] == {"type": "integer", "value": "42"}
+        assert encoded[3] == {"type": "float", "value": 3.5}
+        assert encoded[4] == {"type": "text", "value": "hello"}
+        assert encoded[5] == {"type": "blob", "base64": "YWI="}
+
+        parsed = database.TursoPipelineClient._parse_step_result({
+            "type": "ok",
+            "response": {
+                "type": "execute",
+                "result": {
+                    "cols": [{"name": "id"}, {"name": "name"}, {"name": "amt"}, {"name": "note"}],
+                    "rows": [[
+                        {"type": "integer", "value": "7"},
+                        {"type": "text", "value": "Rent"},
+                        {"type": "float", "value": 15000.0},
+                        {"type": "null"},
+                    ]],
+                    "affected_row_count": 0,
+                    "last_insert_rowid": None,
+                },
+            },
+        })
+        assert parsed.columns == ("id", "name", "amt", "note")
+        assert parsed.rows == [(7, "Rent", 15000.0, None)]
+
+        # 7. Verify cooldown auto-recovery re-enables Turso once cooldown expires
+        database.disable_turso("temporary outage")
+        assert database._turso_disabled is True
+        database._turso_disabled_until = 0.0  # simulate expired cooldown
+        # check_turso_connection should not short-circuit on expired cooldown
+        original_cred_fn = database.get_turso_credentials
+        database.get_turso_credentials = lambda: (None, None)
+        ok_after_cd, reason_after_cd = check_turso_connection()
+        assert ok_after_cd is False and reason_after_cd is None
+        database.get_turso_credentials = original_cred_fn
+
     finally:
         database.get_turso_credentials = original_get_turso_credentials
         database.get_connection = original_get_connection
