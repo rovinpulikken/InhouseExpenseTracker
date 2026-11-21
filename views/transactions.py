@@ -109,6 +109,7 @@ def render() -> None:
         subtitle="One unified ledger to inspect, edit, import, and clean your cash flow.",
         accent="#38bdf8",
         badge=f"{view_mode} · {month_label if selected_month != 'All Months' else selected_fy}",
+        help_key="transactions",
     )
 
     sub_options = ["📅 Ledger", "📤 Import", "🧹 Clean up"]

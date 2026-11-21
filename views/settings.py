@@ -35,6 +35,7 @@ def render() -> None:
         subtitle="Manage your personal profile, API integrations, account security, family workspace, and cloud sync.",
         accent="#94a3b8",
         badge=f"@{current_user['username']}",
+        help_key="settings",
     )
 
     sub_opts = ["👤 Profile", "🔌 Integrations", "🔒 Security", "🏠 Family", "💾 Data"]
@@ -125,6 +126,33 @@ def _render_profile(current_user, is_super_admin: bool) -> None:
                 st.rerun()
             else:
                 st.error("Failed to save profile.")
+
+    st.markdown("<div style='height:8px;'></div>", unsafe_allow_html=True)
+    with st.container(border=True):
+        st.markdown("##### 🧭 Onboarding & Navigation Help")
+        st.caption("Replay the interactive walkthrough, restore the Home Getting Started checklist, or explore with sample data.")
+        oh1, oh2, oh3 = st.columns(3)
+        with oh1:
+            if st.button("🎬 Replay Welcome Tour", use_container_width=True, key="set_replay_tour"):
+                st.session_state["_tour_step"] = 1
+                st.session_state["_tour_keep_open"] = True
+                st.rerun()
+        with oh2:
+            if st.button("🚀 Show Getting Started Checklist", use_container_width=True, key="set_restore_checklist"):
+                import onboarding
+                onboarding._mark_onboarding_state(current_user, checklist_dismissed=False)
+                st.toast("✅ Getting Started checklist restored on Home!")
+                ui.navigate_to("home")
+        with oh3:
+            in_sb = data_layer.is_sandbox_mode()
+            if st.button(
+                "🚪 Exit Sample Data" if in_sb else "🎮 Try Sample Data",
+                use_container_width=True,
+                key="set_toggle_sandbox",
+            ):
+                st.session_state["is_sandbox_mode"] = not in_sb
+                data_layer.invalidate_data_cache()
+                st.rerun()
 
 
 def _render_integrations(current_user) -> None:

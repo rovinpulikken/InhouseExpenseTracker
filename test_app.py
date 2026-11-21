@@ -1240,6 +1240,87 @@ def test_mobile_ux_modules_and_reports_engine():
     print("✅ Mobile-first UX modules & shared reports engine test passed.")
 
 
+def test_onboarding_state_and_navigation_guides():
+    import onboarding
+    from database import authenticate_user, create_user, update_user_onboarding_state
+
+    # 1. Verify onboarding flags migrate & persist via authenticate_user
+    init_db()
+    create_user("onboard_tester", "pass1234", "Onboard Tester", role="Member", family_id=1)
+    u = authenticate_user("onboard_tester", "pass1234")
+    assert u is not None
+    assert "onboarding_completed" in u and "onboarding_checklist_dismissed" in u
+    assert u["onboarding_completed"] == 0 and u["onboarding_checklist_dismissed"] == 0
+
+    assert update_user_onboarding_state("onboard_tester", tour_completed=True, checklist_dismissed=True) is True
+    u_after = authenticate_user("onboard_tester", "pass1234")
+    assert u_after["onboarding_completed"] == 1
+    assert u_after["onboarding_checklist_dismissed"] == 1
+
+    assert update_user_onboarding_state("onboard_tester", tour_completed=False, checklist_dismissed=False) is True
+    u_reset = authenticate_user("onboard_tester", "pass1234")
+    assert u_reset["onboarding_completed"] == 0
+    assert u_reset["onboarding_checklist_dismissed"] == 0
+
+    # 2. Verify all 12 pages have complete contextual help metadata
+    expected_pages = {
+        "home", "transactions", "budgets", "insights", "reports",
+        "portfolio", "loans", "tax", "retirement", "academy", "settings", "admin",
+    }
+    assert expected_pages.issubset(set(onboarding.PAGE_HELP_GUIDES.keys()))
+    for pkey in expected_pages:
+        g = onboarding.PAGE_HELP_GUIDES[pkey]
+        assert g.get("title") and g.get("summary") and len(g.get("sections", [])) >= 2
+
+    # 3. Verify searchable intent directory
+    assert len(onboarding.filter_intent_directory("")) == len(onboarding.INTENT_DIRECTORY)
+    pdf_hits = onboarding.filter_intent_directory("hdfc pdf")
+    assert any(h["page"] == "transactions" and h["sub_tab"] == "📤 Import" for h in pdf_hits)
+    tax_hits = onboarding.filter_intent_directory("80c tax")
+    assert any(h["page"] == "tax" for h in tax_hits)
+    assert onboarding.filter_intent_directory("zzzz_no_match_xyz") == []
+    for entry in onboarding.INTENT_DIRECTORY:
+        assert entry["page"] in expected_pages
+
+    # 4. Verify live Getting Started checklist progress math (0/5, partial, 5/5)
+    empty_status = onboarding.compute_checklist_steps(
+        current_user={"username": "newuser", "dob": ""},
+        all_tx_df=pd.DataFrame(),
+        income_df=pd.DataFrame(),
+        budget_df=pd.DataFrame(),
+        inv_df=pd.DataFrame(),
+        debts_df=pd.DataFrame(),
+        report_generated=False,
+    )
+    assert empty_status["completed"] == 0 and empty_status["total"] == 5 and empty_status["pct"] == 0
+    assert empty_status["all_done"] is False and empty_status["next_step_id"] == "income"
+
+    partial_status = onboarding.compute_checklist_steps(
+        current_user={"username": "newuser", "dob": ""},
+        all_tx_df=pd.DataFrame([{"transaction_type": "Income", "amount": 50000.0}]),
+        income_df=pd.DataFrame(),
+        budget_df=pd.DataFrame(),
+        inv_df=pd.DataFrame(),
+        debts_df=pd.DataFrame(),
+    )
+    assert partial_status["completed"] == 2 and partial_status["pct"] == 40
+    assert partial_status["next_step_id"] == "budget"
+
+    full_status = onboarding.compute_checklist_steps(
+        current_user={"username": "newuser", "dob": "1990-01-01"},
+        all_tx_df=pd.DataFrame([{"transaction_type": "Expense", "amount": 1000.0}]),
+        income_df=pd.DataFrame([{"monthly_equivalent": 100000.0}]),
+        budget_df=pd.DataFrame([{"category": "Rent", "Annual_Budget": 300000.0}]),
+        inv_df=pd.DataFrame([{"current_value": 50000.0}]),
+        debts_df=pd.DataFrame(),
+        report_generated=True,
+    )
+    assert full_status["completed"] == 5 and full_status["pct"] == 100 and full_status["all_done"] is True
+    assert full_status["next_step_id"] is None
+
+    print("✅ First-time onboarding state, checklist & navigation guides test passed.")
+
+
 if __name__ == "__main__":
     try:
         test_strict_uploaded_date_enforcement()
@@ -1269,6 +1350,7 @@ if __name__ == "__main__":
         test_turso_error_fallback_resilience()
         test_monthly_view_and_transaction_type_handling()
         test_mobile_ux_modules_and_reports_engine()
+        test_onboarding_state_and_navigation_guides()
         print("🎉 All test suite assertions passed successfully!")
     finally:
         if os.path.exists(database.DB_PATH):

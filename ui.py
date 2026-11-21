@@ -263,12 +263,70 @@ def inject_global_styles() -> None:
             .surge-badge { background: #881337; color: #fecdd3; padding: 3px 8px; border-radius: 6px; font-weight: 600; font-size: 0.78rem; }
             .normal-badge { background: #064e3b; color: #6ee7b7; padding: 3px 8px; border-radius: 6px; font-weight: 600; font-size: 0.78rem; }
 
+            /* ── Onboarding Tour & Navigation Help Components ──────── */
+            .fc-tour-progress {
+                display: flex;
+                align-items: center;
+                justify-content: space-between;
+                margin-bottom: 12px;
+            }
+            .fc-tour-dots {
+                display: flex;
+                gap: 7px;
+                align-items: center;
+            }
+            .fc-tour-dot {
+                width: 9px;
+                height: 9px;
+                border-radius: 999px;
+                background: #334155;
+                transition: all 0.2s ease;
+            }
+            .fc-tour-dot.active {
+                width: 24px;
+                background: #38bdf8;
+            }
+            .fc-tour-dot.done {
+                background: #34d399;
+            }
+            .fc-tour-step-lbl {
+                font-size: 0.78rem;
+                color: #94a3b8;
+                font-weight: 600;
+            }
+            .fc-tour-grid {
+                display: grid;
+                grid-template-columns: repeat(2, minmax(0, 1fr));
+                gap: 10px;
+                margin: 10px 0 6px;
+            }
+            .fc-tour-card {
+                background: #131d2f;
+                border: 1px solid #243249;
+                border-radius: 10px;
+                padding: 12px 14px;
+            }
+            .fc-tour-card-title {
+                font-size: 0.94rem;
+                font-weight: 700;
+                color: #f8fafc;
+                margin-bottom: 4px;
+            }
+            .fc-tour-card-desc {
+                font-size: 0.83rem;
+                color: #cbd5e1;
+                line-height: 1.4;
+            }
+
             /* ── Mobile Responsive Overrides (<= 768px) ────────────── */
             @media screen and (max-width: 768px) {
                 .block-container {
                     padding-left: 0.75rem !important;
                     padding-right: 0.75rem !important;
                     padding-top: 3.3rem !important;
+                }
+                .fc-tour-grid {
+                    grid-template-columns: 1fr !important;
                 }
                 div[data-testid="stHorizontalBlock"]:has(.fc-qnav-marker) {
                     flex-direction: row !important;
@@ -320,12 +378,12 @@ def render_page_header(
     subtitle: str = "",
     accent: str = "#38bdf8",
     badge: str = "",
+    help_key: Optional[str] = None,
 ) -> None:
-    """Render a single clean contextual header bar at the top of a page."""
+    """Render a single clean contextual header bar with an optional `❓ Guide` popover."""
     badge_html = f'<span class="fc-scope-badge">{badge}</span>' if badge else ""
     sub_html = f'<div class="fc-page-hdr-sub">{subtitle}</div>' if subtitle else ""
-    st.markdown(
-        f"""
+    hdr_html = f"""
         <div class="fc-page-hdr" style="border-left: 4px solid {accent};">
             <div>
                 <div class="fc-page-hdr-title">{icon} {title}</div>
@@ -333,9 +391,16 @@ def render_page_header(
             </div>
             {badge_html}
         </div>
-        """,
-        unsafe_allow_html=True,
-    )
+    """
+    if help_key:
+        import onboarding
+        hc1, hc2 = st.columns([5.6, 1.0], vertical_alignment="center")
+        with hc1:
+            st.markdown(hdr_html, unsafe_allow_html=True)
+        with hc2:
+            onboarding.render_page_help_popover(help_key)
+    else:
+        st.markdown(hdr_html, unsafe_allow_html=True)
 
 
 def render_kpi_grid(items: List[Dict[str, Any]], cols: int = 4) -> None:

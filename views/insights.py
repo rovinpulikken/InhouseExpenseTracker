@@ -38,6 +38,7 @@ def render() -> None:
         subtitle="Understand where your money goes, spot unusual spikes, and forecast inflation.",
         accent="#818cf8",
         badge=f"{view_mode} · {selected_fy}",
+        help_key="insights",
     )
 
     sub_opts = ["📊 Overview", "📈 Trends", "🚨 Alerts", "📉 Inflation"]

@@ -28,6 +28,7 @@ def render() -> None:
         subtitle="Manage household member accounts, roles, and raw database records.",
         accent="#e11d48",
         badge="Super Admin" if is_super_admin else "Family Admin",
+        help_key="admin",
     )
 
     sub_opts = ["👥 Users & Roles", "🗄️ Raw DB Log"]

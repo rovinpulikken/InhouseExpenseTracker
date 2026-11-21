@@ -65,6 +65,7 @@ def render() -> None:
         subtitle="Monitor category limits, catch overspending early, and track savings targets.",
         accent="#10b981",
         badge=f"{view_mode} · {target_fy}",
+        help_key="budgets",
     )
 
     sub_opts = ["🎯 Budgets", "🏆 Goals"]

@@ -1,5 +1,20 @@
 # Release Notes
 
+## v1.19.0 (2026-11-21)
+### Added — First-Time User Onboarding & 4-Layer Navigation Help System
+- **Layer 1 — 4-Step Interactive Welcome Tour (`onboarding.py`, `app.py`):**
+  - Auto-launches once on first login (`onboarding_completed == 0`) via `@st.dialog` without trapping on close (`X`) and with `Skip Tour` on every step.
+  - Covers the 4-zone navigation map (`Track / Analyze / Grow / Plan`), the Top Quick-Bar + Scope Bar, the 3 fastest ways to import data, and Step 4 starting CTAs (`➕ Log My First Transaction`, `🎮 Explore with Sample Data`, or `🏠 Go straight to Home`).
+- **Layer 2 — Live "Getting Started" Checklist on Home (`views/home.py`, `onboarding.py`):**
+  - Auto-detects setup progress across 5 milestones (income, first transaction, budgets, portfolio/loans, profile/reports) directly from already-cached Home DataFrames (zero extra DB queries), with 1-tap `Go →` deep-links, persistent `Hide`, and a dismissible `🎉 Setup Complete!` strip at 100%.
+- **Layer 3 — Contextual Per-Page `❓ Guide` Popover (`ui.py`, all 12 `views/*.py`):**
+  - Extended `ui.render_page_header(..., help_key=...)` with a compact `❓ Guide` `st.popover` tailored to every page's sub-pills and tips, plus a 1-tap `🎮 Preview with Sample Data` CTA on empty Home states and a `🚪 Exit Sample Data` button on the Sandbox banner.
+- **Layer 4 — Searchable "Where Do I Find...?" Navigation Guide (`onboarding.py`, `app.py`, `views/settings.py`):**
+  - Added a sidebar `❓ Navigation Guide` modal with instant keyword search (`"hdfc pdf"`, `"80c"`, `"sip"`, `"family"`, etc.) that deep-links straight to the target page and sub-pill, plus `Replay Welcome Tour`, `Show Getting Started Checklist`, and `Sample Data` controls in `Settings → Profile`.
+- **Database Persistence & Tests (`database.py`, `test_app.py`):**
+  - Added idempotent `onboarding_completed` and `onboarding_checklist_dismissed` migrations on `users` plus `update_user_onboarding_state()`.
+  - Added `test_onboarding_state_and_navigation_guides` verifying DB persistence, all 12 page guides, searchable intent directory, and checklist math.
+
 ## v1.18.1 (2026-11-21)
 ### Fixed — Top Navigation Bar Visibility, Header Overlap & Sidebar Contrast
 - **Root Cause:**

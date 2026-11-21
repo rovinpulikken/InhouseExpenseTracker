@@ -77,6 +77,7 @@ def render() -> None:
         "Loans & EMIs",
         subtitle="Track outstanding balances, log repayments, and simulate debt-free timelines.",
         accent="#f43f5e",
+        help_key="loans",
     )
 
     debts_df = data_layer.cached_get_debts(family_id=user_family_id or 1)

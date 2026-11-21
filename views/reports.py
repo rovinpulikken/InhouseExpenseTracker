@@ -34,6 +34,7 @@ def render() -> None:
         subtitle="Generate print-ready PDF/HTML statements, Excel workbooks, and full data exports on demand.",
         accent="#38bdf8",
         badge=f"{view_mode} · {selected_fy}",
+        help_key="reports",
     )
 
     sub_opts = ["📄 Statements", "🩺 Health Report", "📦 Exports"]

@@ -666,6 +666,10 @@ def _run_db_migrations(cursor):
         cursor.execute("ALTER TABLE users ADD COLUMN otp_hash TEXT")
     if "otp_expiry" not in u_cols:
         cursor.execute("ALTER TABLE users ADD COLUMN otp_expiry TIMESTAMP")
+    if "onboarding_completed" not in u_cols:
+        cursor.execute("ALTER TABLE users ADD COLUMN onboarding_completed INTEGER DEFAULT 0")
+    if "onboarding_checklist_dismissed" not in u_cols:
+        cursor.execute("ALTER TABLE users ADD COLUMN onboarding_checklist_dismissed INTEGER DEFAULT 0")
     # 3. Expenses Table
     cursor.execute("""
         CREATE TABLE IF NOT EXISTS expenses (
@@ -1008,7 +1012,11 @@ def create_family(family_name: str, admin_username: str, password: str, full_nam
         "role": "Admin",
         "family_id": family_id,
         "family_name": family_name_clean,
-        "family_code": family_code
+        "family_code": family_code,
+        "email": email.strip().lower() if email else None,
+        "security_question": security_question.strip() if security_question else None,
+        "onboarding_completed": 0,
+        "onboarding_checklist_dismissed": 0,
     }
     return True, f"Family '{family_name_clean}' created successfully!", user_info
 
@@ -1077,7 +1085,11 @@ def join_family_by_code(family_code: str, username: str, password: str, full_nam
         "role": role,
         "family_id": fam["id"],
         "family_name": fam["family_name"],
-        "family_code": fam["family_code"]
+        "family_code": fam["family_code"],
+        "email": email.strip().lower() if email else None,
+        "security_question": security_question.strip() if security_question else None,
+        "onboarding_completed": 0,
+        "onboarding_checklist_dismissed": 0,
     }
     return True, f"Successfully joined '{fam['family_name']}'!", user_info
 
@@ -1186,7 +1198,8 @@ def authenticate_user(username: str, password_attempt: str) -> Optional[Dict[str
         SELECT u.id, u.username, u.password_hash, u.full_name, u.role, u.family_id, f.family_name, f.family_code, 
                u.gemini_api_key, u.age, u.sex, u.dob, u.address, u.city, u.state, u.country, u.income_range, 
                u.occupation, u.marital_status, u.risk_tolerance, u.email, u.security_question,
-               u.imap_email, u.imap_app_password, u.pdf_password
+               u.imap_email, u.imap_app_password, u.pdf_password,
+               u.onboarding_completed, u.onboarding_checklist_dismissed
         FROM users u
         LEFT JOIN families f ON u.family_id = f.id
         WHERE u.username = ?
@@ -1199,6 +1212,8 @@ def authenticate_user(username: str, password_attempt: str) -> Optional[Dict[str
         
     if isinstance(row, sqlite3.Row):
         user_dict = dict(row)
+        user_dict["onboarding_completed"] = int(user_dict.get("onboarding_completed") or 0)
+        user_dict["onboarding_checklist_dismissed"] = int(user_dict.get("onboarding_checklist_dismissed") or 0)
     else:
         user_dict = {
             "id": row[0], "username": row[1], "password_hash": row[2], "full_name": row[3], "role": row[4],
@@ -1207,13 +1222,44 @@ def authenticate_user(username: str, password_attempt: str) -> Optional[Dict[str
             "sex": row[10], "dob": row[11], "address": row[12], "city": row[13], "state": row[14], 
             "country": row[15], "income_range": row[16], "occupation": row[17], "marital_status": row[18], "risk_tolerance": row[19],
             "email": row[20], "security_question": row[21],
-            "imap_email": row[22] or "", "imap_app_password": row[23] or "", "pdf_password": row[24] or ""
+            "imap_email": row[22] or "", "imap_app_password": row[23] or "", "pdf_password": row[24] or "",
+            "onboarding_completed": int(row[25] or 0) if len(row) > 25 else 0,
+            "onboarding_checklist_dismissed": int(row[26] or 0) if len(row) > 26 else 0,
         }
     
     if verify_password(user_dict["password_hash"], password_attempt):
         user_dict.pop("password_hash", None)
         return user_dict
     return None
+
+
+def update_user_onboarding_state(
+    username: str,
+    tour_completed: Optional[bool] = None,
+    checklist_dismissed: Optional[bool] = None,
+) -> bool:
+    """Persist first-time onboarding tour and Home checklist dismissal flags."""
+    try:
+        fields = []
+        params: List[Any] = []
+        if tour_completed is not None:
+            fields.append("onboarding_completed = ?")
+            params.append(1 if tour_completed else 0)
+        if checklist_dismissed is not None:
+            fields.append("onboarding_checklist_dismissed = ?")
+            params.append(1 if checklist_dismissed else 0)
+        if not fields:
+            return False
+        params.append(username.strip().lower())
+        conn = get_connection()
+        cursor = conn.cursor()
+        cursor.execute(f"UPDATE users SET {', '.join(fields)} WHERE username = ?", tuple(params))
+        conn.commit()
+        conn.close()
+        return True
+    except Exception as e:
+        print(f"Error updating onboarding state for {username}: {e}")
+        return False
 
 def update_user_gemini_key(username: str, api_key: str) -> bool:
     try:

@@ -155,6 +155,7 @@ def render() -> None:
         subtitle="Track holdings, monitor allocation drift, get algorithmic & AI advice, and plan SIPs.",
         accent="#10b981",
         badge=f"{view_mode} View",
+        help_key="portfolio",
     )
 
     inv_df = data_layer.get_user_investments_df(

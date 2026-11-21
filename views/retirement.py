@@ -32,6 +32,7 @@ def render() -> None:
         "Retirement Planner",
         subtitle="Model your retirement corpus, inflation-adjusted lifestyle surge, milestones, and 4% SWP.",
         accent="#c084fc",
+        help_key="retirement",
     )
 
     u_age = int(st.session_state.get("invest_user_age", current_user.get("age", 35)) or 35)

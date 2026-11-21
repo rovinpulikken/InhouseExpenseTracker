@@ -35,6 +35,7 @@ from database import (
 )
 from email_utils import send_otp_email
 import data_layer
+import onboarding
 import ui
 
 # Page Config
@@ -423,15 +424,25 @@ else:
     active_family_id = st.session_state.get("_active_family_id", 1)
 
     # Global 1-tap primary action button
+    dialog_opened = False
     if st.sidebar.button("➕ Add Transaction", type="primary", use_container_width=True, key="sb_btn_add_tx"):
         ui.open_add_transaction_dialog(current_user, active_family_id)
+        dialog_opened = True
 
-    if st.session_state.pop("_reopen_add_tx", False):
+    if not dialog_opened and st.session_state.pop("_reopen_add_tx", False):
         ui.open_add_transaction_dialog(current_user, active_family_id)
+        dialog_opened = True
 
-    # Sandbox banner (strictly gated behind is_sandbox_mode)
+    # Sandbox banner with 1-tap exit (strictly gated behind is_sandbox_mode)
     if st.session_state.get("is_sandbox_mode", False):
-        st.error("🎮 **SANDBOX MODE ACTIVE**: Data is simulated. Your real financial data is safe and hidden.")
+        sb_c1, sb_c2 = st.columns([4.5, 1.3], vertical_alignment="center")
+        with sb_c1:
+            st.error("🎮 **SAMPLE DATA MODE ACTIVE**: Exploring simulated data. Your real financial records are safe and untouched.")
+        with sb_c2:
+            if st.button("🚪 Exit Sample Data", use_container_width=True, key="exit_sandbox_banner"):
+                st.session_state["is_sandbox_mode"] = False
+                data_layer.invalidate_data_cache()
+                st.rerun()
 
     # ── Grouped Navigation (st.navigation) ──────────────────────────────
     p_home = st.Page(_pg_home, title="Home", icon="🏠", url_path="home", default=True)
@@ -482,19 +493,40 @@ else:
         position="sidebar",
     )
 
-    # Subtle sidebar footer (Sign Out + Cloud sync status dot)
+    # Subtle sidebar footer (Navigation Guide + Cloud sync status + Sign Out)
     st.sidebar.markdown("---")
+    if st.sidebar.button("❓ Navigation Guide", use_container_width=True, key="sb_nav_guide"):
+        st.session_state["_open_nav_guide"] = True
+        st.rerun()
+
     db_t = get_db_type()
     is_cloud = ("Turso" in db_t and "fallback" not in db_t.lower())
     dot_color = "#10b981" if is_cloud else "#f59e0b"
     dot_label = "Cloud synced" if is_cloud else "Local SQLite"
     st.sidebar.markdown(
-        f'<div style="font-size:0.75rem; color:#94a3b8; margin-bottom:8px;">'
+        f'<div style="font-size:0.75rem; color:#94a3b8; margin:6px 0 8px;">'
         f'<span style="color:{dot_color};">●</span> {dot_label} &middot; @{current_user["username"]}</div>',
         unsafe_allow_html=True,
     )
     if st.sidebar.button("🚪 Sign Out", use_container_width=True, key="sb_sign_out"):
         st.session_state.clear()
         st.rerun()
+
+    # Open at most ONE onboarding/help dialog per rerun (never traps on X-close)
+    if not dialog_opened:
+        if st.session_state.pop("_open_nav_guide", False):
+            onboarding.open_navigation_guide_dialog(current_user, active_family_id)
+            dialog_opened = True
+        elif st.session_state.pop("_tour_keep_open", False):
+            onboarding.open_welcome_tour_dialog(current_user, active_family_id)
+            dialog_opened = True
+        elif (
+            int(current_user.get("onboarding_completed") or 0) == 0
+            and not st.session_state.get("_first_tour_shown", False)
+        ):
+            st.session_state["_first_tour_shown"] = True
+            st.session_state["_tour_step"] = 1
+            onboarding.open_welcome_tour_dialog(current_user, active_family_id)
+            dialog_opened = True
 
     pg.run()

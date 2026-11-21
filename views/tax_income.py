@@ -54,6 +54,7 @@ def render() -> None:
         subtitle=f"Log income, configure deductions & capital gains, and estimate tax liability. RBI FRSB: {FRSB_RATE*100:.2f}% ({FRSB_RATE_EFFECTIVE}).",
         accent="#fbbf24",
         badge=f"FY {fy_clean}",
+        help_key="tax",
     )
 
     user_key = current_user["username"]

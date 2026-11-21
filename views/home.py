@@ -17,6 +17,7 @@ import streamlit as st
 from config import format_inr, format_inr_short, get_indian_fy
 from financial_report import compute_financial_health
 import data_layer
+import onboarding
 import ui
 
 
@@ -38,6 +39,7 @@ def render() -> None:
         subtitle="Your financial snapshot at a glance.",
         accent="#38bdf8",
         badge=f"{view_mode} · {month_label if selected_month != 'All Months' else selected_fy}",
+        help_key="home",
     )
 
     if data_layer.is_sandbox_mode():
@@ -147,8 +149,15 @@ def render() -> None:
         if st.button("📑 Monthly Report", use_container_width=True, key="home_qa_rep"):
             ui.navigate_to("reports", sub_tab="📄 Statements")
 
-    # Fetch portfolio, debts, budgets for alerts & net worth tile
+    # Fetch portfolio, debts, budgets, and historical tx (cached) for checklist, alerts & net worth tile
     target_fy_clean = selected_fy if selected_fy != "All FYs" else (scope["all_fys"][0] if scope["all_fys"] else get_indian_fy(datetime.date.today()))
+    all_hist = data_layer.get_expenses_df(
+        fy="All FYs",
+        username=current_user["username"],
+        view_mode=view_mode,
+        family_id=user_family_id,
+        transaction_type="All",
+    )
     inv_df = data_layer.get_user_investments_df(
         username=current_user["username"] if view_mode != "Family" else None,
         family_id=user_family_id,
@@ -156,6 +165,17 @@ def render() -> None:
     debts_df = data_layer.cached_get_debts(family_id=user_family_id)
     budget_status = data_layer.get_budget_status(
         target_fy_clean, username=current_user["username"], view_mode=view_mode, family_id=user_family_id
+    )
+
+    # ── 2b. Live Getting Started Checklist (Layer 2 Onboarding) ──────────
+    onboarding.render_getting_started_checklist(
+        current_user=current_user,
+        user_family_id=user_family_id,
+        all_tx_df=all_hist,
+        income_df=income_sources_df,
+        budget_df=budget_status,
+        inv_df=inv_df,
+        debts_df=debts_df,
     )
 
     # ── 3. Needs Attention (only rendered if non-empty) ─────────────────
@@ -237,11 +257,16 @@ def render() -> None:
             if ui.render_empty_state(
                 "💸",
                 f"No expenses logged for {month_label}",
-                "Log your first expense or import a statement to see your spending breakdown.",
+                "Log your first expense, upload a bank statement, or preview with sample data.",
                 cta_label="➕ Log First Expense",
                 cta_key="home_empty_add",
             ):
                 ui.open_add_transaction_dialog(current_user, user_family_id)
+            if all_hist.empty and not data_layer.is_sandbox_mode():
+                if st.button("🎮 Preview with Sample Data", key="home_empty_sandbox", use_container_width=True):
+                    st.session_state["is_sandbox_mode"] = True
+                    data_layer.invalidate_data_cache()
+                    st.rerun()
 
     with col_recent:
         r_hdr1, r_hdr2 = st.columns([2.5, 1])
@@ -265,13 +290,6 @@ def render() -> None:
 
     with col_trend:
         st.markdown("##### 📈 6-Month Cash Flow Trend")
-        all_hist = data_layer.get_expenses_df(
-            fy="All FYs",
-            username=current_user["username"],
-            view_mode=view_mode,
-            family_id=user_family_id,
-            transaction_type="All",
-        )
         if not all_hist.empty and "expense_date" in all_hist.columns:
             all_hist["Month_Key"] = pd.to_datetime(all_hist["expense_date"], errors="coerce").dt.strftime("%Y-%m")
             if "transaction_type" not in all_hist.columns:

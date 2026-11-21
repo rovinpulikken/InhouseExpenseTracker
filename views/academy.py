@@ -17,6 +17,7 @@ def render() -> None:
         "Financial Academy",
         subtitle="Personalised assessments, interactive learning paths, and sandbox missions.",
         accent="#34d399",
+        help_key="academy",
     )
     render_financial_academy_tab(data_layer.get_gemini_api_key(current_user))
 
