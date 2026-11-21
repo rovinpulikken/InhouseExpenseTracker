@@ -249,8 +249,8 @@ def derive_investment_income(
             seen_names.add(label.lower())
 
         elif _itype_matches(itype, _EQUITY_KEYWORDS) and units > 0:
-            ticker = str(row.get("platform", "")).strip()
-            div_per_unit = _fetch_equity_dividend(ticker)
+            ticker = str(row.get("description") or row.get("resolved_name") or "").strip()
+            div_per_unit = _fetch_equity_dividend(ticker) if ticker else 0.0
             annual = round(units * div_per_unit, 2)
             if annual > 0:
                 label = name or ticker
@@ -371,20 +371,33 @@ def derive_investment_income(
     return list(dedup_dict.values())
 
 
+_DIVIDEND_CACHE: Dict[str, Tuple[float, float]] = {}
+
+
 def _fetch_equity_dividend(ticker: str) -> float:
-    """Fetch last 12m declared dividends per share using yfinance. Returns 0.0 on error."""
+    """Fetch last 12m declared dividends per share using yfinance (cached 1h). Returns 0.0 on error."""
+    import time
+    t_key = (ticker or "").strip().upper()
+    if not t_key or " " in t_key:
+        return 0.0
+    now = time.monotonic()
+    cached = _DIVIDEND_CACHE.get(t_key)
+    if cached and (now - cached[1]) < 3600.0:
+        return cached[0]
     try:
         import yfinance as yf
-        t = ticker.strip()
-        if t and "." not in t:
-            t = t + ".NS"
+        t = t_key if "." in t_key else f"{t_key}.NS"
         hist = yf.Ticker(t).dividends
         if hist is None or hist.empty:
+            _DIVIDEND_CACHE[t_key] = (0.0, now)
             return 0.0
         cutoff = pd.Timestamp.now(tz="UTC") - pd.DateOffset(months=12)
         recent = hist[hist.index >= cutoff]
-        return float(recent.sum()) if not recent.empty else 0.0
+        val = float(recent.sum()) if not recent.empty else 0.0
+        _DIVIDEND_CACHE[t_key] = (val, now)
+        return val
     except Exception:
+        _DIVIDEND_CACHE[t_key] = (0.0, now)
         return 0.0
 
 

@@ -1209,50 +1209,77 @@ def render_financial_health_report_ui(
         "include_holding_details": inc_holding_details,
     }
 
-    # Generate documents
-    html_report = generate_html_report(
-        user=current_user,
-        health_data=health_data,
-        inv_df=inv_df,
-        debts_df=debts_df,
-        options=report_options
+    # Generate documents on demand (avoid rebuilding Excel/HTML on every rerun)
+    st.markdown("##### 📥 Generate & Download Customised Report")
+    cache_sig = (
+        clean_user,
+        today_str,
+        custom_title,
+        custom_note,
+        tuple(chosen_sections),
+        bool(inc_holding_details),
+        round(float(m["net_worth"]), 2),
+        len(inv_df) if inv_df is not None else 0,
     )
+    cached_bundle = st.session_state.get("_health_report_bundle")
+    is_ready = bool(cached_bundle and cached_bundle.get("sig") == cache_sig)
 
-    excel_report = generate_excel_report(
-        user=current_user,
-        health_data=health_data,
-        inv_df=inv_df,
-        debts_df=debts_df,
-        options=report_options
-    )
+    if st.button(
+        "⚡ Generate Customised Report" if not is_ready else "🔄 Regenerate Report",
+        type="primary",
+        use_container_width=True,
+        key="btn_gen_health_report",
+    ):
+        with st.spinner("Building Print-Ready HTML & Excel Workbook..."):
+            html_report = generate_html_report(
+                user=current_user,
+                health_data=health_data,
+                inv_df=inv_df,
+                debts_df=debts_df,
+                options=report_options,
+            )
+            excel_report = generate_excel_report(
+                user=current_user,
+                health_data=health_data,
+                inv_df=inv_df,
+                debts_df=debts_df,
+                options=report_options,
+            )
+            st.session_state["_health_report_bundle"] = {
+                "sig": cache_sig,
+                "html": html_report,
+                "excel": excel_report,
+            }
+            cached_bundle = st.session_state["_health_report_bundle"]
+            is_ready = True
 
-    # Action buttons for download & preview
-    st.markdown("##### 📥 Download Customised Report")
-    d1, d2, d3 = st.columns([1.2, 1.2, 1])
-    with d1:
-        st.download_button(
-            label="🖨️ Download Print-Ready HTML / PDF",
-            data=html_report,
-            file_name=f"Financial_Health_Report_{clean_user}_{today_str}.html",
-            mime="text/html",
-            type="primary",
-            use_container_width=True,
-            help="Download as HTML. Open in any browser and press Ctrl+P / Cmd+P to print or save directly as a clean PDF."
-        )
-    with d2:
-        st.download_button(
-            label="📊 Download Excel Workbook (.xlsx)",
-            data=excel_report,
-            file_name=f"Financial_Health_Report_{clean_user}_{today_str}.xlsx",
-            mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
-            type="secondary",
-            use_container_width=True,
-            help="Download multi-tab formatted Excel sheet with KPI summaries, holdings audit, and debt schedule."
-        )
-    with d3:
-        show_preview = st.toggle("👁️ Preview Report", value=False, key="rep_toggle_preview")
+    if is_ready and cached_bundle:
+        html_report = cached_bundle["html"]
+        excel_report = cached_bundle["excel"]
+        d1, d2, d3 = st.columns([1.2, 1.2, 1])
+        with d1:
+            st.download_button(
+                label="🖨️ Download HTML / PDF",
+                data=html_report,
+                file_name=f"Financial_Health_Report_{clean_user}_{today_str}.html",
+                mime="text/html",
+                type="primary",
+                use_container_width=True,
+                help="Open in any browser and press Ctrl+P / Cmd+P to save as PDF.",
+            )
+        with d2:
+            st.download_button(
+                label="📊 Download Excel (.xlsx)",
+                data=excel_report,
+                file_name=f"Financial_Health_Report_{clean_user}_{today_str}.xlsx",
+                mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+                type="secondary",
+                use_container_width=True,
+            )
+        with d3:
+            show_preview = st.toggle("👁️ Preview Report", value=False, key="rep_toggle_preview")
 
-    if show_preview:
-        st.markdown("#### 📄 In-App Report Live Preview")
-        components.html(html_report, height=700, scrolling=True)
+        if show_preview:
+            st.markdown("#### 📄 In-App Report Live Preview")
+            components.html(html_report, height=700, scrolling=True)
 

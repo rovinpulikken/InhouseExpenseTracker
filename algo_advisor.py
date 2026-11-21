@@ -428,6 +428,16 @@ def build_algo_advice(holdings_df, risk_tolerance: str = "Moderate", age: Option
 # ---------------------------------------------------------------------------
 # Streamlit UI
 # ---------------------------------------------------------------------------
+def _get_cached_market_regime() -> Dict[str, Any]:
+    import streamlit as st
+
+    @st.cache_data(ttl=3600, show_spinner=False)
+    def _cached_fetch() -> Dict[str, Any]:
+        return fetch_market_regime()
+
+    return _cached_fetch()
+
+
 def render_algo_advisor(inv_df, current_user: Dict[str, Any], monthly_sip: float = 0.0) -> None:
     import streamlit as st
     import pandas as pd
@@ -436,10 +446,6 @@ def render_algo_advisor(inv_df, current_user: Dict[str, Any], monthly_sip: float
     if inv_df is None or inv_df.empty:
         st.info("Add holdings to get an algorithmic Hold / Buy / Sell summary.")
         return
-
-    @st.cache_data(ttl=3600, show_spinner=False)
-    def _cached_regime():
-        return fetch_market_regime()
 
     c1, c2 = st.columns([2, 1])
     with c1:
@@ -452,7 +458,7 @@ def render_algo_advisor(inv_df, current_user: Dict[str, Any], monthly_sip: float
     override = None if choice.startswith("Auto") else choice.split(" ")[0]
 
     with st.spinner("Reading Nifty 50 trend & India VIX..."):
-        regime = _cached_regime()
+        regime = _get_cached_market_regime()
     res = build_algo_advice(inv_df, current_user.get("risk_tolerance", "Moderate"), current_user.get("age"),
                             monthly_sip, regime, override)
     if "error" in res:
@@ -467,21 +473,23 @@ def render_algo_advisor(inv_df, current_user: Dict[str, Any], monthly_sip: float
     cfg = res["config"]
     st.caption(f"**{res['tier']} tier** — {cfg['objective']}  Key trigger: {cfg['rule']}")
 
-    t_alloc, t_hold, t_buy, t_mkt = st.tabs(["⚖️ Allocation Drift", "💼 Holding Actions", "🛒 Buy List & SIP", "🌐 Market Triggers"])
     badge = {"BUY": "🟢 BUY", "SELL / TRIM": "🔴 SELL / TRIM", "HOLD": "⚪ HOLD", "REVIEW": "🟠 REVIEW"}
-    with t_alloc:
+
+    with st.expander("⚖️ Allocation Drift", expanded=True):
         df = pd.DataFrame(res["sleeve_rows"])
         df["Action"] = df["Action"].map(badge)
         df["Amount"] = df["Amount"].apply(lambda v: _fmt(v) if v else "—")
         st.dataframe(df, use_container_width=True, hide_index=True)
         st.caption(f"Rebalance when any sleeve drifts more than {DRIFT_BAND:.0f}% (and review at least every 6 months).")
-    with t_hold:
+
+    with st.expander("💼 Holding Actions", expanded=False):
         h = pd.DataFrame(res["holding_actions"])
         h["Action"] = h["Action"].map(badge)
         h["Value"] = h["Value"].apply(_fmt)
         h["Amount"] = h["Amount"].apply(lambda v: _fmt(v) if v else "—")
         st.dataframe(h, use_container_width=True, hide_index=True)
-    with t_buy:
+
+    with st.expander("🛒 Buy List & Monthly SIP Routing", expanded=False):
         if res["buys"]:
             b = pd.DataFrame(res["buys"])
             b["Amount"] = b["Amount"].apply(lambda v: _fmt(v) if v else "—")
@@ -493,8 +501,10 @@ def render_algo_advisor(inv_df, current_user: Dict[str, Any], monthly_sip: float
             s = pd.DataFrame(res["sip_plan"])
             s["Monthly ₹"] = s["Monthly ₹"].apply(_fmt)
             st.dataframe(s, use_container_width=True, hide_index=True)
-    with t_mkt:
+
+    with st.expander("🌐 Market Triggers & Regime Signals", expanded=False):
         for sig in res["regime"]["signals"]:
             st.markdown(f"- {sig}")
+
     st.caption("⚠️ Rule-based model output for education — not SEBI-registered investment advice. "
                "Instruments are categories, not specific recommendations.")

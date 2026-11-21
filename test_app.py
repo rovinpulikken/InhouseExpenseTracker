@@ -1147,12 +1147,97 @@ def test_monthly_view_and_transaction_type_handling():
     avail_months_sb = sb_df.sort_values("expense_date", ascending=False)["Month_Year"].drop_duplicates().tolist()
     assert len(avail_months_sb) > 0
 
-    # Verify app.py properly gates sandbox mode behind st.session_state.get("is_sandbox_mode", False)
+    # Verify app.py and data_layer.py properly gate sandbox mode behind st.session_state.get("is_sandbox_mode", False)
     with open(os.path.join(os.path.dirname(__file__), "app.py"), "r") as f_app:
         app_src = f_app.read()
-    assert 'if st.session_state.get("is_sandbox_mode", False):\n        global get_expenses_df' in app_src
+    assert 'st.session_state.get("is_sandbox_mode", False)' in app_src
+    assert 'get_expenses_df = sandbox_get_expenses_df' not in app_src
 
     print("✅ Monthly view transaction type handling & net savings test passed.")
+
+
+def test_mobile_ux_modules_and_reports_engine():
+    # 1. Verify all modular pages, UI system, data layer, and report engine import cleanly
+    import importlib
+    for mod_name in [
+        "data_layer",
+        "ui",
+        "reports_engine",
+        "views.home",
+        "views.transactions",
+        "views.budgets",
+        "views.insights",
+        "views.reports",
+        "views.portfolio",
+        "views.loans",
+        "views.tax_income",
+        "views.retirement",
+        "views.academy",
+        "views.settings",
+        "views.admin",
+    ]:
+        mod = importlib.import_module(mod_name)
+        if mod_name.startswith("views."):
+            assert callable(getattr(mod, "render", None)), f"{mod_name} missing render()"
+
+    # 2. Test ui.filter_df_by_month
+    import ui
+    sample_tx = pd.DataFrame([
+        {"expense_date": "2026-11-05", "Month_Key": "2026-11", "category": "Groceries & Provisions", "description": "D-Mart", "amount": 5000.0, "transaction_type": "Expense", "visibility": "Family"},
+        {"expense_date": "2026-11-01", "Month_Key": "2026-11", "category": "Salary", "description": "Nov Salary", "amount": 100000.0, "transaction_type": "Income", "visibility": "Family"},
+        {"expense_date": "2026-10-10", "Month_Key": "2026-10", "category": "Rent & Housing", "description": "Oct Rent", "amount": 25000.0, "transaction_type": "Expense", "visibility": "Family"},
+    ])
+    assert len(ui.filter_df_by_month(sample_tx, "All Months")) == 3
+    nov_df = ui.filter_df_by_month(sample_tx, "2026-11")
+    assert len(nov_df) == 2
+
+    # 3. Test reports_engine Monthly Statement, FY Summary, Portfolio Statement, Tax Summary
+    import reports_engine
+    m_data = reports_engine.build_monthly_statement_data(nov_df, "2026-11", recurring_monthly_income=0.0)
+    assert m_data["total_income"] == 100000.0
+    assert m_data["tx_expense"] == 5000.0
+    assert m_data["net_savings"] == 95000.0
+    m_html = reports_engine.generate_monthly_statement_html(m_data, user_label="Admin")
+    assert "Monthly Statement" in m_html and "D-Mart" in m_html
+    m_xlsx = reports_engine.generate_monthly_statement_excel(m_data)
+    assert isinstance(m_xlsx, bytes) and len(m_xlsx) > 200
+
+    fy_data = reports_engine.build_fy_summary_data(sample_tx, "FY 2026-27")
+    assert fy_data["total_expense"] == 30000.0
+    fy_html = reports_engine.generate_fy_summary_html(fy_data, user_label="Admin")
+    assert "FY 2026-27" in fy_html
+    fy_xlsx = reports_engine.generate_fy_summary_excel(fy_data)
+    assert isinstance(fy_xlsx, bytes) and len(fy_xlsx) > 200
+
+    inv_sample = pd.DataFrame([
+        {"description": "NIFTYBEES", "resolved_name": "Nippon Nifty ETF", "platform": "Zerodha", "investment_type": "Equity", "investment_amount": 100000.0, "current_value": 120000.0, "returns_pct": 20.0}
+    ])
+    p_html = reports_engine.generate_portfolio_statement_html(inv_sample, user_label="Admin")
+    assert "Portfolio Statement" in p_html and "Nippon Nifty ETF" in p_html
+    p_xlsx = reports_engine.generate_portfolio_statement_excel(inv_sample)
+    assert isinstance(p_xlsx, bytes) and len(p_xlsx) > 200
+
+    t_html = reports_engine.generate_tax_summary_html(
+        {"gross_slab_income": 1200000.0, "total_deduction": 75000.0, "taxable_income": 1125000.0, "total_tax": 65000.0, "balance_due": 5000.0, "income_breakdown": [{"source": "Salary", "annual": 1200000.0}]},
+        fy="FY 2025-26", regime="New Regime", user_label="Admin",
+    )
+    assert "Tax Summary" in t_html and "Salary" in t_html
+
+    debt_sample = pd.DataFrame([
+        {"loan_name": "Home Loan", "loan_type": "Home Loan", "outstanding_principal": 4500000.0, "interest_rate": 8.5, "emi_amount": 42000.0, "remaining_months": 180}
+    ])
+    d_html = reports_engine.generate_debt_schedule_html(debt_sample, user_label="Admin")
+    assert "Debt &amp; Amortization Schedule" in d_html and "Home Loan" in d_html
+    d_xlsx = reports_engine.generate_debt_schedule_excel(debt_sample)
+    assert isinstance(d_xlsx, bytes) and len(d_xlsx) > 200
+
+    # 4. Verify sandbox_get_user_investments_df matches real database schema
+    from sandbox_data import sandbox_get_user_investments_df
+    sb_inv = sandbox_get_user_investments_df("admin", family_id=1)
+    for col in ["investment_type", "platform", "investment_amount", "current_value", "returns_pct", "unrealized_gain", "description", "resolved_name", "market_cap", "sector_segment"]:
+        assert col in sb_inv.columns, f"Missing {col} in sandbox_get_user_investments_df"
+
+    print("✅ Mobile-first UX modules & shared reports engine test passed.")
 
 
 if __name__ == "__main__":
@@ -1183,6 +1268,7 @@ if __name__ == "__main__":
         test_financial_health_report_and_customization()
         test_turso_error_fallback_resilience()
         test_monthly_view_and_transaction_type_handling()
+        test_mobile_ux_modules_and_reports_engine()
         print("🎉 All test suite assertions passed successfully!")
     finally:
         if os.path.exists(database.DB_PATH):

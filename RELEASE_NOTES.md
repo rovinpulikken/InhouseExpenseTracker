@@ -1,5 +1,33 @@
 # Release Notes
 
+## v1.18.0 (2026-11-21)
+### Added — Mobile-First UX Redesign, Grouped Navigation, Hybrid Reports Hub & Performance Architecture
+- **Modular Page Architecture & Grouped Navigation (`st.navigation`):**
+  - Refactored the 4,924-line `app.py` monolith into a clean ~380-line entrypoint backed by 12 lazy-loaded page modules under `views/` (`home`, `transactions`, `budgets`, `insights`, `reports`, `portfolio`, `loans`, `tax_income`, `retirement`, `academy`, `settings`, `admin`).
+  - Reorganized navigation into 4 clear domain groups in the sidebar (**Track**, **Analyze**, **Grow**, **Plan**) plus **More** (`🎓 Academy`, `⚙️ Settings`, and role-gated top-level `👑 Admin`), reducing top-level clutter and ensuring only the active page executes per rerun.
+  - Added a compact mobile-only top quick-bar (`🏠 Home`, `💸 Ledger`, `➕ Add`, `📈 Portfolio`) on screens `<= 768px` paired with Streamlit's native hamburger sidebar, responsive 2-up KPI grids, 44px touch targets, and native dark theme in `.streamlit/config.toml`.
+- **1-Tap Global Quick-Add & Unified Scope Bar (`ui.py`):**
+  - Added a global `@st.dialog` (`open_add_transaction_dialog`) accessible from the sidebar, mobile quick-bar, Home, and Transactions Ledger with `Save` and `Save & Add Another` actions.
+  - Replaced duplicate FY/month/visibility pickers with a single compact **Scope Bar** (`st.session_state["scope"]`) featuring `◀ ▶` month navigation synchronized across all pages.
+  - Added `🏠 Home` executive dashboard (`views/home.py`) surfacing This Month Cash Flow KPIs, 4 Quick Action chips, conditional Needs Attention alerts, Spending Mix donut, Recent 5 transaction cards, 6-Month Cash Flow trend, and Net Worth & Health Score summary.
+- **Consolidated Daily Workflows:**
+  - **Transactions (`views/transactions.py`):** Consolidated 6 legacy tabs into 3 clean pills (`📅 Ledger`, `📤 Import`, `🧹 Clean up`), defaulting to mobile-friendly transaction cards with an explicit `✏️ Edit / Bulk Entry` toggle for `st.data_editor`.
+  - **Budgets & Goals (`views/budgets.py`):** Replaced the 125-widget budget adjuster (25 categories × 5 widgets) with an over-budget-first progress view and a single `st.data_editor` allocation table with 3 smart presets (`50/30/20`, `Match Last FY`, `Cut 10%`).
+  - **Portfolio (`views/portfolio.py`):** Merged AI Strategist chat into the `🧭 Advisor` view, made duplicate scanning strictly on-demand, and deferred benchmark trend fetching until chat submission.
+  - **Tax & Income (`views/tax_income.py`):** Added a visual 4-step guided stepper (`1. Income → 2. Deductions → 3. Capital Gains → 4. Tax Summary`) with on-demand passive income detection.
+- **Hybrid Reporting & Central Reports Hub (`reports_engine.py`, `views/reports.py`):**
+  - Added a dedicated `📑 Reports` hub (`📄 Statements`, `🩺 Health Report`, `📦 Exports`) supporting on-demand HTML/PDF and Excel generation across all 6 core reports: **Monthly Statement**, **FY Annual Summary**, **Portfolio Valuation Statement**, **Tax Liability Summary**, **Debt & Amortization Schedule**, and **360° Financial Health Audit**, alongside contextual download shortcuts inside individual modules.
+- **Performance & Caching Overhaul (`data_layer.py`):**
+  - Introduced `@st.cache_data(ttl=120)` cached read facade with automatic cache invalidation on writes (`invalidate_data_cache()`) and proper sandbox dispatch.
+  - Cached Yahoo Finance market regime lookups (`@st.cache_data(ttl=3600)`) in `algo_advisor.py` and flattened 4th-level nested tabs into expanders.
+  - Changed `financial_report.py` so HTML & `openpyxl` Excel artifacts are built strictly on-demand when clicking Generate rather than on every rerun.
+  - Removed `importlib.reload()` calls in `views/retirement.py`.
+
+### Fixed — Tax Dividend Ticker Lookup & Sandbox Investments Schema
+- **Tax Passive Dividend Lookup (`tax_engine.py`):** Fixed `derive_investment_income()` to pass `description`/`resolved_name` instead of broker `platform` to `_fetch_equity_dividend()`, and added a 1-hour in-memory TTL cache to prevent repeated `yfinance` calls.
+- **Sandbox Mode Parity (`sandbox_data.py`, `data_layer.py`):** Updated `sandbox_get_user_investments_df()` to include the complete `database.get_user_investments_df()` schema (`investment_type`, `platform`, `investment_amount`, `returns_pct`, `unrealized_gain`, `description`, `resolved_name`, `market_cap`, `sector_segment`) while preserving legacy compatibility columns, and gated `cached_get_all_financial_years()` for sandbox mode.
+- **Unit & UI Verification (`test_app.py`):** Added `test_mobile_ux_modules_and_reports_engine` verifying all 12 view modules, month filtering, all `reports_engine` generators, and sandbox investment schema parity; verified all 34 view/sub-pill states via Streamlit `AppTest`.
+
 ## v1.17.2 (2026-11-16)
 ### Fixed — Turso Remote Database Unreachable Error (`'result'`) & Permanent Fallback Lockout
 - **Root Cause:**
