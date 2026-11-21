@@ -42,10 +42,53 @@ def inject_global_styles() -> None:
         <meta name="apple-mobile-web-app-capable" content="yes">
         <style>
             /* ── Base Layout & Spacing ─────────────────────────────── */
+            header[data-testid="stHeader"] {
+                background: rgba(11, 17, 32, 0.9) !important;
+                backdrop-filter: blur(8px);
+                border-bottom: 1px solid rgba(30, 41, 59, 0.7);
+            }
             .block-container {
-                padding-top: 1.1rem !important;
+                padding-top: 3.6rem !important;
                 padding-bottom: 2.5rem !important;
-                max-width: 1220px;
+                max-width: 1240px;
+            }
+            /* ── Sidebar Navigation Always Expanded & High-Contrast ── */
+            section[data-testid="stSidebar"] {
+                background-color: #10192b !important;
+                border-right: 1px solid #1e293b;
+            }
+            [data-testid="stSidebarNavItems"] {
+                max-height: none !important;
+            }
+            [data-testid="stSidebarNavLink"] span,
+            [data-testid="stSidebarNavSeparator"] {
+                color: #e2e8f0 !important;
+            }
+            [data-testid="stSidebarNavLink"][aria-current="page"] {
+                background: rgba(56, 189, 248, 0.16) !important;
+                border-left: 3px solid #38bdf8 !important;
+            }
+            [data-testid="stSidebarNavLink"][aria-current="page"] span {
+                color: #38bdf8 !important;
+                font-weight: 700 !important;
+            }
+            /* ── Top Quick-Navigation Bar (Always Visible) ─────────── */
+            div[data-testid="stElementContainer"]:has(.fc-qnav-marker),
+            div[data-testid="element-container"]:has(.fc-qnav-marker) {
+                display: none !important;
+                margin: 0 !important;
+                padding: 0 !important;
+            }
+            div[data-testid="stHorizontalBlock"]:has(.fc-qnav-marker) {
+                gap: 6px !important;
+                align-items: center !important;
+                margin-bottom: 6px !important;
+            }
+            div[data-testid="stHorizontalBlock"]:has(.fc-qnav-marker) button {
+                padding: 0.35rem 0.5rem !important;
+                font-size: 0.85rem !important;
+                font-weight: 600 !important;
+                white-space: nowrap !important;
             }
             /* ── Unified Page Header ───────────────────────────────── */
             .fc-page-hdr {
@@ -220,22 +263,23 @@ def inject_global_styles() -> None:
             .surge-badge { background: #881337; color: #fecdd3; padding: 3px 8px; border-radius: 6px; font-weight: 600; font-size: 0.78rem; }
             .normal-badge { background: #064e3b; color: #6ee7b7; padding: 3px 8px; border-radius: 6px; font-weight: 600; font-size: 0.78rem; }
 
-            /* ── Mobile Quick Nav Bar (hidden on desktop) ──────────── */
-            .fc-mobile-bar-marker { display: none; }
-            div[data-testid="stVerticalBlock"]:has(> div > div > .fc-mobile-bar-marker) {
-                display: none;
-            }
-
             /* ── Mobile Responsive Overrides (<= 768px) ────────────── */
             @media screen and (max-width: 768px) {
                 .block-container {
                     padding-left: 0.75rem !important;
                     padding-right: 0.75rem !important;
-                    padding-top: 0.75rem !important;
+                    padding-top: 3.3rem !important;
                 }
-                div[data-testid="stVerticalBlock"]:has(> div > div > .fc-mobile-bar-marker) {
-                    display: block !important;
-                    margin-bottom: 8px;
+                div[data-testid="stHorizontalBlock"]:has(.fc-qnav-marker) {
+                    flex-direction: row !important;
+                    flex-wrap: wrap !important;
+                    gap: 6px !important;
+                }
+                div[data-testid="stHorizontalBlock"]:has(.fc-qnav-marker) > div[data-testid="stColumn"],
+                div[data-testid="stHorizontalBlock"]:has(.fc-qnav-marker) > div[data-testid="column"] {
+                    flex: 1 1 30% !important;
+                    min-width: 96px !important;
+                    width: auto !important;
                 }
                 .fc-kpi-grid,
                 .fc-kpi-grid.cols-3 {
@@ -416,31 +460,50 @@ def consume_target_sub(page_key: str, valid_options: List[str], default: str) ->
 
 def render_mobile_quick_bar(active_key: str) -> None:
     """
-    Compact mobile-only shortcut row at the top of each page (4 primary items + Add).
-    Hidden on desktop (>768px) via CSS marker.
+    Always-visible top quick-navigation pill bar across desktop and mobile.
+    Highlights the active page and provides 1-tap access to core sections + Add Transaction.
     """
     pages_map = st.session_state.get("_pages", {})
     if not pages_map:
         return
-    with st.container():
-        st.markdown('<span class="fc-mobile-bar-marker"></span>', unsafe_allow_html=True)
-        c1, c2, c3, c4, c5 = st.columns([1, 1, 1, 1, 0.9])
-        with c1:
-            if "home" in pages_map:
-                st.page_link(pages_map["home"], label="🏠", help="Home", use_container_width=True)
-        with c2:
-            if "transactions" in pages_map:
-                st.page_link(pages_map["transactions"], label="💸", help="Transactions", use_container_width=True)
-        with c3:
-            if "budgets" in pages_map:
-                st.page_link(pages_map["budgets"], label="🎯", help="Budgets", use_container_width=True)
-        with c4:
-            if "portfolio" in pages_map:
-                st.page_link(pages_map["portfolio"], label="📈", help="Portfolio", use_container_width=True)
-        with c5:
-            if st.button("➕", key=f"mob_add_{active_key}", type="primary", use_container_width=True, help="Add Transaction"):
-                current_user, user_family_id, _ = get_active_user()
-                open_add_transaction_dialog(current_user, user_family_id)
+
+    nav_items = [
+        ("home", "🏠 Home", 1.0),
+        ("transactions", "💸 Transactions", 1.35),
+        ("budgets", "🎯 Budgets", 1.05),
+        ("insights", "📊 Insights", 1.05),
+        ("reports", "📑 Reports", 1.05),
+        ("portfolio", "📈 Portfolio", 1.15),
+    ]
+    visible_items = [item for item in nav_items if item[0] in pages_map]
+    if not visible_items:
+        return
+
+    weights = [w for _, _, w in visible_items] + [0.95]
+    cols = st.columns(weights)
+    for idx, (pkey, label, _) in enumerate(visible_items):
+        with cols[idx]:
+            if idx == 0:
+                st.markdown('<span class="fc-qnav-marker" style="display:none;"></span>', unsafe_allow_html=True)
+            is_active = (pkey == active_key)
+            if st.button(
+                label,
+                key=f"qnav_{active_key}_{pkey}",
+                type="primary" if is_active else "secondary",
+                use_container_width=True,
+            ):
+                if not is_active:
+                    navigate_to(pkey)
+    with cols[-1]:
+        if st.button(
+            "➕ Add",
+            key=f"qnav_{active_key}_add",
+            type="primary",
+            use_container_width=True,
+            help="Log a new Expense or Income transaction",
+        ):
+            current_user, user_family_id, _ = get_active_user()
+            open_add_transaction_dialog(current_user, user_family_id)
 
 
 def render_scope_bar(

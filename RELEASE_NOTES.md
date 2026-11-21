@@ -1,5 +1,15 @@
 # Release Notes
 
+## v1.18.1 (2026-11-21)
+### Fixed — Top Navigation Bar Visibility, Header Overlap & Sidebar Contrast
+- **Root Cause:**
+  1. `.block-container` set `padding-top: 1.1rem !important`, pulling the topmost content bar behind Streamlit's fixed `stHeader` bar (~`3.5rem` tall).
+  2. `ui.render_mobile_quick_bar()` previously hid itself on desktop (`> 768px`) and only rendered emoji icons (`🏠`, `💸`, `🎯`, `📈`) without text labels (`Home`, `Transactions`, etc.).
+- **Fix (`ui.py`):**
+  - Increased `.block-container` top padding (`3.6rem` desktop / `3.3rem` mobile) so the top navigation bar always sits cleanly below Streamlit's fixed header.
+  - Upgraded `render_mobile_quick_bar()` into an always-visible, clearly labeled Top Quick-Navigation Bar (`🏠 Home`, `💸 Transactions`, `🎯 Budgets`, `📊 Insights`, `📑 Reports`, `📈 Portfolio`, `➕ Add`) with active-page highlighting and responsive wrapping on mobile (`<= 768px`).
+  - Added high-contrast styling and `max-height: none` for Streamlit's sidebar navigation (`[data-testid="stSidebarNavItems"]`) so all grouped sidebar items remain expanded and legible.
+
 ## v1.18.0 (2026-11-21)
 ### Added — Mobile-First UX Redesign, Grouped Navigation, Hybrid Reports Hub & Performance Architecture
 - **Modular Page Architecture & Grouped Navigation (`st.navigation`):**
